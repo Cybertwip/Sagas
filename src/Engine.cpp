@@ -1,0 +1,522 @@
+#include <sagas/Engine.hpp>
+#include <sagas/N64.hpp>
+
+#include <SDL3/SDL.h>
+#include <png.h>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstring>
+#include <fstream>
+#include <numbers>
+#include <stdexcept>
+#include <thread>
+
+namespace sagas {
+namespace {
+
+[[noreturn]] void fail(std::string message) {
+    if (const char* detail = SDL_GetError(); detail && *detail) message += ": " + std::string(detail);
+    throw std::runtime_error(std::move(message));
+}
+
+std::uint16_t be16(const std::byte* p) {
+    return (std::to_integer<std::uint16_t>(p[0]) << 8) | std::to_integer<std::uint16_t>(p[1]);
+}
+std::uint32_t be32(const std::byte* p) {
+    return (std::to_integer<std::uint32_t>(p[0]) << 24) |
+           (std::to_integer<std::uint32_t>(p[1]) << 16) |
+           (std::to_integer<std::uint32_t>(p[2]) << 8) | std::to_integer<std::uint32_t>(p[3]);
+}
+bool tag(const std::byte* p, const char* text) { return std::memcmp(p, text, 4) == 0; }
+
+double extended80(const std::byte* p) {
+    const auto exponent = be16(p);
+    std::uint64_t mantissa{};
+    for (int i = 0; i < 8; ++i) mantissa = (mantissa << 8) | std::to_integer<unsigned>(p[i + 2]);
+    if ((exponent & 0x7fffU) == 0 && mantissa == 0) return 0;
+    const double value = std::ldexp(static_cast<double>(mantissa),
+                                    static_cast<int>(exponent & 0x7fffU) - 16383 - 63);
+    return exponent & 0x8000U ? -value : value;
+}
+
+struct Pcm { int rate{}; std::vector<std::int16_t> samples; };
+Pcm load_aiff(std::span<const std::byte> bytes, float gain) {
+    if (bytes.size() < 12 || !tag(bytes.data(), "FORM") ||
+        (!tag(bytes.data() + 8, "AIFF") && !tag(bytes.data() + 8, "AIFC")))
+        throw std::runtime_error("audio is not AIFF PCM");
+    int channels{}, bits{}, rate{};
+    std::uint32_t frames{};
+    const std::byte* sound{};
+    std::size_t sound_size{};
+    for (std::size_t at = 12; at + 8 <= bytes.size();) {
+        const auto size = be32(bytes.data() + at + 4);
+        const auto body = at + 8;
+        if (body + size > bytes.size()) break;
+        if (tag(bytes.data() + at, "COMM") && size >= 18) {
+            channels = be16(bytes.data() + body);
+            frames = be32(bytes.data() + body + 2);
+            bits = be16(bytes.data() + body + 6);
+            rate = static_cast<int>(std::lround(extended80(bytes.data() + body + 8)));
+            if (size >= 22 && !tag(bytes.data() + body + 18, "NONE"))
+                throw std::runtime_error("compressed AIFC is not a runtime PCM asset");
+        } else if (tag(bytes.data() + at, "SSND") && size >= 8) {
+            const auto offset = be32(bytes.data() + body);
+            if (8ULL + offset <= size) {
+                sound = bytes.data() + body + 8 + offset;
+                sound_size = size - 8 - offset;
+            }
+        }
+        at = body + size + (size & 1U);
+    }
+    if (!sound || channels < 1 || bits != 16 || rate <= 0) throw std::runtime_error("unsupported AIFF layout");
+    const auto available = sound_size / 2 / static_cast<std::size_t>(channels);
+    const auto count = std::min<std::size_t>(frames, available);
+    Pcm pcm{rate, {}};
+    pcm.samples.reserve(count);
+    for (std::size_t frame = 0; frame < count; ++frame) {
+        int mixed{};
+        for (int channel = 0; channel < channels; ++channel) {
+            const auto index = (frame * channels + channel) * 2;
+            mixed += static_cast<std::int16_t>(be16(sound + index));
+        }
+        pcm.samples.push_back(static_cast<std::int16_t>(std::clamp(mixed * gain / channels, -32768.0f, 32767.0f)));
+    }
+    return pcm;
+}
+
+class StartupScene final : public Scene {
+public:
+    void update(Services&, const InputState& input, float) override {
+        ++frame_;
+        if (frame_ >= 8 && (input.accept_pressed || input.cancel_pressed || input.skip_pressed)) {
+            skip_ = done_ = true;
+        } else if (frame_ >= 53) done_ = true;
+    }
+    void draw(Services& services) override {
+        services.render.begin({0, 0, 0, 255});
+        const float step = static_cast<float>(16 - std::min(frame_, 16));
+        const float y = frame_ < 16 ? 65.0f + (38.75f / 64.0f) * step * step : 65.0f;
+        services.render.sprite("textures/N64Logo.png", {160, y + 54});
+        float fade{};
+        if (frame_ < 16) fade = 1.0f - frame_ / 16.0f;
+        else if (frame_ >= 40) fade = std::min(1.0f, (frame_ - 40) / 10.0f);
+        if (fade > 0) services.render.fill(0, 0, 320, 240, {0, 0, 0, static_cast<std::uint8_t>(fade * 255)});
+        services.render.end();
+    }
+    std::unique_ptr<Scene> next() override {
+        if (!done_) return {};
+        return skip_ ? make_title_scene() : make_opening_scene();
+    }
+private:
+    int frame_{};
+    bool done_{};
+    bool skip_{};
+};
+
+class OpeningScene final : public Scene {
+public:
+    void enter(Services& services) override {
+        n64::RelocArchive archive(services.assets);
+        if (const auto ground = archive.symbol("llMVOpeningStandoffGroundDisplayList"))
+            standoff_ground_ = n64::DisplayListDecoder(archive).decode(*ground);
+    }
+    void update(Services&, const InputState& input, float) override {
+        ++tic_;
+        if (tic_ >= 10 && (input.accept_pressed || input.cancel_pressed || input.skip_pressed)) done_ = true;
+        if (tic_ >= total_duration) done_ = true;
+    }
+    void draw(Services& services) override {
+        auto& r = services.render;
+        r.begin({0, 0, 0, 255});
+        const auto [kind, local] = locate(tic_);
+        switch (kind) {
+            case Segment::Room: room(r, local); break;
+            case Segment::Portraits: portraits(r, local); break;
+            case Segment::Mario: fighter(r, local, "MVOpeningPortraitsSet1/Mario.png", {164, 42, 36, 255}); break;
+            case Segment::Donkey: fighter(r, local, "MVOpeningPortraitsSet2/Donkey.png", {91, 52, 31, 255}); break;
+            case Segment::Link: fighter(r, local, "MVOpeningPortraitsSet2/Link.png", {34, 80, 44, 255}); break;
+            case Segment::Samus: fighter(r, local, "MVOpeningPortraitsSet1/Samus.png", {116, 63, 31, 255}); break;
+            case Segment::Yoshi: fighter(r, local, "MVOpeningPortraitsSet2/Yoshi.png", {36, 105, 49, 255}); break;
+            case Segment::Kirby: fighter(r, local, "MVOpeningPortraitsSet2/Kirby.png", {141, 76, 92, 255}); break;
+            case Segment::Fox: fighter(r, local, "MVOpeningPortraitsSet1/Fox.png", {74, 77, 94, 255}); break;
+            case Segment::Pikachu: fighter(r, local, "MVOpeningPortraitsSet1/Pikachu.png", {139, 113, 32, 255}); break;
+            case Segment::Run: wallpaper(r, "MVOpeningRun/Wallpaper.png", {2,2}); break;
+            case Segment::Cliff: fighter(r, local, "MVOpeningPortraitsSet2/Link.png", {26, 38, 55, 255}); break;
+            case Segment::Yamabuki: wallpaper(r, "MVOpeningYamabuki/Wallpaper.png"); break;
+            case Segment::Jungle: fighter(r, local, "MVOpeningPortraitsSet2/Donkey.png", {22, 67, 32, 255}); break;
+            case Segment::Yoster: fighter(r, local, "MVOpeningPortraitsSet2/Yoshi.png", {69, 116, 105, 255}); break;
+            case Segment::Sector:
+                wallpaper(r, "MVOpeningSectorWallpaper.png");
+                r.sprite("textures/MVOpeningSector/Cockpit.png", {160,120});
+                break;
+            case Segment::Standoff:
+                wallpaper(r, "MVOpeningStandoffWallpaper.png", {2,2});
+                geometry(r, standoff_ground_, local);
+                break;
+            case Segment::Clash: clash(r, local); break;
+            case Segment::Newcomers: newcomers(r, local); break;
+        }
+        // Original opening scenes all fade through black at their boundaries.
+        const auto duration = durations[static_cast<std::size_t>(kind)];
+        const float edge = std::min({1.0f, local / 10.0f, (duration - local) / 10.0f});
+        if (edge < 1) r.fill(0, 0, 320, 240, {0,0,0,static_cast<std::uint8_t>((1-edge)*255)});
+        r.end();
+    }
+    std::unique_ptr<Scene> next() override { return done_ ? make_title_scene() : nullptr; }
+private:
+    enum class Segment : std::size_t {
+        Room, Portraits, Mario, Donkey, Link, Samus, Yoshi, Kirby, Fox, Pikachu,
+        Run, Cliff, Yamabuki, Jungle, Yoster, Sector, Standoff, Clash, Newcomers
+    };
+    static constexpr std::array<int, 19> durations{
+        1320, 150, 60, 60, 60, 60, 60, 60, 60, 60, 220, 160, 160, 320, 160, 160, 320, 160, 40};
+    static constexpr int total_duration = 3650;
+
+    static std::pair<Segment, int> locate(int tic) {
+        int start{};
+        for (std::size_t i = 0; i < durations.size(); ++i) {
+            if (tic < start + durations[i]) return {static_cast<Segment>(i), tic - start};
+            start += durations[i];
+        }
+        return {Segment::Newcomers, durations.back() - 1};
+    }
+    static void wallpaper(RenderEngine& r, std::string_view name, Vec2 scale = {1,1}) {
+        r.sprite(std::string("textures/") + std::string(name), {160,120}, scale);
+    }
+    static void room(RenderEngine& r, int local) {
+        wallpaper(r, "MVOpeningRoomWallpaper.png");
+        // Match the long, restrained camera move of the 22-second room shot.
+        const float glow = 22.0f + 18.0f * std::sin(local * std::numbers::pi_v<float> / 660.0f);
+        r.fill(10, 10, 300, 220, {255, 225, 175, static_cast<std::uint8_t>(glow)});
+    }
+    static void portraits(RenderEngine& r, int local) {
+        static constexpr std::array<std::string_view, 4> set1{"Samus", "Mario", "Fox", "Pikachu"};
+        static constexpr std::array<std::string_view, 4> set2{"Link", "Kirby", "Donkey", "Yoshi"};
+        const auto& set = local < 75 ? set1 : set2;
+        for (std::size_t i = 0; i < set.size(); ++i) {
+            const float phase = std::clamp((local % 75 - static_cast<int>(i) * 15) / 8.0f, 0.0f, 1.0f);
+            const float x = local < 75 ? 160.0f - (1-phase)*320.0f : 160.0f + (1-phase)*320.0f;
+            r.sprite("textures/MVOpeningPortraitsSet" + std::to_string(local < 75 ? 1 : 2) + "/" + std::string(set[i]) + ".png",
+                     {x, 37.5f + static_cast<float>(i) * 55.0f});
+        }
+    }
+    static void fighter(RenderEngine& r, int local, std::string_view portrait, Color background) {
+        r.fill(10, 10, 300, 220, background);
+        const float scale = 1.0f + 0.1f * local / 60.0f;
+        r.sprite(std::string("textures/") + std::string(portrait), {160,120}, {scale, 4.0f});
+        r.fill(10, 10, 300, 45, {0,0,0,120});
+        r.fill(10, 185, 300, 45, {0,0,0,120});
+    }
+    static void clash(RenderEngine& r, int local) {
+        static constexpr std::array<std::string_view, 8> names{
+            "MVOpeningPortraitsSet1/Mario.png", "MVOpeningPortraitsSet2/Donkey.png",
+            "MVOpeningPortraitsSet2/Link.png", "MVOpeningPortraitsSet1/Samus.png",
+            "MVOpeningPortraitsSet2/Yoshi.png", "MVOpeningPortraitsSet2/Kirby.png",
+            "MVOpeningPortraitsSet1/Fox.png", "MVOpeningPortraitsSet1/Pikachu.png"};
+        wallpaper(r, "MVOpeningStandoffWallpaper.png", {2,2});
+        const auto index = static_cast<std::size_t>(local / 20) % names.size();
+        r.sprite(std::string("textures/") + std::string(names[index]), {160,120}, {1,3});
+        if ((local % 20) < 3) r.fill(0,0,320,240,{255,255,255,220});
+    }
+    static void newcomers(RenderEngine& r, int local) {
+        const std::array<std::string_view, 4> names{"Link", "Kirby", "Donkey", "Yoshi"};
+        for (std::size_t i = 0; i < names.size(); ++i)
+            r.sprite("textures/MVOpeningPortraitsSet2/" + std::string(names[i]) + ".png",
+                     {160, 37.5f + static_cast<float>(i)*55});
+        if (local < 8) r.fill(0,0,320,240,{255,255,255,static_cast<std::uint8_t>((8-local)*28)});
+    }
+    static void geometry(RenderEngine& r, const n64::Mesh& mesh, int local) {
+        if (mesh.vertices.empty()) return;
+        struct Projected { TriangleVertex vertex; float depth; };
+        std::vector<std::array<Projected, 3>> triangles;
+        triangles.reserve(mesh.vertices.size() / 3);
+        const float yaw = 0.28f + local * 0.0018f;
+        const float cosine = std::cos(yaw), sine = std::sin(yaw);
+        float min_x = 1e30f, max_x = -1e30f, min_y = 1e30f, max_y = -1e30f;
+        for (std::size_t i = 0; i < mesh.vertices.size(); i += 3) {
+            std::array<Projected, 3> triangle;
+            for (int j = 0; j < 3; ++j) {
+                const auto& source = mesh.vertices[i + j];
+                const float x = source.x * cosine - source.z * sine;
+                const float z = source.x * sine + source.z * cosine;
+                const float y = -source.y * 0.82f + z * 0.30f;
+                triangle[j] = {{{x, y}, source.color}, z};
+                min_x = std::min(min_x, x); max_x = std::max(max_x, x);
+                min_y = std::min(min_y, y); max_y = std::max(max_y, y);
+            }
+            triangles.push_back(triangle);
+        }
+        std::sort(triangles.begin(), triangles.end(), [](const auto& a, const auto& b) {
+            return (a[0].depth + a[1].depth + a[2].depth) < (b[0].depth + b[1].depth + b[2].depth);
+        });
+        const float scale = std::min(280.0f / std::max(1.0f, max_x-min_x), 190.0f / std::max(1.0f, max_y-min_y));
+        const float center_x = (min_x + max_x) * 0.5f, center_y = (min_y + max_y) * 0.5f;
+        std::vector<TriangleVertex> output;
+        output.reserve(mesh.vertices.size());
+        for (const auto& triangle : triangles) for (const auto& point : triangle) {
+            auto color = point.vertex.color;
+            color.r = static_cast<std::uint8_t>(std::min(255, color.r / 2 + 90));
+            color.g = static_cast<std::uint8_t>(std::min(255, color.g / 2 + 75));
+            output.push_back({{160 + (point.vertex.position.x-center_x)*scale,
+                               120 + (point.vertex.position.y-center_y)*scale}, color});
+        }
+        r.triangles(output);
+    }
+    int tic_{};
+    bool done_{};
+    n64::Mesh standoff_ground_;
+};
+
+class TitleScene final : public Scene {
+public:
+    void update(Services& services, const InputState& input, float) override {
+        ++tic_;
+        if (input.accept_pressed && tic_ >= 170) {
+            services.audio.play("audio/B1_sounds1/wave_021.aiff", 0.86f);
+            accepted_ = 12;
+        }
+        if (accepted_ > 0) --accepted_;
+    }
+    void draw(Services& services) override {
+        auto& r = services.render;
+        r.begin({0, 0, 0, 255});
+        const auto fire = "textures/MNTitleFireAnim/Frame" + std::to_string((tic_ % 30) + 1) + ".png";
+        const std::array<Color, 7> colors{{{255,255,255,255}, {255,240,155,255}, {255,255,100,255},
+                                          {255,209,209,255}, {230,255,230,255}, {255,226,184,255},
+                                          {255,210,148,255}}};
+        const auto tint = colors[3];
+        r.sprite(fire, {160, 120}, {12.0f, 8.5f}, tint);
+        r.sprite(fire, {160, 120}, {9.5f, 7.0f}, {tint.r, tint.g, tint.b, 210});
+
+        if (tic_ < 220) {
+            const float pulse = tic_ < 170 ? 0.45f : std::clamp((tic_ - 170) / 50.0f, 0.0f, 1.0f);
+            r.sprite("textures/MNTitle/LogoAnimFull.png", {260, 60}, {pulse, pulse}, {255, 0, 0, 180});
+        }
+        if (tic_ >= 170) {
+            const float scale = std::clamp((tic_ - 170) / 50.0f, 0.0f, 1.0f);
+            const Color yellow{255, 254, 42, static_cast<std::uint8_t>(255 * scale)};
+            r.sprite("textures/MNTitle/Cutout.png", {157, 94}, {scale, scale}, yellow);
+            r.sprite("textures/MNTitle/Smash.png", {161, 88}, {scale, scale}, {255,255,255,yellow.a});
+            r.sprite("textures/MNTitle/Super.png", {55, 96}, {scale, scale}, yellow);
+            r.sprite("textures/MNTitle/Bros.png", {268, 96}, {scale, scale}, yellow);
+            r.sprite("textures/MNTitle/TMUnk.png", {270, 132}, {scale, scale}, {0,0,0,yellow.a});
+            r.sprite("textures/MNTitle/TM.png", {277, 157}, {scale, scale}, {21,19,6,yellow.a});
+            r.sprite("textures/MNTitle/BorderUpper.png", {160, 15}, {1,1}, {20,18,6,yellow.a});
+        }
+        if (tic_ >= 240) r.sprite("textures/MNTitle/Copyright.png", {160, 208}, {1,1}, {183,174,124,255});
+        if (tic_ >= 280) {
+            const float wave = 0.72f + 0.28f * std::sin(tic_ * std::numbers::pi_v<float> / 20.0f);
+            const auto alpha = static_cast<std::uint8_t>(255 * wave);
+            r.sprite("textures/MNTitle/PressStart.png", {162, 177}, {1,1},
+                     accepted_ ? Color{255,255,255,255} : Color{255,255,255,alpha});
+        }
+        r.end();
+    }
+private:
+    int tic_{169};
+    int accepted_{};
+};
+
+} // namespace
+
+AssetRepository::AssetRepository(std::filesystem::path root) : root_(std::move(root)) {
+    if (!std::filesystem::exists(root_ / ".complete"))
+        throw std::runtime_error("asset bundle is missing or incomplete: " + root_.string());
+}
+std::filesystem::path AssetRepository::path(std::string_view logical) const { return root_ / logical; }
+bool AssetRepository::exists(std::string_view logical) const { return std::filesystem::is_regular_file(path(logical)); }
+std::shared_ptr<const std::vector<std::byte>> AssetRepository::blob(std::string_view logical) {
+    const std::string key(logical);
+    if (const auto found = blobs_.find(key); found != blobs_.end())
+        if (auto cached = found->second.lock()) return cached;
+    std::ifstream input(path(logical), std::ios::binary | std::ios::ate);
+    if (!input) throw std::runtime_error("missing asset: " + path(logical).string());
+    const auto size = input.tellg();
+    input.seekg(0);
+    auto data = std::make_shared<std::vector<std::byte>>(static_cast<std::size_t>(size));
+    if (!input.read(reinterpret_cast<char*>(data->data()), size)) throw std::runtime_error("failed to read asset: " + key);
+    blobs_[key] = data;
+    return data;
+}
+
+void PhysicsWorld::step(std::span<Body> bodies, float seconds) const noexcept {
+    for (auto& body : bodies) {
+        body.velocity = body.velocity + gravity_ * seconds;
+        body.position = body.position + body.velocity * seconds;
+        const float bottom = body.position.y + body.half_extent.y;
+        body.grounded = bottom >= ground_y_;
+        if (body.grounded) { body.position.y = ground_y_ - body.half_extent.y; body.velocity.y = std::min(0.0f, body.velocity.y); }
+    }
+}
+
+float AnimationClip::sample(float time) const noexcept {
+    if (keys_.empty()) return 0;
+    if (time <= keys_.front().time) return keys_.front().value;
+    if (time >= keys_.back().time) return keys_.back().value;
+    const auto right = std::upper_bound(keys_.begin(), keys_.end(), time,
+        [](float t, const Keyframe& key) { return t < key.time; });
+    const auto& b = *right;
+    const auto& a = *(right - 1);
+    const float mix = (time - a.time) / (b.time - a.time);
+    return a.value + (b.value - a.value) * mix;
+}
+
+bool InputState::pressed(Action action) const noexcept {
+    switch (action) {
+        case Action::Accept: return accept_pressed;
+        case Action::Cancel: return cancel_pressed;
+        case Action::Skip: return skip_pressed;
+        case Action::Quit: return quit;
+    }
+    return false;
+}
+
+RenderEngine::RenderEngine(SDL_Window* window, SDL_Renderer* renderer, AssetRepository& assets)
+    : renderer_(renderer), assets_(assets) {
+    (void)window;
+    if (!SDL_SetRenderLogicalPresentation(renderer_, 320, 240, SDL_LOGICAL_PRESENTATION_LETTERBOX)) fail("logical renderer setup failed");
+}
+RenderEngine::~RenderEngine() { for (auto& [_, texture] : textures_) SDL_DestroyTexture(texture.handle); }
+RenderEngine::Texture& RenderEngine::texture(std::string_view logical) {
+    const std::string key(logical);
+    if (auto found = textures_.find(key); found != textures_.end()) return found->second;
+    png_image image{};
+    image.version = PNG_IMAGE_VERSION;
+    const auto file = assets_.path(logical).string();
+    if (!png_image_begin_read_from_file(&image, file.c_str())) throw std::runtime_error("PNG read failed: " + file);
+    image.format = PNG_FORMAT_RGBA;
+    std::vector<std::uint8_t> pixels(PNG_IMAGE_SIZE(image));
+    if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr)) {
+        png_image_free(&image);
+        throw std::runtime_error("PNG decode failed: " + file);
+    }
+    SDL_Texture* handle = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
+                                            static_cast<int>(image.width), static_cast<int>(image.height));
+    if (!handle) fail("texture creation failed");
+    SDL_UpdateTexture(handle, nullptr, pixels.data(), static_cast<int>(image.width * 4));
+    SDL_SetTextureScaleMode(handle, SDL_SCALEMODE_NEAREST);
+    SDL_SetTextureBlendMode(handle, SDL_BLENDMODE_BLEND);
+    auto [inserted, _] = textures_.emplace(key, Texture{handle, static_cast<float>(image.width), static_cast<float>(image.height)});
+    png_image_free(&image);
+    return inserted->second;
+}
+void RenderEngine::begin(Color clear) { SDL_SetRenderDrawColor(renderer_, clear.r, clear.g, clear.b, clear.a); SDL_RenderClear(renderer_); }
+void RenderEngine::sprite(std::string_view logical, Vec2 center, Vec2 scale, Color tint) {
+    auto& source = texture(logical);
+    SDL_SetTextureColorMod(source.handle, tint.r, tint.g, tint.b);
+    SDL_SetTextureAlphaMod(source.handle, tint.a);
+    const SDL_FRect destination{center.x - source.width * scale.x * 0.5f, center.y - source.height * scale.y * 0.5f,
+                                source.width * scale.x, source.height * scale.y};
+    SDL_RenderTexture(renderer_, source.handle, nullptr, &destination);
+}
+void RenderEngine::fill(float x, float y, float w, float h, Color color) {
+    SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer_, color.r, color.g, color.b, color.a);
+    const SDL_FRect rect{x, y, w, h};
+    SDL_RenderFillRect(renderer_, &rect);
+}
+void RenderEngine::triangles(std::span<const TriangleVertex> vertices) {
+    if (vertices.empty()) return;
+    std::vector<SDL_Vertex> native;
+    native.reserve(vertices.size());
+    for (const auto& vertex : vertices)
+        native.push_back({{vertex.position.x, vertex.position.y},
+                          {vertex.color.r / 255.0f, vertex.color.g / 255.0f,
+                           vertex.color.b / 255.0f, vertex.color.a / 255.0f}, {0,0}});
+    SDL_RenderGeometry(renderer_, nullptr, native.data(), static_cast<int>(native.size()), nullptr, 0);
+}
+void RenderEngine::end() { SDL_RenderPresent(renderer_); }
+
+AudioEngine::AudioEngine(AssetRepository& assets) : assets_(assets) {}
+AudioEngine::~AudioEngine() { if (stream_) SDL_DestroyAudioStream(stream_); }
+void AudioEngine::stop() { if (stream_) SDL_ClearAudioStream(stream_); }
+void AudioEngine::play(std::string_view logical, float gain) {
+    const auto bytes = assets_.blob(logical);
+    auto pcm = load_aiff(*bytes, gain);
+    if (stream_) SDL_DestroyAudioStream(stream_);
+    const SDL_AudioSpec spec{SDL_AUDIO_S16, 1, pcm.rate};
+    stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+    if (!stream_) fail("audio device open failed");
+    if (!SDL_PutAudioStreamData(stream_, pcm.samples.data(), static_cast<int>(pcm.samples.size() * sizeof(std::int16_t)))) fail("audio queue failed");
+    if (!SDL_ResumeAudioStreamDevice(stream_)) fail("audio resume failed");
+}
+
+SceneMachine::SceneMachine(std::unique_ptr<Scene> initial, Services& services)
+    : services_(services), scene_(std::move(initial)) { scene_->enter(services_); }
+void SceneMachine::update(const InputState& input, float fixed_seconds) {
+    scene_->update(services_, input, fixed_seconds);
+    if (auto next = scene_->next()) { scene_ = std::move(next); scene_->enter(services_); }
+}
+void SceneMachine::draw() { scene_->draw(services_); }
+
+std::unique_ptr<Scene> make_startup_scene() { return std::make_unique<StartupScene>(); }
+std::unique_ptr<Scene> make_opening_scene() { return std::make_unique<OpeningScene>(); }
+std::unique_ptr<Scene> make_title_scene() { return std::make_unique<TitleScene>(); }
+
+Application::Application(ApplicationOptions options) : options_(std::move(options)) {
+    if (options_.headless) {
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    }
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) fail("SDL initialization failed");
+    const auto flags = options_.headless ? SDL_WINDOW_HIDDEN : SDL_WINDOW_RESIZABLE;
+    if (!SDL_CreateWindowAndRenderer("Sagas | Smash Remix", 960, 720, flags, &window_, &renderer_)) fail("window creation failed");
+    assets_ = std::make_unique<AssetRepository>(options_.asset_root);
+    render_ = std::make_unique<RenderEngine>(window_, renderer_, *assets_);
+    audio_ = std::make_unique<AudioEngine>(*assets_);
+    services_ = std::make_unique<Services>(Services{*assets_, *render_, *audio_, physics_});
+    scenes_ = std::make_unique<SceneMachine>(options_.start_at_title ? make_title_scene() : make_startup_scene(), *services_);
+}
+Application::~Application() {
+    scenes_.reset(); services_.reset(); audio_.reset(); render_.reset(); assets_.reset();
+    if (renderer_) SDL_DestroyRenderer(renderer_);
+    if (window_) SDL_DestroyWindow(window_);
+    SDL_Quit();
+}
+InputState Application::poll_input() {
+    InputState input;
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_EVENT_QUIT) input.quit = true;
+        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+            input.accept_pressed |= event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE || event.key.key == SDLK_A;
+            input.cancel_pressed |= event.key.key == SDLK_ESCAPE || event.key.key == SDLK_B;
+            input.skip_pressed |= event.key.key == SDLK_S;
+        }
+        if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+            input.accept_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH || event.gbutton.button == SDL_GAMEPAD_BUTTON_START;
+            input.cancel_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST;
+        }
+    }
+    return input;
+}
+int Application::run() {
+    using clock = std::chrono::steady_clock;
+    constexpr auto step = std::chrono::duration<double>(1.0 / 60.0);
+    auto previous = clock::now();
+    std::chrono::duration<double> accumulator{};
+    int frames{};
+    bool running = true;
+    while (running && (options_.frame_limit <= 0 || frames < options_.frame_limit)) {
+        const auto input = poll_input();
+        running = !input.quit;
+        const auto now = clock::now();
+        accumulator += options_.headless ? step : std::min(now - previous, std::chrono::duration_cast<clock::duration>(std::chrono::milliseconds(250)));
+        previous = now;
+        bool first = true;
+        while (accumulator >= step) {
+            scenes_->update(first ? input : InputState{}, static_cast<float>(step.count()));
+            accumulator -= step;
+            first = false;
+        }
+        scenes_->draw();
+        ++frames;
+        if (!options_.headless) SDL_Delay(1);
+    }
+    return 0;
+}
+
+} // namespace sagas

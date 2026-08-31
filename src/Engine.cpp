@@ -12,6 +12,7 @@
 #include <numbers>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 
 namespace sagas {
 namespace {
@@ -86,6 +87,65 @@ Pcm load_aiff(std::span<const std::byte> bytes, float gain) {
     return pcm;
 }
 
+std::uint32_t le32(const std::byte* p) {
+    return std::to_integer<std::uint32_t>(p[0]) | (std::to_integer<std::uint32_t>(p[1]) << 8) |
+           (std::to_integer<std::uint32_t>(p[2]) << 16) | (std::to_integer<std::uint32_t>(p[3]) << 24);
+}
+
+struct MusicSound {
+    int program{}, velocity_min{}, velocity_max{}, key_min{}, key_max{}, key_base{}, detune{}, wave{};
+    int instrument_volume{}, sample_volume{}, attack_us{}, decay_us{}, release_us{}, attack_volume{}, decay_volume{};
+    int loop_start{}, loop_end{};
+};
+struct MusicEvent { std::uint32_t tick{}, frame{}; std::uint8_t kind{}, channel{}, a{}, b{}; };
+struct MusicPackage { unsigned division{}, tempo{}; std::vector<MusicSound> sounds; std::vector<MusicEvent> events; };
+
+MusicPackage load_music_package(std::span<const std::byte> bytes) {
+    if (bytes.size() < 20 || std::memcmp(bytes.data(), "SGM1", 4) != 0) throw std::runtime_error("invalid Sagas music package");
+    MusicPackage music{le32(bytes.data()+4), le32(bytes.data()+8), {}, {}};
+    const auto sound_count = le32(bytes.data()+12), track_count = le32(bytes.data()+16);
+    std::size_t at = 20;
+    for (std::uint32_t i = 0; i < sound_count; ++i) {
+        if (at + 68 > bytes.size()) throw std::runtime_error("truncated Sagas sound bank");
+        std::array<int, 17> value{};
+        for (int& field : value) { field = static_cast<int>(le32(bytes.data()+at)); at += 4; }
+        music.sounds.push_back({value[0],value[1],value[2],value[3],value[4],value[5],value[6],value[7],
+                                value[8],value[9],value[10],value[11],value[12],value[13],value[14],value[15],value[16]});
+    }
+    for (std::uint32_t track = 0; track < track_count; ++track) {
+        if (at + 16 > bytes.size()) throw std::runtime_error("truncated Sagas track table");
+        const auto track_id = le32(bytes.data()+at); (void)track_id;
+        const auto loop_start = le32(bytes.data()+at+4), loop_end = le32(bytes.data()+at+8); (void)loop_start; (void)loop_end;
+        const auto count = le32(bytes.data()+at+12); at += 16;
+        for (std::uint32_t i = 0; i < count; ++i) {
+            if (at + 8 > bytes.size()) throw std::runtime_error("truncated Sagas music event");
+            music.events.push_back({le32(bytes.data()+at), 0,
+                                    std::to_integer<std::uint8_t>(bytes[at+4]), std::to_integer<std::uint8_t>(bytes[at+5]),
+                                    std::to_integer<std::uint8_t>(bytes[at+6]), std::to_integer<std::uint8_t>(bytes[at+7])});
+            at += 8;
+        }
+    }
+    std::stable_sort(music.events.begin(), music.events.end(), [](const auto& a, const auto& b) { return a.tick < b.tick; });
+    double frame{};
+    std::uint32_t previous_tick{};
+    unsigned tempo = music.tempo;
+    for (std::size_t i = 0; i < music.events.size();) {
+        const auto tick = music.events[i].tick;
+        frame += static_cast<double>(tick - previous_tick) * tempo * 32000.0 /
+                 (static_cast<double>(music.division) * 1'000'000.0);
+        std::size_t end = i;
+        while (end < music.events.size() && music.events[end].tick == tick) {
+            music.events[end].frame = static_cast<std::uint32_t>(std::llround(frame));
+            if (music.events[end].kind == 5)
+                tempo = (music.events[end].channel << 16) | (music.events[end].a << 8) | music.events[end].b;
+            ++end;
+        }
+        previous_tick = tick;
+        i = end;
+    }
+    return music;
+}
+
 class StartupScene final : public Scene {
 public:
     void update(Services&, const InputState& input, float) override {
@@ -118,6 +178,7 @@ private:
 class OpeningScene final : public Scene {
 public:
     void enter(Services& services) override {
+        services.audio.play_music("audio/opening.sgm", 0.72f);
         n64::RelocArchive archive(services.assets);
         if (const auto ground = archive.symbol("llMVOpeningStandoffGroundDisplayList"))
             standoff_ground_ = n64::DisplayListDecoder(archive).decode(*ground);
@@ -271,6 +332,7 @@ private:
 
 class TitleScene final : public Scene {
 public:
+    void enter(Services& services) override { services.audio.stop(); }
     void update(Services& services, const InputState& input, float) override {
         ++tic_;
         if (input.accept_pressed && tic_ >= 170) {
@@ -432,15 +494,96 @@ void RenderEngine::end() { SDL_RenderPresent(renderer_); }
 AudioEngine::AudioEngine(AssetRepository& assets) : assets_(assets) {}
 AudioEngine::~AudioEngine() { if (stream_) SDL_DestroyAudioStream(stream_); }
 void AudioEngine::stop() { if (stream_) SDL_ClearAudioStream(stream_); }
+void AudioEngine::queue(std::span<const std::int16_t> samples, int rate) {
+    if (stream_) SDL_DestroyAudioStream(stream_);
+    const SDL_AudioSpec spec{SDL_AUDIO_S16, 1, rate};
+    stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+    if (!stream_) fail("audio device open failed");
+    if (!SDL_PutAudioStreamData(stream_, samples.data(), static_cast<int>(samples.size_bytes()))) fail("audio queue failed");
+    if (!SDL_ResumeAudioStreamDevice(stream_)) fail("audio resume failed");
+}
 void AudioEngine::play(std::string_view logical, float gain) {
     const auto bytes = assets_.blob(logical);
     auto pcm = load_aiff(*bytes, gain);
-    if (stream_) SDL_DestroyAudioStream(stream_);
-    const SDL_AudioSpec spec{SDL_AUDIO_S16, 1, pcm.rate};
-    stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
-    if (!stream_) fail("audio device open failed");
-    if (!SDL_PutAudioStreamData(stream_, pcm.samples.data(), static_cast<int>(pcm.samples.size() * sizeof(std::int16_t)))) fail("audio queue failed");
-    if (!SDL_ResumeAudioStreamDevice(stream_)) fail("audio resume failed");
+    queue(pcm.samples, pcm.rate);
+}
+void AudioEngine::play_music(std::string_view logical, float gain) {
+    const auto package = load_music_package(*assets_.blob(logical));
+    struct Voice { const MusicSound* sound{}; const Pcm* pcm{}; int channel{}, note{}; double position{}, step{}; std::uint64_t age{}, release_age{}; bool released{}; float gain{}; };
+    std::array<int,16> programs{}, volumes{}, bends{};
+    volumes.fill(127); bends.fill(8192);
+    std::unordered_map<int, Pcm> waves;
+    std::vector<Voice> voices;
+    std::vector<std::int16_t> output;
+    const auto last_event = package.events.empty() ? 0U : package.events.back().frame;
+    const auto frame_count = std::max<std::uint32_t>(last_event + 160000U, 65U * 32000U);
+    output.reserve(frame_count);
+    std::size_t event_index{};
+    auto get_wave = [&](int id) -> const Pcm* {
+        if (!waves.contains(id)) {
+            std::ostringstream name;
+            name << "audio/B1_sounds1/wave_" << std::setw(3) << std::setfill('0') << id << ".aiff";
+            waves.emplace(id, load_aiff(*assets_.blob(name.str()), 1.0f));
+        }
+        return &waves.at(id);
+    };
+    for (std::uint32_t frame = 0; frame < frame_count; ++frame) {
+        while (event_index < package.events.size() && package.events[event_index].frame <= frame) {
+            const auto& event = package.events[event_index++];
+            const int channel = event.channel & 15;
+            if (event.kind == 2) programs[channel] = event.a;
+            else if (event.kind == 3 && event.a == 7) volumes[channel] = event.b;
+            else if (event.kind == 4) bends[channel] = event.a | (event.b << 7);
+            else if (event.kind == 1 || (event.kind == 0 && event.b == 0)) {
+                for (auto& voice : voices) if (voice.channel == channel && voice.note == event.a && !voice.released) {
+                    voice.released = true; voice.release_age = 0;
+                }
+            } else if (event.kind == 0) {
+                const auto sound = std::find_if(package.sounds.begin(), package.sounds.end(), [&](const auto& item) {
+                    return item.program == programs[channel] && event.a >= item.key_min && event.a <= item.key_max &&
+                           event.b >= item.velocity_min && event.b <= item.velocity_max;
+                });
+                if (sound != package.sounds.end()) {
+                    const auto* pcm = get_wave(sound->wave);
+                    const float bend_cents = (bends[channel] - 8192) * (200.0f / 8192.0f);
+                    const float cents = (event.a - sound->key_base) * 100.0f + sound->detune + bend_cents;
+                    const float level = gain * event.b / 127.0f * volumes[channel] / 127.0f *
+                                        sound->instrument_volume / 127.0f * sound->sample_volume / 127.0f;
+                    voices.push_back({&*sound, pcm, channel, event.a, 0,
+                                      std::pow(2.0, cents / 1200.0) * pcm->rate / 32000.0,
+                                      0, 0, false, level});
+                }
+            }
+        }
+        double mixed{};
+        for (auto& voice : voices) {
+            if (!voice.pcm || voice.position >= voice.pcm->samples.size()) continue;
+            const auto& sound = *voice.sound;
+            const double age_us = voice.age * (1'000'000.0 / 32000.0);
+            float envelope = sound.decay_volume / 127.0f;
+            if (sound.attack_us > 0 && age_us < sound.attack_us)
+                envelope = static_cast<float>(age_us / sound.attack_us) * sound.attack_volume / 127.0f;
+            else if (sound.decay_us > 0 && age_us < sound.attack_us + sound.decay_us) {
+                const float blend = static_cast<float>((age_us - sound.attack_us) / sound.decay_us);
+                envelope = (sound.attack_volume + (sound.decay_volume-sound.attack_volume)*blend) / 127.0f;
+            }
+            if (voice.released) {
+                const double release_us = voice.release_age++ * (1'000'000.0 / 32000.0);
+                envelope *= sound.release_us > 0 ? std::max(0.0, 1.0-release_us/sound.release_us) : 0.0;
+                if (envelope <= 0) { voice.pcm = nullptr; continue; }
+            }
+            const auto index = static_cast<std::size_t>(voice.position);
+            const auto next = std::min(index + 1, voice.pcm->samples.size() - 1);
+            const double fraction = voice.position - index;
+            mixed += (voice.pcm->samples[index]*(1-fraction) + voice.pcm->samples[next]*fraction) * voice.gain * envelope;
+            voice.position += voice.step; ++voice.age;
+            if (!voice.released && sound.loop_end > sound.loop_start && voice.position >= sound.loop_end)
+                voice.position = sound.loop_start + std::fmod(voice.position-sound.loop_start, sound.loop_end-sound.loop_start);
+        }
+        if ((frame & 4095U) == 0) voices.erase(std::remove_if(voices.begin(), voices.end(), [](const auto& v){ return !v.pcm; }), voices.end());
+        output.push_back(static_cast<std::int16_t>(std::clamp(mixed, -32768.0, 32767.0)));
+    }
+    queue(output, 32000);
 }
 
 SceneMachine::SceneMachine(std::unique_ptr<Scene> initial, Services& services)

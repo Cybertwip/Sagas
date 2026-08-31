@@ -95,8 +95,10 @@ public:
     AudioEngine(const AudioEngine&) = delete;
     AudioEngine& operator=(const AudioEngine&) = delete;
     void play(std::string_view logical, float gain = 1.0f);
+    void play_music(std::string_view logical, float gain = 1.0f);
     void stop();
 private:
+    void queue(std::span<const std::int16_t> samples, int rate);
     AssetRepository& assets_;
     SDL_AudioStream* stream_{};
 };

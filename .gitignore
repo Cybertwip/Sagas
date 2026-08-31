@@ -1,0 +1,65 @@
+# CMake build trees and generated metadata
+/build/
+/build-*/
+/out/
+/cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+Makefile
+compile_commands.json
+install_manifest.txt
+Testing/
+_deps/
+.cmake/
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+CMakeUserPresets.json
+
+# Compiler and linker output (Windows, Linux, and macOS)
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app/
+*.dSYM/
+*.pdb
+*.ilk
+*.exp
+
+# IDE and editor-local state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+*.code-workspace
+*~
+*.swp
+
+# Platform detritus
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Test and profiling output
+coverage/
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata

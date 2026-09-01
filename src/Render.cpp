@@ -438,6 +438,8 @@ void RenderEngine::sprite(std::string_view logical,Vec2 center,Vec2 scale,Color 
 }
 
 void RenderEngine::sprite_at(std::string_view logical,Vec2 top_left,Vec2 scale,Color tint) {
+    // Source UI descriptors use top-left coordinates; keep that convention
+    // out of scene code while the core sprite primitive remains center-based.
     const auto& source=texture(logical);
     sprite(logical,{top_left.x+source.width*scale.x*0.5f,
                     top_left.y+source.height*scale.y*0.5f},scale,tint);

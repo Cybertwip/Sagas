@@ -232,6 +232,7 @@ public:
     void draw(Services& services) override {
         auto& r = services.render;
         r.begin({0, 0, 0, 255});
+        renderer_->begin();
         const auto [kind, local] = locate(tic_);
         switch (kind) {
             case Segment::Room: room(r, local); break;
@@ -271,6 +272,7 @@ public:
             case Segment::Sector: {
                 wallpaper(r, "MVOpeningSectorWallpaper.png");
                 renderer_->draw(r, sector_great_fox_, loader_->camera("llMVOpeningSectorCamAnimJoint", local), local);
+                renderer_->flush(r);
                 r.sprite("textures/MVOpeningSector/Cockpit.png", {160,120});
                 break;
             }
@@ -284,6 +286,7 @@ public:
             case Segment::Clash: clash(r, local); break;
             case Segment::Newcomers: newcomers(r, local); break;
         }
+        renderer_->end(r);
         // Original opening scenes all fade through black at their boundaries.
         const auto duration = durations[static_cast<std::size_t>(kind)];
         const float edge = std::min({1.0f, local / 10.0f, (duration - local) / 10.0f});

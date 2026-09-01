@@ -4,6 +4,8 @@
 #include <sagas/Lighting.hpp>
 #include <sagas/Render.hpp>
 
+#include <array>
+
 namespace sagas {
 
 struct Camera3D {

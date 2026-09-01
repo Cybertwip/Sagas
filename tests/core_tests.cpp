@@ -44,6 +44,18 @@ int main() {
     for (const auto value : fighter_pose.tracks) assert(std::isfinite(value));
     assert(std::abs(fighter_pose.tracks[0]) < 10.0f);
     assert(fighter_pose.tracks[7] > 0.01f && fighter_pose.tracks[7] < 10.0f);
+    const auto mario_debug = scene_loader.model("llMarioModelJointTreeDObjDesc", {}, sagas::GeometryLayout::Direct);
+    for (const float frame : {0.0f, 20.0f, 100.0f}) {
+        std::cout << "mario frame " << frame << '\n';
+        for (std::size_t i = 0; i < 3; ++i) {
+            const auto pose = animation_decoder.sample16(*fighter_scripts[i], frame,
+                                                         animation_decoder.pose(mario_debug.nodes[i]));
+            std::cout << "  " << i << " depth=" << mario_debug.nodes[i].depth
+                      << " r=" << pose.tracks[0] << ',' << pose.tracks[1] << ',' << pose.tracks[2]
+                      << " t=" << pose.tracks[4] << ',' << pose.tracks[5] << ',' << pose.tracks[6]
+                      << " s=" << pose.tracks[7] << ',' << pose.tracks[8] << ',' << pose.tracks[9] << '\n';
+        }
+    }
     struct ModelCase { const char* descriptor; const char* animation; sagas::GeometryLayout layout; };
     const ModelCase opening_models[]{
         {"llMVOpeningYosterNestDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},

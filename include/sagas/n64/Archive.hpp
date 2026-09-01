@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <mutex>
 #include <span>
 #include <string_view>
 #include <unordered_map>
@@ -32,6 +33,7 @@ private:
         return (static_cast<std::uint64_t>(address.file) << 32) | address.offset;
     }
     AssetRepository& assets_;
+    mutable std::recursive_mutex mutex_;
     std::unordered_map<std::string, Address> symbols_;
     std::unordered_map<std::uint32_t, std::shared_ptr<const std::vector<std::byte>>> files_;
     std::unordered_map<std::uint64_t, Address> links_;

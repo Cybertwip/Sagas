@@ -38,11 +38,13 @@ RelocArchive::RelocArchive(AssetRepository& assets) : assets_(assets) {
 }
 
 std::optional<Address> RelocArchive::symbol(std::string_view name) const {
+    const std::scoped_lock lock(mutex_);
     if (const auto found = symbols_.find(std::string(name)); found != symbols_.end()) return found->second;
     return {};
 }
 
 std::span<const std::byte> RelocArchive::bytes(std::uint32_t file) {
+    const std::scoped_lock lock(mutex_);
     if (auto found = files_.find(file); found != files_.end()) return *found->second;
     auto blob = assets_.blob(reloc_name(file, ".bin"));
     files_.emplace(file, blob);
@@ -65,12 +67,14 @@ void RelocArchive::load_links(std::uint32_t file) {
 }
 
 std::optional<Address> RelocArchive::resolve(Address pointer_word) {
+    const std::scoped_lock lock(mutex_);
     load_links(pointer_word.file);
     if (const auto found = links_.find(key(pointer_word)); found != links_.end()) return found->second;
     return {};
 }
 
 std::uint32_t RelocArchive::u32(Address address) {
+    const std::scoped_lock lock(mutex_);
     const auto data = bytes(address.file);
     if (address.offset + 4 > data.size()) throw std::out_of_range("N64 u32 read");
     const auto* p = data.data() + address.offset;
@@ -79,7 +83,13 @@ std::uint32_t RelocArchive::u32(Address address) {
            (std::to_integer<std::uint32_t>(p[2]) << 8) | std::to_integer<std::uint32_t>(p[3]);
 }
 
-std::int16_t RelocArchive::s16(Address address) { return static_cast<std::int16_t>(u32(address) >> 16); }
-float RelocArchive::f32(Address address) { return std::bit_cast<float>(u32(address)); }
+std::int16_t RelocArchive::s16(Address address) {
+    const std::scoped_lock lock(mutex_);
+    return static_cast<std::int16_t>(u32(address) >> 16);
+}
+float RelocArchive::f32(Address address) {
+    const std::scoped_lock lock(mutex_);
+    return std::bit_cast<float>(u32(address));
+}
 
 } // namespace sagas::n64

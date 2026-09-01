@@ -13,6 +13,7 @@ AssetRepository::AssetRepository(std::filesystem::path root) : root_(std::move(r
 std::filesystem::path AssetRepository::path(std::string_view logical) const { return root_ / logical; }
 bool AssetRepository::exists(std::string_view logical) const { return std::filesystem::is_regular_file(path(logical)); }
 std::shared_ptr<const std::vector<std::byte>> AssetRepository::blob(std::string_view logical) {
+    const std::scoped_lock lock(mutex_);
     const std::string key(logical);
     if (const auto found = blobs_.find(key); found != blobs_.end())
         if (auto cached = found->second.lock()) return cached;

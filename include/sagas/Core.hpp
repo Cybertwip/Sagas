@@ -20,6 +20,10 @@ struct Vec2 {
 struct Vec3 { float x{}, y{}, z{}; };
 struct Color { std::uint8_t r{}, g{}, b{}, a{255}; };
 struct TriangleVertex { Vec2 position{}; Color color{255,255,255,255}; Vec2 uv{}; };
+struct RasterImage {
+    int width{}, height{};
+    std::vector<std::uint8_t> rgba;
+};
 
 // Repository pattern: all game data is addressed by logical paths and read lazily.
 class AssetRepository final {

@@ -14,6 +14,7 @@ struct ApplicationOptions {
     bool start_at_title{};
     bool headless{};
     int frame_limit{};
+    std::filesystem::path capture_path;
 };
 
 class Application final {

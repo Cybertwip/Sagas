@@ -104,7 +104,11 @@ Camera3D Scene3DLoader::camera(std::string_view animation, float frame, Camera3D
 void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
                            float frame, Color tint, LightingRig lights) {
     struct Projected { TriangleVertex vertex; float depth; };
-    std::vector<std::array<Projected,3>> triangles;
+    struct RenderTriangle {
+        std::array<Projected,3> points;
+        std::shared_ptr<const RasterImage> texture;
+    };
+    std::vector<RenderTriangle> triangles;
     std::array<Matrix,18> parents{};
     const Vec3 forward=normalize(sub(camera.at,camera.eye));
     const Vec3 right=normalize(cross(forward,camera.up));
@@ -133,15 +137,25 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 triangle[j]={{{160+dot(relative,right)*focal*150/depth,
                                 120-dot(relative,up)*focal*150/depth},color,{source.u,source.v}},depth};
             }
-            if (visible) triangles.push_back(triangle);
+            if (visible) triangles.push_back({triangle,mesh.vertices[i].texture});
         }
     }
     std::stable_sort(triangles.begin(),triangles.end(),[](const auto& a,const auto& b){
-        return a[0].depth+a[1].depth+a[2].depth>b[0].depth+b[1].depth+b[2].depth;
+        return a.points[0].depth+a.points[1].depth+a.points[2].depth>
+               b.points[0].depth+b.points[1].depth+b.points[2].depth;
     });
-    std::vector<TriangleVertex> output; output.reserve(triangles.size()*3);
-    for (const auto& triangle:triangles) for (const auto& point:triangle) output.push_back(point.vertex);
-    render.triangles(output);
+    std::vector<TriangleVertex> output;
+    std::shared_ptr<const RasterImage> texture;
+    const auto flush = [&] {
+        render.triangles(output,texture);
+        output.clear();
+    };
+    for (const auto& triangle:triangles) {
+        if (!output.empty() && triangle.texture != texture) flush();
+        texture=triangle.texture;
+        for (const auto& point:triangle.points) output.push_back(point.vertex);
+    }
+    flush();
 }
 
 } // namespace sagas

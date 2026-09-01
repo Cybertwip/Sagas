@@ -1,16 +1,38 @@
 #include <sagas/n64/DisplayList.hpp>
 
 #include <array>
+#include <cmath>
+#include <sstream>
 #include <stdexcept>
 
 namespace sagas::n64 {
 
 struct DisplayListDecoder::State {
     struct Cached { Vertex vertex{}; bool valid{}; };
+    struct Image { std::optional<Address> address; unsigned format{}, size{}, width{1}; } image;
+    struct Tile {
+        unsigned format{}, size{}, line{}, tmem{}, palette{}, cms{}, cmt{}, masks{}, maskt{}, shifts{}, shiftt{};
+        unsigned uls{}, ult{}, lrs{}, lrt{};
+    };
     std::array<Cached, 32> cache{};
+    std::array<Tile, 8> tiles{};
+    std::unordered_map<unsigned, Image> loads;
+    std::optional<Address> palette;
+    unsigned render_tile{};
     bool lighting{true};
     Color primitive{255,255,255,255};
 };
+
+namespace {
+
+Color rgba16(std::uint16_t value) {
+    return {static_cast<std::uint8_t>(((value >> 11) & 31) * 255 / 31),
+            static_cast<std::uint8_t>(((value >> 6) & 31) * 255 / 31),
+            static_cast<std::uint8_t>(((value >> 1) & 31) * 255 / 31),
+            static_cast<std::uint8_t>((value & 1) ? 255 : 0)};
+}
+
+} // namespace
 
 Mesh DisplayListDecoder::decode(Address display_list) {
     Mesh mesh;
@@ -42,9 +64,87 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
         ++mesh.rejected_triangles;
         return;
     }
-    mesh.vertices.push_back(state.cache[a].vertex);
-    mesh.vertices.push_back(state.cache[b].vertex);
-    mesh.vertices.push_back(state.cache[c].vertex);
+    const auto image = texture(state);
+    const auto& tile = state.tiles[state.render_tile];
+    const float width = image ? static_cast<float>(image->width) : 1.0f;
+    const float height = image ? static_cast<float>(image->height) : 1.0f;
+    for (const unsigned index : {a,b,c}) {
+        auto vertex = state.cache[index].vertex;
+        vertex.texture = image;
+        vertex.u = (vertex.u - tile.uls * 0.25f) / width;
+        vertex.v = (vertex.v - tile.ult * 0.25f) / height;
+        mesh.vertices.push_back(std::move(vertex));
+    }
+}
+
+std::shared_ptr<const RasterImage> DisplayListDecoder::texture(State& state) {
+    const auto& tile = state.tiles[state.render_tile];
+    const auto loaded = state.loads.find(tile.tmem);
+    const auto image = loaded != state.loads.end() ? loaded->second : state.image;
+    if (!image.address) return {};
+    const unsigned width = tile.lrs >= tile.uls ? ((tile.lrs - tile.uls) >> 2) + 1 : image.width;
+    const unsigned height = tile.lrt >= tile.ult ? ((tile.lrt - tile.ult) >> 2) + 1 : 1;
+    if (width == 0 || height == 0 || width > 1024 || height > 1024) return {};
+    std::ostringstream key;
+    key << image.address->file << ':' << image.address->offset << ':' << tile.format << ':' << tile.size
+        << ':' << width << ':' << height << ':' << tile.line << ':' << tile.palette << ':';
+    if (state.palette) key << state.palette->file << ':' << state.palette->offset;
+    if (const auto found = textures_.find(key.str()); found != textures_.end()) return found->second;
+
+    auto output = std::make_shared<RasterImage>();
+    output->width = static_cast<int>(width);
+    output->height = static_cast<int>(height);
+    output->rgba.resize(static_cast<std::size_t>(width) * height * 4);
+    const auto source = archive_.bytes(image.address->file);
+    const auto palette = state.palette ? archive_.bytes(state.palette->file) : std::span<const std::byte>{};
+    const unsigned bits = 4U << tile.size;
+    const unsigned row_bytes = tile.line ? tile.line * 8 : (width * bits + 7) / 8;
+    auto byte = [](std::span<const std::byte> data, std::size_t at) -> unsigned {
+        return at < data.size() ? std::to_integer<unsigned>(data[at]) : 0;
+    };
+    for (unsigned y = 0; y < height; ++y) for (unsigned x = 0; x < width; ++x) {
+        const std::size_t row = image.address->offset + static_cast<std::size_t>(y) * row_bytes;
+        Color color{255,0,255,255};
+        unsigned intensity{}, alpha{255};
+        if (tile.format == 0 && tile.size == 2) {
+            color = rgba16(static_cast<std::uint16_t>((byte(source,row+x*2)<<8)|byte(source,row+x*2+1)));
+        } else if (tile.format == 0 && tile.size == 3) {
+            color = {static_cast<std::uint8_t>(byte(source,row+x*4)), static_cast<std::uint8_t>(byte(source,row+x*4+1)),
+                     static_cast<std::uint8_t>(byte(source,row+x*4+2)), static_cast<std::uint8_t>(byte(source,row+x*4+3))};
+        } else if (tile.format == 2 && state.palette) {
+            unsigned index{};
+            if (tile.size == 0) {
+                const unsigned packed = byte(source,row+x/2);
+                index = ((x & 1) ? (packed & 15) : (packed >> 4)) + tile.palette * 16;
+            } else index = byte(source,row+x);
+            const std::size_t at = state.palette->offset + index * 2;
+            color = rgba16(static_cast<std::uint16_t>((byte(palette,at)<<8)|byte(palette,at+1)));
+        } else if (tile.format == 3) {
+            if (tile.size == 0) {
+                const unsigned packed = byte(source,row+x/2);
+                const unsigned value = (x & 1) ? (packed & 15) : (packed >> 4);
+                intensity = ((value >> 1) & 7) * 255 / 7; alpha = (value & 1) ? 255 : 0;
+            } else if (tile.size == 1) {
+                const unsigned value = byte(source,row+x);
+                intensity = (value >> 4) * 17; alpha = (value & 15) * 17;
+            } else {
+                intensity = byte(source,row+x*2); alpha = byte(source,row+x*2+1);
+            }
+            color = {static_cast<std::uint8_t>(intensity),static_cast<std::uint8_t>(intensity),
+                     static_cast<std::uint8_t>(intensity),static_cast<std::uint8_t>(alpha)};
+        } else if (tile.format == 4) {
+            if (tile.size == 0) {
+                const unsigned packed = byte(source,row+x/2);
+                intensity = ((x & 1) ? (packed & 15) : (packed >> 4)) * 17;
+            } else intensity = byte(source,row+x);
+            color = {static_cast<std::uint8_t>(intensity),static_cast<std::uint8_t>(intensity),
+                     static_cast<std::uint8_t>(intensity),255};
+        }
+        const auto out = (static_cast<std::size_t>(y) * width + x) * 4;
+        output->rgba[out]=color.r; output->rgba[out+1]=color.g; output->rgba[out+2]=color.b; output->rgba[out+3]=color.a;
+    }
+    textures_.emplace(key.str(), output);
+    return output;
 }
 
 void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int depth) {
@@ -57,7 +157,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
         const auto opcode = w0 >> 24;
         switch (opcode) {
             case 0x00: case 0xe1: case 0xe3: case 0xe6: case 0xe7: case 0xe8: case 0xe9:
-            case 0xf1: case 0xf2: case 0xf3: case 0xf4: case 0xf5: case 0xfc: case 0xfd:
+            case 0xf1: case 0xf4: case 0xfc:
                 break;
             case 0x01: {
                 const unsigned count = (w0 >> 12) & 0xffU;
@@ -101,6 +201,9 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
             case 0xd9:
                 state.lighting = (((w0 & 0x00ffffffU) | w1) & 0x00020000U) != 0;
                 break;
+            case 0xd7:
+                state.render_tile = (w0 >> 8) & 7U;
+                break;
             case 0xde: {
                 const auto target = archive_.resolve({address.file, address.offset + 4});
                 if (!target) { ++mesh.unsupported_commands; break; }
@@ -112,6 +215,31 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
             case 0xfa:
                 state.primitive = {static_cast<std::uint8_t>(w1 >> 24), static_cast<std::uint8_t>(w1 >> 16),
                                    static_cast<std::uint8_t>(w1 >> 8), static_cast<std::uint8_t>(w1)};
+                break;
+            case 0xf0:
+                state.palette = state.image.address;
+                break;
+            case 0xf2: {
+                auto& tile = state.tiles[(w1 >> 24) & 7U];
+                tile.uls=(w0>>12)&0xfffU; tile.ult=w0&0xfffU;
+                tile.lrs=(w1>>12)&0xfffU; tile.lrt=w1&0xfffU;
+                break;
+            }
+            case 0xf3: {
+                const auto& tile = state.tiles[(w1 >> 24) & 7U];
+                state.loads[tile.tmem] = state.image;
+                break;
+            }
+            case 0xf5: {
+                auto& tile = state.tiles[(w1 >> 24) & 7U];
+                tile.format=(w0>>21)&7U; tile.size=(w0>>19)&3U; tile.line=(w0>>9)&0x1ffU; tile.tmem=w0&0x1ffU;
+                tile.palette=(w1>>20)&15U; tile.cmt=(w1>>18)&3U; tile.maskt=(w1>>14)&15U; tile.shiftt=(w1>>10)&15U;
+                tile.cms=(w1>>8)&3U; tile.masks=(w1>>4)&15U; tile.shifts=w1&15U;
+                break;
+            }
+            case 0xfd:
+                state.image.format=(w0>>21)&7U; state.image.size=(w0>>19)&3U; state.image.width=(w0&0xfffU)+1;
+                state.image.address=archive_.resolve({address.file,address.offset+4});
                 break;
             default: ++mesh.unsupported_commands; break;
         }

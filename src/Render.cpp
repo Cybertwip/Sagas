@@ -18,7 +18,10 @@ RenderEngine::RenderEngine(SDL_Window* window, SDL_Renderer* renderer, AssetRepo
     (void)window;
     if (!SDL_SetRenderLogicalPresentation(renderer_, 320, 240, SDL_LOGICAL_PRESENTATION_LETTERBOX)) fail("logical renderer setup failed");
 }
-RenderEngine::~RenderEngine() { for (auto& [_, texture] : textures_) SDL_DestroyTexture(texture.handle); }
+RenderEngine::~RenderEngine() {
+    for (auto& [_, texture] : textures_) SDL_DestroyTexture(texture.handle);
+    for (auto& [_, texture] : raster_textures_) SDL_DestroyTexture(texture);
+}
 RenderEngine::Texture& RenderEngine::texture(std::string_view logical) {
     const std::string key(logical);
     if (auto found = textures_.find(key); found != textures_.end()) return found->second;
@@ -57,7 +60,8 @@ void RenderEngine::fill(float x, float y, float w, float h, Color color) {
     const SDL_FRect rect{x, y, w, h};
     SDL_RenderFillRect(renderer_, &rect);
 }
-void RenderEngine::triangles(std::span<const TriangleVertex> vertices) {
+void RenderEngine::triangles(std::span<const TriangleVertex> vertices,
+                             const std::shared_ptr<const RasterImage>& image) {
     if (vertices.empty()) return;
     std::vector<SDL_Vertex> native;
     native.reserve(vertices.size());
@@ -65,8 +69,44 @@ void RenderEngine::triangles(std::span<const TriangleVertex> vertices) {
         native.push_back({{vertex.position.x, vertex.position.y},
                           {vertex.color.r / 255.0f, vertex.color.g / 255.0f,
                            vertex.color.b / 255.0f, vertex.color.a / 255.0f}, {vertex.uv.x, vertex.uv.y}});
-    SDL_RenderGeometry(renderer_, nullptr, native.data(), static_cast<int>(native.size()), nullptr, 0);
+    SDL_Texture* texture_handle{};
+    if (image && image->width > 0 && image->height > 0 && !image->rgba.empty()) {
+        if (const auto found = raster_textures_.find(image.get()); found != raster_textures_.end()) {
+            texture_handle = found->second;
+        } else {
+            texture_handle = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
+                                               image->width, image->height);
+            if (!texture_handle) fail("N64 texture creation failed");
+            SDL_UpdateTexture(texture_handle, nullptr, image->rgba.data(), image->width * 4);
+            SDL_SetTextureScaleMode(texture_handle, SDL_SCALEMODE_NEAREST);
+            SDL_SetTextureBlendMode(texture_handle, SDL_BLENDMODE_BLEND);
+            raster_textures_.emplace(image.get(), texture_handle);
+        }
+    }
+    SDL_RenderGeometry(renderer_, texture_handle, native.data(), static_cast<int>(native.size()), nullptr, 0);
 }
-void RenderEngine::end() { SDL_RenderPresent(renderer_); }
+void RenderEngine::request_capture(std::filesystem::path path) { capture_path_ = std::move(path); }
+void RenderEngine::end() {
+    if (!capture_path_.empty()) {
+        SDL_Surface* native = SDL_RenderReadPixels(renderer_, nullptr);
+        if (!native) fail("frame capture failed");
+        SDL_Surface* rgba = SDL_ConvertSurface(native, SDL_PIXELFORMAT_RGBA32);
+        SDL_DestroySurface(native);
+        if (!rgba) fail("frame capture conversion failed");
+        png_image image{};
+        image.version = PNG_IMAGE_VERSION;
+        image.width = static_cast<png_uint_32>(rgba->w);
+        image.height = static_cast<png_uint_32>(rgba->h);
+        image.format = PNG_FORMAT_RGBA;
+        const auto filename = capture_path_.string();
+        if (!png_image_write_to_file(&image, filename.c_str(), 0, rgba->pixels, rgba->pitch, nullptr)) {
+            SDL_DestroySurface(rgba);
+            throw std::runtime_error("PNG capture write failed: " + filename);
+        }
+        SDL_DestroySurface(rgba);
+        capture_path_.clear();
+    }
+    SDL_RenderPresent(renderer_);
+}
 
 } // namespace sagas

@@ -2,6 +2,8 @@
 
 #include <sagas/Core.hpp>
 
+#include <filesystem>
+
 struct SDL_Renderer;
 struct SDL_Texture;
 struct SDL_Window;
@@ -18,7 +20,9 @@ public:
     void sprite(std::string_view logical, Vec2 center, Vec2 scale = {1, 1},
                 Color tint = {255, 255, 255, 255});
     void fill(float x, float y, float w, float h, Color color);
-    void triangles(std::span<const TriangleVertex> vertices);
+    void triangles(std::span<const TriangleVertex> vertices,
+                   const std::shared_ptr<const RasterImage>& image = {});
+    void request_capture(std::filesystem::path path);
     void end();
 private:
     struct Texture { SDL_Texture* handle{}; float width{}, height{}; };
@@ -26,6 +30,8 @@ private:
     SDL_Renderer* renderer_{};
     AssetRepository& assets_;
     std::unordered_map<std::string, Texture> textures_;
+    std::unordered_map<const RasterImage*, SDL_Texture*> raster_textures_;
+    std::filesystem::path capture_path_;
 };
 
 } // namespace sagas

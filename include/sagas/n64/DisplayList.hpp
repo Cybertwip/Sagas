@@ -10,6 +10,7 @@ struct Vertex {
     Vec3 normal{};
     bool lit{};
     Color color{255, 255, 255, 255};
+    std::shared_ptr<const RasterImage> texture;
 };
 
 struct Mesh {
@@ -27,7 +28,9 @@ private:
     struct State;
     void list(Mesh& mesh, State& state, Address address, int depth);
     void triangle(Mesh& mesh, State& state, unsigned a, unsigned b, unsigned c);
+    [[nodiscard]] std::shared_ptr<const RasterImage> texture(State& state);
     RelocArchive& archive_;
+    std::unordered_map<std::string, std::shared_ptr<const RasterImage>> textures_;
 };
 
 } // namespace sagas::n64

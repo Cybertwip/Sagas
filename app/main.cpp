@@ -13,8 +13,9 @@ int main(int argc, char** argv) {
             else if (arg == "--title") options.start_at_title = true;
             else if (arg == "--headless") options.headless = true;
             else if (arg == "--frames" && i + 1 < argc) options.frame_limit = std::stoi(argv[++i]);
+            else if (arg == "--capture" && i + 1 < argc) options.capture_path = argv[++i];
             else if (arg == "--help") {
-                std::cout << "Sagas [--assets PATH] [--title] [--headless] [--frames N]\n";
+                std::cout << "Sagas [--assets PATH] [--title] [--headless] [--frames N] [--capture PNG]\n";
                 return 0;
             } else throw std::runtime_error("unknown argument: " + std::string(arg));
         }
@@ -24,4 +25,3 @@ int main(int argc, char** argv) {
         return 1;
     }
 }
-

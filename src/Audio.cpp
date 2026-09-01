@@ -146,7 +146,23 @@ void AudioEngine::play(std::string_view logical, float gain) {
     queue(pcm.samples, pcm.rate);
 }
 AudioEngine::PreparedAudio AudioEngine::synthesize_music(std::string logical, float gain) {
-    const auto package = load_music(*assets_.blob(logical));
+    const auto bytes = assets_.blob(logical);
+    if (bytes->size() >= 16 && std::memcmp(bytes->data(), "SGPC", 4) == 0) {
+        const auto rate = le32(bytes->data() + 4);
+        const auto channels = le32(bytes->data() + 8);
+        const auto count = le32(bytes->data() + 12);
+        if (rate == 0 || channels == 0 || channels > 8 || count > (bytes->size() - 16) / 2)
+            throw std::runtime_error("invalid baked Sagas PCM package");
+        std::vector<std::int16_t> samples(count);
+        for (std::size_t i = 0; i < samples.size(); ++i) {
+            const auto value = static_cast<std::int16_t>(
+                std::to_integer<std::uint16_t>((*bytes)[16 + i * 2]) |
+                (std::to_integer<std::uint16_t>((*bytes)[17 + i * 2]) << 8));
+            samples[i] = static_cast<std::int16_t>(std::clamp(value * gain, -32768.0f, 32767.0f));
+        }
+        return {std::move(samples), static_cast<int>(rate), static_cast<int>(channels)};
+    }
+    const auto package = load_music(*bytes);
     struct Channel { int program{}, volume{127}, pan{64}, bend{8192}, bend_range{200}; bool sustain{}; };
     struct Voice {
         const MusicSound* sound{}; const Pcm* pcm{}; int channel{}, note{}, velocity{};

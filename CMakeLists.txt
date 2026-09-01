@@ -36,6 +36,7 @@ add_custom_target(sagas_assets ALL DEPENDS "${SAGAS_ASSET_STAMP}")
 
 set(SAGAS_OPENING_CSEQ "${CMAKE_CURRENT_BINARY_DIR}/generated/seq_33_Opening.cseq")
 set(SAGAS_OPENING_MUSIC "${SAGAS_ASSET_ROOT}/audio/opening.sgm")
+set(SAGAS_OPENING_PCM "${SAGAS_ASSET_ROOT}/audio/opening.sgpcm")
 add_custom_command(
     OUTPUT "${SAGAS_OPENING_CSEQ}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
@@ -60,7 +61,18 @@ add_custom_command(
             "${SAGAS_REMIX_ROOT}/game/build/us/src/audio/B1_sounds1.ctl.json"
             "${SAGAS_ASSET_STAMP}"
     VERBATIM)
-add_custom_target(sagas_music_assets ALL DEPENDS "${SAGAS_OPENING_MUSIC}")
+add_custom_command(
+    OUTPUT "${SAGAS_OPENING_PCM}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_music.py"
+            --input "${SAGAS_OPENING_MUSIC}"
+            --wave-root "${SAGAS_ASSET_ROOT}/audio/B1_sounds1"
+            --output "${SAGAS_OPENING_PCM}"
+            --gain 0.72
+    DEPENDS "${SAGAS_OPENING_MUSIC}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_music.py"
+            "${SAGAS_ASSET_STAMP}"
+    COMMENT "Baking opening music for zero-stall playback"
+    VERBATIM)
+add_custom_target(sagas_music_assets ALL DEPENDS "${SAGAS_OPENING_PCM}")
 
 set(SAGAS_OPENING_SCENE "${SAGAS_ASSET_ROOT}/scenes/opening.sgscene")
 add_custom_command(

@@ -155,14 +155,14 @@ public:
     void enter(Services& services) override {
         services.resources.load_manifest("scenes/opening.sgscene");
         services.resources.prefetch("room.base");
-        services.audio.preload_music("audio/opening.sgm", 0.72f);
+        services.audio.preload_music("audio/opening.sgpcm", 1.0f);
     }
     void update(Services& services, const InputState& input, float) override {
         ++frame_;
         if (frame_ >= 8 && (input.accept_pressed || input.cancel_pressed || input.skip_pressed)) {
             skip_ = done_ = true;
         } else if (frame_ >= 53 && services.resources.ready("room.base") &&
-                   services.audio.music_ready("audio/opening.sgm")) {
+                   services.audio.music_ready("audio/opening.sgpcm")) {
             done_ = true;
         }
     }
@@ -195,7 +195,7 @@ public:
         resources_->activate("room.base");
         loader_ = &resources_->loader();
         renderer_ = std::make_unique<Scene3DRenderer>(resources_->archive());
-        services.audio.play_music("audio/opening.sgm", 0.72f);
+        services.audio.play_music("audio/opening.sgpcm", 1.0f);
         resources_->prefetch("room.action");
     }
     void update(Services& services, const InputState& input, float) override {

@@ -185,6 +185,18 @@ public:
         archive_ = std::make_unique<n64::RelocArchive>(services.assets);
         loader_ = std::make_unique<Scene3DLoader>(*archive_);
         renderer_ = std::make_unique<Scene3DRenderer>(*archive_);
+        room_background_ = loader_->model("llMVCommonRoomBackgroundDObjDesc", {}, GeometryLayout::DisplayListLinks);
+        room_sunlight_ = loader_->display_list("llMVCommonRoomSunlightDisplayList", GeometryLayout::DisplayListLinks);
+        room_desk_ = loader_->model("llMVCommonRoomDeskDObjDesc", {}, GeometryLayout::Direct);
+        room_outside_ = loader_->display_list("llMVCommonRoomOutsideDisplayList", GeometryLayout::DisplayListLinks);
+        room_haze_ = loader_->display_list("llMVCommonRoomHazeDisplayList", GeometryLayout::DisplayListLinks);
+        room_books_ = loader_->model("llMVCommonRoomBooksDObjDesc", "llMVCommonRoomBooksAnimJoint", GeometryLayout::Direct);
+        room_pencils_ = loader_->model("llMVCommonRoomPencilsDObjDesc", "llMVCommonRoomPencilsAnimJoint", GeometryLayout::Direct);
+        room_lamp_ = loader_->model("llMVCommonRoomLampDObjDesc", "llMVCommonRoomLampAnimJoint", GeometryLayout::Direct);
+        room_tissues_ = loader_->display_list("llMVCommonRoomTissuesDisplayList");
+        if (const auto animation = archive_->symbol("llMVCommonRoomTissuesAnimJoint"))
+            room_tissues_.animation[0] = animation;
+        room_desk_ground_ = loader_->model("llMVCommonRoomDeskGroundDObjDesc", {}, GeometryLayout::DisplayListLinks);
         yoster_nest_ = loader_->model("llMVOpeningYosterNestDObjDesc");
         yoster_ground_ = loader_->model("llMVOpeningYosterGroundDObjDesc", "llMVOpeningYosterGroundAnimJoint");
         cliff_hills_ = loader_->model("llMVOpeningCliffHillsDObjDesc", {}, GeometryLayout::Direct);
@@ -283,11 +295,51 @@ private:
     static void wallpaper(RenderEngine& r, std::string_view name, Vec2 scale = {1,1}) {
         r.sprite(std::string("textures/") + std::string(name), {160,120}, scale);
     }
-    static void room(RenderEngine& r, int local) {
-        wallpaper(r, "MVOpeningRoomWallpaper.png");
-        // Match the long, restrained camera move of the 22-second room shot.
-        const float glow = 22.0f + 18.0f * std::sin(local * std::numbers::pi_v<float> / 660.0f);
-        r.fill(10, 10, 300, 220, {255, 225, 175, static_cast<std::uint8_t>(glow)});
+    void room(RenderEngine& r, int local) {
+        // These are the four original camera programs and scene changes from
+        // mvOpeningRoomFuncRun.  The wallpaper only exists after tic 1040.
+        Camera3D camera;
+        float camera_frame{};
+        if (local < 560) {
+            camera.near_plane = 80;
+            camera.far_plane = 15000;
+            camera_frame = static_cast<float>(local);
+            camera = loader_->camera("llMVOpeningRoomScene1CamAnimJoint", camera_frame, camera);
+        } else if (local < 860) {
+            camera_frame = static_cast<float>(local - 560);
+            camera = loader_->camera("llMVOpeningRoomScene2CamAnimJoint", camera_frame, camera);
+        } else if (local < 1140) {
+            camera = {{9.2993f,3880.3894f,4077.9817f}, {0.991579f,2995.6814f,-388.95343f},
+                      {0,1,0}, 18.607187f,128,16384};
+            camera_frame = static_cast<float>(local - 860);
+            camera = loader_->camera("llMVOpeningRoomScene3CamAnimJoint", camera_frame, camera);
+        } else {
+            camera = {{-1039.8806f,3199.2156f,-1235.1688f}, {-1162.4098f,2127.8245f,-3853.0732f},
+                      {0,1,0}, 11.982265f,128,16384};
+            camera_frame = static_cast<float>(local - 1140);
+            camera = loader_->camera("llMVOpeningRoomScene4CamAnimJoint", camera_frame, camera);
+        }
+
+        LightingRig warm_room;
+        warm_room.ambient = {128,112,104,255};
+        warm_room.ambient_intensity = 0.48f;
+        warm_room.key = {{-0.28f,0.78f,0.56f},{255,236,204,255},0.92f};
+        if (local < 1040) {
+            renderer_->draw(r, room_outside_, camera, camera_frame, {210,226,255,255}, warm_room);
+            renderer_->draw(r, room_haze_, camera, camera_frame, {220,225,235,150}, warm_room);
+            renderer_->draw(r, room_background_, camera, static_cast<float>(local), {255,255,255,255}, warm_room);
+            if (local < 450) renderer_->draw(r, room_sunlight_, camera, camera_frame, {255,240,190,150}, warm_room);
+            renderer_->draw(r, room_desk_, camera, camera_frame, {255,255,255,255}, warm_room);
+            const float prop_frame = static_cast<float>(std::max(local - 560, 0));
+            renderer_->draw(r, room_books_, camera, prop_frame, {255,255,255,255}, warm_room);
+            if (local >= 280) renderer_->draw(r, room_pencils_, camera, prop_frame, {255,255,255,255}, warm_room);
+            renderer_->draw(r, room_lamp_, camera, prop_frame, {255,255,255,255}, warm_room);
+            renderer_->draw(r, room_tissues_, camera, prop_frame, {255,255,255,255}, warm_room);
+        } else {
+            wallpaper(r, "MVOpeningRoomWallpaper.png");
+            renderer_->draw(r, room_desk_ground_, camera, static_cast<float>(std::max(local - 1060, 0)),
+                            {255,255,255,255}, warm_room);
+        }
     }
     static void portraits(RenderEngine& r, int local) {
         static constexpr std::array<std::string_view, 4> set1{"Samus", "Mario", "Fox", "Pikachu"};
@@ -333,6 +385,8 @@ private:
     Model3D yoster_nest_, yoster_ground_, cliff_hills_, cliff_ocarina_;
     Model3D yamabuki_legs_, yamabuki_shadow_, yamabuki_ball_;
     Model3D sector_great_fox_, standoff_ground_, standoff_lightning_;
+    Model3D room_background_, room_sunlight_, room_desk_, room_outside_, room_haze_;
+    Model3D room_books_, room_pencils_, room_lamp_, room_tissues_, room_desk_ground_;
 };
 
 class TitleScene final : public Scene {

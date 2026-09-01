@@ -252,7 +252,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                         };
                         out.vertex.normal = {component(24), component(16), component(8)};
                         out.vertex.color = {state.primitive.r, state.primitive.g, state.primitive.b,
-                                            static_cast<std::uint8_t>(packed)};
+                                            255};
                     } else {
                         out.vertex.color = Color{static_cast<std::uint8_t>(packed >> 24),
                             static_cast<std::uint8_t>(packed >> 16), static_cast<std::uint8_t>(packed >> 8),

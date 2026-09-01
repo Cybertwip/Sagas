@@ -198,6 +198,21 @@ public:
             room_tissues_.animation[0] = animation;
         room_desk_ground_ = loader_->model("llMVCommonRoomDeskGroundDObjDesc", {}, GeometryLayout::DisplayListLinks);
         room_logo_ = loader_->model("llMVCommonRoomLogoDObjDesc", {}, GeometryLayout::DisplayListLinks);
+        room_snap_ = loader_->model("llMVCommonRoomSnapDObjDesc", "llMVCommonRoomSnapAnimJoint");
+        room_closeup_air_ = loader_->model("llMVCommonRoomCloseUpEffectAirDObjDesc",
+                                           "llMVCommonRoomCloseUpEffectAirAnimJoint");
+        room_closeup_ground_ = loader_->model("llMVCommonRoomCloseUpEffectGroundDObjDesc",
+                                              "llMVCommonRoomCloseUpEffectGroundAnimJoint");
+        room_boss_shadow_ = loader_->display_list("llMVCommonRoomBossShadowDisplayList");
+        if (const auto animation = archive_->symbol("llMVCommonRoomBossShadowAnimJoint"))
+            room_boss_shadow_.animation[0] = animation;
+        room_spotlight_ = loader_->display_list("llMVCommonRoomSpotlightDisplayList");
+        room_transition_outline_ = loader_->display_list("llMVOpeningRoomTransitionOutlineDisplayList");
+        room_transition_overlay_ = loader_->display_list("llMVOpeningRoomTransitionOverlayDisplayList");
+        if (const auto animation = archive_->symbol("llMVOpeningRoomTransitionOutlineAnimJoint"))
+            room_transition_outline_.animation[0] = animation;
+        if (const auto animation = archive_->symbol("llMVOpeningRoomTransitionOverlayAnimJoint"))
+            room_transition_overlay_.animation[0] = animation;
         n64::AnimationDecoder animation(*archive_);
         const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file, GeometryLayout layout = GeometryLayout::Direct) {
             auto model = loader_->model(descriptor, {}, layout);
@@ -348,6 +363,8 @@ private:
             renderer_->draw(r, room_haze_, camera, camera_frame, {220,225,235,150}, warm_room);
             renderer_->draw(r, room_background_, camera, static_cast<float>(local), {255,255,255,255}, warm_room);
             if (local < 450) renderer_->draw(r, room_sunlight_, camera, camera_frame, {255,240,190,150}, warm_room);
+            if (local < 280) renderer_->draw(r,room_boss_shadow_,camera,static_cast<float>(local),
+                                             {90,80,78,150},warm_room);
             renderer_->draw(r, room_desk_, camera, camera_frame, {255,255,255,255}, warm_room);
             const float prop_frame = static_cast<float>(std::max(local - 560, 0));
             renderer_->draw(r, room_books_, camera, prop_frame, {255,255,255,255}, warm_room);
@@ -375,12 +392,26 @@ private:
                 }
             }
             if (local >= 695) renderer_->draw(r,link_fall_,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
+            if (local >= 500) renderer_->draw(r,room_spotlight_,camera,static_cast<float>(local-500),
+                                              {255,244,210,105},warm_room);
+            if (local >= 860) renderer_->draw(r,room_snap_,camera,static_cast<float>(local-860),
+                                              {255,255,255,255},warm_room);
         } else {
             wallpaper(r, "MVOpeningRoomWallpaper.png");
             renderer_->draw(r, room_desk_ground_, camera, static_cast<float>(std::max(local - 1060, 0)),
                             {255,255,255,255}, warm_room);
-            if (local >= 1140) renderer_->draw(r,mario_revival_,camera,static_cast<float>(local-1140),
-                                               {255,255,255,255},warm_room);
+            if (local < 1140) {
+                Camera3D transition_camera{{0,0,1000},{0,0,0},{0,1,0},39.56115341f,128,16384};
+                renderer_->draw(r,room_transition_outline_,transition_camera,static_cast<float>(local-1040),
+                                {255,255,255,255},warm_room);
+                renderer_->draw(r,room_transition_overlay_,transition_camera,static_cast<float>(local-1040),
+                                {255,255,255,190},warm_room);
+            } else {
+                const float closeup_frame=static_cast<float>(local-1140);
+                renderer_->draw(r,room_closeup_ground_,camera,closeup_frame,{255,255,255,255},warm_room);
+                renderer_->draw(r,room_closeup_air_,camera,closeup_frame,{255,255,255,210},warm_room);
+                renderer_->draw(r,mario_revival_,camera,closeup_frame,{255,255,255,255},warm_room);
+            }
         }
     }
     static void portraits(RenderEngine& r, int local) {
@@ -429,6 +460,8 @@ private:
     Model3D sector_great_fox_, standoff_ground_, standoff_lightning_;
     Model3D room_background_, room_sunlight_, room_desk_, room_outside_, room_haze_;
     Model3D room_books_, room_pencils_, room_lamp_, room_tissues_, room_desk_ground_, room_logo_;
+    Model3D room_snap_, room_closeup_air_, room_closeup_ground_, room_boss_shadow_, room_spotlight_;
+    Model3D room_transition_outline_, room_transition_overlay_;
     Model3D boss_pose1_, boss_pose2_, boss_pose3_;
     Model3D mario_pickup_, mario_fall_, mario_revival_, link_fall_;
 };

@@ -190,6 +190,8 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
     const Vec3 right=normalize(cross(forward,camera.up));
     const Vec3 up=cross(right,forward);
     const float focal=1.0f/std::tan(camera.fov_y*0.008726646259971648f);
+    constexpr float focal_x=112.5f; // 300px viewport at the N64 camera's 4:3 aspect
+    constexpr float focal_y=110.0f; // original viewport spans y=10..230
     const auto matrices=world_matrices(animation_,model,frame);
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
         const Matrix& world=matrices[node_index];
@@ -248,14 +250,14 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 for (int j=0;j<3;++j) {
                     const auto& source=clipped[j];
                     const float depth=dot(source.relative,forward);
-                    triangle[j]={{160+dot(source.relative,right)*focal*150/depth,
-                                  120-dot(source.relative,up)*focal*150/depth},source.color,source.uv,depth};
+                    triangle[j]={{160+dot(source.relative,right)*focal*focal_x/depth,
+                                  120-dot(source.relative,up)*focal*focal_y/depth},source.color,source.uv,depth};
                 }
                 triangles_.push_back({triangle,mesh.vertices[i].texture});
             }
         }
     }
-    if (model.fighter_animation && std::getenv("SAGAS_TRACE_FIGHTERS")) {
+    if ((model.fighter_animation || triangles_.size()-queued_before==34) && std::getenv("SAGAS_TRACE_FIGHTERS")) {
         float min_x=std::numeric_limits<float>::infinity(),min_y=min_x,max_x=-min_x,max_y=-min_x;
         for (std::size_t i=queued_before;i<triangles_.size();++i) for (const auto& point:triangles_[i].points) {
             min_x=std::min(min_x,point.position.x); min_y=std::min(min_y,point.position.y);

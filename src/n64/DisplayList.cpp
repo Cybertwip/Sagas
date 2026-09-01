@@ -166,6 +166,15 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
     const float height = image ? static_cast<float>(image->height) : 1.0f;
     for (const unsigned index : {a,b,c}) {
         auto vertex = state.cache[index].vertex;
+        // MObj segment branches execute between vertex loads and triangle
+        // commands in several fighter/room display lists.  Light and
+        // primitive state therefore belongs to triangle emission time, not
+        // to the earlier cache load.
+        if (vertex.lit) {
+            vertex.color=state.primitive;
+            vertex.light1=state.light1;
+            vertex.light2=state.light2;
+        }
         vertex.texture = image;
         float u=(vertex.u*state.texture_scale_s - tile.uls*0.25f);
         float v=(vertex.v*state.texture_scale_t - tile.ult*0.25f);

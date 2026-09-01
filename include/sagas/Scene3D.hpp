@@ -21,11 +21,16 @@ struct Model3D {
     enum class FighterWrapper { None, TransN, XRotN };
     std::vector<n64::Node> nodes;
     std::vector<n64::Mesh> meshes;
+    // Fighter JointPairs slot 0 is drawn in the parent matrix; slot 1 is
+    // drawn after applying the current joint matrix.
+    std::vector<n64::Mesh> parent_meshes;
     std::vector<std::optional<n64::Address>> animation;
     n64::Node fighter_root{};
     std::optional<n64::Address> fighter_root_animation;
     FighterWrapper fighter_wrapper{FighterWrapper::None};
     bool fighter_animation{};
+    bool receive_lighting{true};
+    bool honor_vertex_alpha{};
     Vec3 position{};
     Vec3 rotation{};
     Vec3 scale{1,1,1};

@@ -45,6 +45,18 @@ int main() {
     assert(std::abs(fighter_pose.tracks[0]) < 10.0f);
     assert(fighter_pose.tracks[7] > 0.01f && fighter_pose.tracks[7] < 10.0f);
     const auto mario_model = scene_loader.fighter_model("llMarioModelJointTreeDObjDesc", sagas::GeometryLayout::Direct);
+    std::size_t mario_material_commands{};
+    for (const auto& part:mario_model.meshes) mario_material_commands+=part.material_commands;
+    assert(mario_material_commands>0);
+    const auto mario_materials=sagas::n64::DisplayListDecoder(archive).materials({296,0},mario_model.nodes.size());
+    std::size_t mario_material_count{};
+    bool saw_material_image{}, saw_material_primitive{};
+    for (const auto& joint:mario_materials) for (const auto& material:joint) {
+        ++mario_material_count;
+        saw_material_image|=material.image.has_value();
+        saw_material_primitive|=material.set_primitive;
+    }
+    assert(mario_material_count>=14 && saw_material_image && saw_material_primitive);
     const auto boss_model = scene_loader.model("llBossModelJointTreeDObjDesc", {}, sagas::GeometryLayout::JointPairs);
     auto boss_animated=boss_model;
     const auto boss_scripts=animation_decoder.table({458,0},boss_animated.nodes.size()+1);
@@ -116,5 +128,11 @@ int main() {
         assert(triangles > 0);
     }
     assert(saw_lit && saw_unlit && saw_textured && saw_repeated_clamp_tile);
+    const sagas::LightingRig test_lights{};
+    const auto front_lit=sagas::LightingSystem::shade({180,180,180,255},{-0.35f,0.72f,0.60f},
+                                                       {0,0,1},test_lights);
+    const auto back_lit=sagas::LightingSystem::shade({180,180,180,255},{0.35f,-0.72f,-0.60f},
+                                                      {0,0,1},test_lights);
+    assert(front_lit.r>back_lit.r && front_lit.g>back_lit.g);
     std::cout << "Sagas core tests passed\n";
 }

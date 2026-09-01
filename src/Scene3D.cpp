@@ -99,6 +99,7 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
     Model3D model;
     model.nodes = n64::SkeletonDecoder(archive_).decode(*desc);
     model.meshes.resize(model.nodes.size());
+    model.parent_meshes.resize(model.nodes.size());
     n64::DisplayListDecoder decoder(archive_);
     std::vector<std::vector<n64::Material>> materials(model.nodes.size());
     if (!material_symbol.empty()) {
@@ -107,8 +108,13 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
         materials=decoder.materials(*table,model.nodes.size());
     }
     for (std::size_t i=0; i<model.nodes.size(); ++i) if (model.nodes[i].display_list) {
-        if (layout == GeometryLayout::JointPairs)
-            model.meshes[i] = decoder.decode_pairs(*model.nodes[i].display_list,materials[i]);
+        if (layout == GeometryLayout::JointPairs) {
+            const auto pair=*model.nodes[i].display_list;
+            if (const auto parent=archive_.resolve(pair))
+                model.parent_meshes[i]=decoder.decode(*parent,materials[i]);
+            if (const auto local=archive_.resolve({pair.file,pair.offset+4}))
+                model.meshes[i]=decoder.decode(*local,materials[i]);
+        }
         else if (layout == GeometryLayout::DisplayListLinks)
             model.meshes[i] = decoder.decode_links(*model.nodes[i].display_list,materials[i]);
         else
@@ -128,12 +134,18 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
     Model3D model;
     model.nodes=n64::SkeletonDecoder(archive_).decode(*desc);
     model.meshes.resize(model.nodes.size());
+    model.parent_meshes.resize(model.nodes.size());
     model.animation.resize(model.nodes.size());
     n64::DisplayListDecoder decoder(archive_);
     const auto materials=decoder.materials({desc->file,0},model.nodes.size());
     for (std::size_t i=0;i<model.nodes.size();++i) if (model.nodes[i].display_list) {
-        if (layout==GeometryLayout::JointPairs)
-            model.meshes[i]=decoder.decode_pairs(*model.nodes[i].display_list,materials[i]);
+        if (layout==GeometryLayout::JointPairs) {
+            const auto pair=*model.nodes[i].display_list;
+            if (const auto parent=archive_.resolve(pair))
+                model.parent_meshes[i]=decoder.decode(*parent,materials[i]);
+            if (const auto local=archive_.resolve({pair.file,pair.offset+4}))
+                model.meshes[i]=decoder.decode(*local,materials[i]);
+        }
         else if (layout==GeometryLayout::DisplayListLinks)
             model.meshes[i]=decoder.decode_links(*model.nodes[i].display_list,materials[i]);
         else model.meshes[i]=decoder.decode(*model.nodes[i].display_list,materials[i]);
@@ -147,6 +159,7 @@ Model3D Scene3DLoader::display_list(std::string_view symbol, GeometryLayout layo
     if (!address) throw std::runtime_error("missing display-list symbol: " + std::string(symbol));
     Model3D model;
     model.nodes.push_back({0,0,{}, {0,0,0},{0,0,0},{1,1,1}, address});
+    model.parent_meshes.resize(1);
     n64::DisplayListDecoder decoder(archive_);
     std::vector<n64::Material> materials;
     if (!material_symbol.empty()) {
@@ -155,8 +168,13 @@ Model3D Scene3DLoader::display_list(std::string_view symbol, GeometryLayout layo
         auto decoded=decoder.materials(*table,1);
         materials=std::move(decoded.front());
     }
-    if (layout == GeometryLayout::JointPairs)
-        model.meshes.push_back(decoder.decode_pairs(*address,materials));
+    if (layout == GeometryLayout::JointPairs) {
+        if (const auto parent=archive_.resolve(*address))
+            model.parent_meshes[0]=decoder.decode(*parent,materials);
+        if (const auto local=archive_.resolve({address->file,address->offset+4}))
+            model.meshes.push_back(decoder.decode(*local,materials));
+        else model.meshes.emplace_back();
+    }
     else if (layout == GeometryLayout::DisplayListLinks)
         model.meshes.push_back(decoder.decode_links(*address,materials));
     else
@@ -232,20 +250,35 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
     constexpr float focal_x=112.5f; // 300px viewport at the N64 camera's 4:3 aspect
     constexpr float focal_y=110.0f; // original viewport spans y=10..230
     const auto matrices=world_matrices(animation_,model,frame);
+    std::array<std::size_t,18> latest_at_depth{};
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
         const Matrix& world=matrices[node_index];
-        const auto& mesh=model.meshes[node_index];
+        const auto render_mesh=[&](const n64::Mesh& mesh,const Matrix& mesh_world) {
         for (std::size_t i=0;i+2<mesh.vertices.size();i+=3) {
+            std::array<Vec3,3> world_points{};
+            for (int j=0;j<3;++j) {
+                const auto& source=mesh.vertices[i+j];
+                world_points[j]=transform(mesh_world,{source.x,source.y,source.z});
+            }
+            Vec3 face_normal=normalize(cross(sub(world_points[1],world_points[0]),
+                                             sub(world_points[2],world_points[0])));
+            const Vec3 center{(world_points[0].x+world_points[1].x+world_points[2].x)/3.0f,
+                              (world_points[0].y+world_points[1].y+world_points[2].y)/3.0f,
+                              (world_points[0].z+world_points[1].z+world_points[2].z)/3.0f};
+            if (dot(face_normal,sub(camera.eye,center))<0.0f)
+                face_normal={-face_normal.x,-face_normal.y,-face_normal.z};
             struct CameraVertex { Vec3 relative; Color color; Vec2 uv; Vec3 normal; Vec3 view_direction; };
             std::vector<CameraVertex> polygon;
             polygon.reserve(5);
             for (int j=0;j<3;++j) {
                 const auto& source=mesh.vertices[i+j];
-                const Vec3 point=transform(world,{source.x,source.y,source.z});
+                const Vec3 point=world_points[j];
                 const Vec3 relative=sub(point,camera.eye);
-                Color color=modulate(source.color,tint);
+                Color surface=source.color;
+                if (!model.honor_vertex_alpha) surface.a=255;
+                Color color=modulate(surface,tint);
                 polygon.push_back({relative,color,{source.u,source.v},
-                                   normalize(transform_direction(world,source.normal)),
+                                   source.lit ? normalize(transform_direction(mesh_world,source.normal)) : face_normal,
                                    normalize(sub(camera.eye,point))});
             }
             const auto clip = [&](float plane, bool keep_greater) {
@@ -304,9 +337,19 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 triangles_.push_back({triangle,sampler.texture,sampler.texture_mode_s,sampler.texture_mode_t,
                                       sampler.texture_mask_s,sampler.texture_mask_t,
                                       sampler.texture_window_s,sampler.texture_window_t,lights,
-                                      sampler.light1,sampler.light2,sampler.lit,soft_edges});
+                                      sampler.light1,sampler.light2,sampler.lit||model.receive_lighting,soft_edges});
             }
         }
+        };
+        if (node_index<model.parent_meshes.size() && !model.parent_meshes[node_index].vertices.empty()) {
+            const auto depth=model.nodes[node_index].depth;
+            const Matrix& parent_world=(depth>0 && depth<=18)
+                ? matrices[latest_at_depth[static_cast<std::size_t>(depth-1)]] : world;
+            render_mesh(model.parent_meshes[node_index],parent_world);
+        }
+        render_mesh(model.meshes[node_index],world);
+        const auto depth=model.nodes[node_index].depth;
+        if (depth>=0 && depth<18) latest_at_depth[static_cast<std::size_t>(depth)]=node_index;
     }
     if (immediate) flush(render);
 }
@@ -376,15 +419,27 @@ void Scene3DRenderer::flush(RenderEngine& render) {
                     }
                     return sampled/extent;
                 };
-                u=sample_coordinate(u,triangle.texture->width,triangle.texture_mode_s,
-                                    triangle.texture_mask_s,triangle.texture_window_s);
-                v=sample_coordinate(v,triangle.texture->height,triangle.texture_mode_t,
-                                    triangle.texture_mask_t,triangle.texture_window_t);
-                const int tx=std::clamp(static_cast<int>(u*triangle.texture->width),0,triangle.texture->width-1);
-                const int ty=std::clamp(static_cast<int>(v*triangle.texture->height),0,triangle.texture->height-1);
-                const auto texel=static_cast<std::size_t>((ty*triangle.texture->width+tx)*4);
-                texture_color={triangle.texture->rgba[texel],triangle.texture->rgba[texel+1],
-                               triangle.texture->rgba[texel+2],triangle.texture->rgba[texel+3]};
+                const float sample_x=sample_coordinate(u,triangle.texture->width,triangle.texture_mode_s,
+                                                       triangle.texture_mask_s,triangle.texture_window_s)
+                                     *triangle.texture->width;
+                const float sample_y=sample_coordinate(v,triangle.texture->height,triangle.texture_mode_t,
+                                                       triangle.texture_mask_t,triangle.texture_window_t)
+                                     *triangle.texture->height;
+                const int x0=std::clamp(static_cast<int>(std::floor(sample_x)),0,triangle.texture->width-1);
+                const int y0=std::clamp(static_cast<int>(std::floor(sample_y)),0,triangle.texture->height-1);
+                const int x1=std::min(x0+1,triangle.texture->width-1);
+                const int y1=std::min(y0+1,triangle.texture->height-1);
+                const float fx=std::clamp(sample_x-x0,0.0f,1.0f);
+                const float fy=std::clamp(sample_y-y0,0.0f,1.0f);
+                const auto texel=[&](int x,int y,int component) {
+                    return triangle.texture->rgba[static_cast<std::size_t>((y*triangle.texture->width+x)*4+component)];
+                };
+                const auto filtered=[&](int component) {
+                    const float top=texel(x0,y0,component)*(1-fx)+texel(x1,y0,component)*fx;
+                    const float bottom=texel(x0,y1,component)*(1-fx)+texel(x1,y1,component)*fx;
+                    return channel(top*(1-fy)+bottom*fy);
+                };
+                texture_color={filtered(0),filtered(1),filtered(2),filtered(3)};
             }
             Color vertex_color{
                 channel(w0*a.color.r+w1*b.color.r+w2*c.color.r),

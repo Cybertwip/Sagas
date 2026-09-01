@@ -4,6 +4,16 @@
 
 namespace sagas::n64 {
 
+struct Material {
+    std::optional<Address> image;
+    std::optional<Address> palette;
+    unsigned format{}, size{}, width{1}, height{1};
+    float texture_scale_s{1}, texture_scale_t{1};
+    unsigned tile_uls{}, tile_ult{}, tile_lrs{}, tile_lrt{};
+    Color primitive{255,255,255,255};
+    bool set_primitive{};
+};
+
 struct Vertex {
     float x{}, y{}, z{};
     float u{}, v{};
@@ -25,9 +35,10 @@ struct Mesh {
 class DisplayListDecoder final {
 public:
     explicit DisplayListDecoder(RelocArchive& archive) : archive_(archive) {}
-    [[nodiscard]] Mesh decode(Address display_list);
-    [[nodiscard]] Mesh decode_links(Address links);
-    [[nodiscard]] Mesh decode_pairs(Address pairs);
+    [[nodiscard]] std::vector<std::vector<Material>> materials(Address table, std::size_t count);
+    [[nodiscard]] Mesh decode(Address display_list, std::span<const Material> materials = {});
+    [[nodiscard]] Mesh decode_links(Address links, std::span<const Material> materials = {});
+    [[nodiscard]] Mesh decode_pairs(Address pairs, std::span<const Material> materials = {});
 private:
     struct State;
     void list(Mesh& mesh, State& state, Address address, int depth);

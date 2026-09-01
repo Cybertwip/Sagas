@@ -44,8 +44,12 @@ int main() {
     for (const auto value : fighter_pose.tracks) assert(std::isfinite(value));
     assert(std::abs(fighter_pose.tracks[0]) < 10.0f);
     assert(fighter_pose.tracks[7] > 0.01f && fighter_pose.tracks[7] < 10.0f);
-    const auto mario_model = scene_loader.model("llMarioModelJointTreeDObjDesc", {}, sagas::GeometryLayout::Direct);
+    const auto mario_model = scene_loader.fighter_model("llMarioModelJointTreeDObjDesc", sagas::GeometryLayout::Direct);
     const auto boss_model = scene_loader.model("llBossModelJointTreeDObjDesc", {}, sagas::GeometryLayout::JointPairs);
+    std::size_t mario_material_textures{};
+    for (const auto& part:mario_model.meshes) for (const auto& vertex:part.vertices)
+        if (vertex.texture) ++mario_material_textures;
+    std::cout << "material-backed Mario vertices: " << mario_material_textures << '\n';
     auto boss_animated=boss_model;
     boss_animated.animation=animation_decoder.table({458,0},boss_animated.nodes.size());
     boss_animated.fighter_animation=true;

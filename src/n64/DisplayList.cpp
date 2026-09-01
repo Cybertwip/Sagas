@@ -30,6 +30,7 @@ struct DisplayListDecoder::State {
     std::uint32_t geometry_mode{0x00020000U};
     bool lighting{true};
     Color primitive{255,255,255,255};
+    std::span<const Material> materials;
 };
 
 namespace {
@@ -43,21 +44,80 @@ Color rgba16(std::uint16_t value) {
 
 } // namespace
 
-Mesh DisplayListDecoder::decode(Address display_list) {
+std::vector<std::vector<Material>> DisplayListDecoder::materials(Address table, std::size_t count) {
+    std::vector<std::vector<Material>> result(count);
+    const auto byte=[&](Address at) {
+        const auto data=archive_.bytes(at.file);
+        return at.offset<data.size() ? std::to_integer<unsigned>(data[at.offset]) : 0U;
+    };
+    const auto half=[&](Address at) {
+        return static_cast<unsigned>(static_cast<std::uint16_t>(archive_.s16(at)));
+    };
+    for (std::size_t node=0;node<count;++node) {
+        const Address slot{table.file,table.offset+static_cast<std::uint32_t>(node*4)};
+        if (archive_.u32(slot)==0) continue;
+        const auto list=archive_.resolve(slot);
+        if (!list) continue;
+        for (std::size_t index=0;index<16;++index) {
+            const Address cell{list->file,list->offset+static_cast<std::uint32_t>(index*4)};
+            if (archive_.u32(cell)==0) break;
+            const auto sub=archive_.resolve(cell);
+            if (!sub) break;
+            Material material;
+            const auto sprites=archive_.resolve({sub->file,sub->offset+4});
+            if (sprites && archive_.u32(*sprites)!=0) material.image=archive_.resolve(*sprites);
+            const auto palettes=archive_.resolve({sub->file,sub->offset+0x2c});
+            if (palettes && archive_.u32(*palettes)!=0) material.palette=archive_.resolve(*palettes);
+            material.format=byte({sub->file,sub->offset+2});
+            material.size=byte({sub->file,sub->offset+3});
+            material.width=std::max(half({sub->file,sub->offset+0x0c}),1U);
+            material.height=std::max(half({sub->file,sub->offset+0x0e}),1U);
+            const unsigned flags=half({sub->file,sub->offset+0x30});
+            const float trau=archive_.f32({sub->file,sub->offset+0x14});
+            const float trav=archive_.f32({sub->file,sub->offset+0x18});
+            const float scau=archive_.f32({sub->file,sub->offset+0x1c});
+            const float scav=archive_.f32({sub->file,sub->offset+0x20});
+            const unsigned divisor=std::max(half({sub->file,sub->offset+8}),1U);
+            const auto texture_scale=[](float scale,unsigned divisor) {
+                if (std::abs(scale)<1.0e-8f) return 0.0f;
+                return std::min((2097152.0f/divisor)/scale,65535.0f)/65536.0f;
+            };
+            material.texture_scale_s=texture_scale(scau,divisor);
+            material.texture_scale_t=texture_scale(scav,divisor);
+            const float safe_s=std::abs(scau)>1.0e-8f ? scau : 1.0f;
+            const float safe_t=std::abs(scav)>1.0e-8f ? scav : 1.0f;
+            const unsigned bias=half({sub->file,sub->offset+0x0a});
+            material.tile_uls=static_cast<unsigned>(std::max((((material.width*trau)+bias)/safe_s)*4.0f,0.0f));
+            material.tile_ult=static_cast<unsigned>(std::max(((((1.0f-scav)-trav)*material.height+bias)/safe_t)*4.0f,0.0f));
+            material.tile_lrs=material.tile_uls+(material.width-1U)*4U;
+            material.tile_lrt=material.tile_ult+(material.height-1U)*4U;
+            material.primitive={static_cast<std::uint8_t>(byte({sub->file,sub->offset+0x50})),
+                                static_cast<std::uint8_t>(byte({sub->file,sub->offset+0x51})),
+                                static_cast<std::uint8_t>(byte({sub->file,sub->offset+0x52})),
+                                static_cast<std::uint8_t>(byte({sub->file,sub->offset+0x53}))};
+            material.set_primitive=(flags&(0x0200U|0x0010U|0x0008U))!=0;
+            result[node].push_back(material);
+        }
+    }
+    return result;
+}
+
+Mesh DisplayListDecoder::decode(Address display_list, std::span<const Material> materials) {
     Mesh mesh;
     State state;
+    state.materials=materials;
     list(mesh, state, display_list, 0);
     return mesh;
 }
 
-Mesh DisplayListDecoder::decode_links(Address links) {
+Mesh DisplayListDecoder::decode_links(Address links, std::span<const Material> materials) {
     Mesh result;
     for (std::size_t i = 0; i < 64; ++i, links.offset += 8) {
         const auto list_id = archive_.u32(links);
         if (list_id == 4) return result;
         const auto address = archive_.resolve({links.file, links.offset + 4});
         if (!address) continue;
-        auto part = decode(*address);
+        auto part = decode(*address,materials);
         result.vertices.insert(result.vertices.end(), part.vertices.begin(), part.vertices.end());
         result.commands += part.commands;
         result.display_lists += part.display_lists;
@@ -67,12 +127,12 @@ Mesh DisplayListDecoder::decode_links(Address links) {
     throw std::runtime_error("unterminated N64 display-list links");
 }
 
-Mesh DisplayListDecoder::decode_pairs(Address pairs) {
+Mesh DisplayListDecoder::decode_pairs(Address pairs, std::span<const Material> materials) {
     Mesh result;
     for (std::size_t i = 0; i < 2; ++i) {
         const auto address = archive_.resolve({pairs.file, pairs.offset + static_cast<std::uint32_t>(i * 4)});
         if (!address) continue;
-        auto part = decode(*address);
+        auto part = decode(*address,materials);
         result.vertices.insert(result.vertices.end(), part.vertices.begin(), part.vertices.end());
         result.commands += part.commands;
         result.display_lists += part.display_lists;
@@ -312,7 +372,28 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                 break;
             case 0xde: {
                 const auto target = archive_.resolve({address.file, address.offset + 4});
-                if (!target) { ++mesh.unsupported_commands; break; }
+                if (!target) {
+                    if ((w1>>24)==0x0eU) {
+                        const std::size_t material_index=(w1&0x00ffffffU)/8U;
+                        if (material_index<state.materials.size()) {
+                            const auto& material=state.materials[material_index];
+                            if (material.image) {
+                                state.image={material.image,material.format,material.size,material.width};
+                                state.texture_scale_s=material.texture_scale_s;
+                                state.texture_scale_t=material.texture_scale_t;
+                            }
+                            if (material.palette) state.palette=material.palette;
+                            if (material.set_primitive) state.primitive=material.primitive;
+                            auto& tile=state.tiles[state.render_tile];
+                            tile.uls=material.tile_uls; tile.ult=material.tile_ult;
+                            tile.lrs=material.tile_lrs; tile.lrt=material.tile_lrt;
+                            tile.window_set=true;
+                            break;
+                        }
+                    }
+                    ++mesh.unsupported_commands;
+                    break;
+                }
                 list(mesh, state, *target, depth + 1);
                 if (w0 & 0x00010000U) return;
                 break;

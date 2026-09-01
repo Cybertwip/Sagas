@@ -185,7 +185,8 @@ public:
         archive_ = std::make_unique<n64::RelocArchive>(services.assets);
         loader_ = std::make_unique<Scene3DLoader>(*archive_);
         renderer_ = std::make_unique<Scene3DRenderer>(*archive_);
-        room_background_ = loader_->model("llMVCommonRoomBackgroundDObjDesc", {}, GeometryLayout::DisplayListLinks);
+        room_background_ = loader_->model("llMVCommonRoomBackgroundDObjDesc", {}, GeometryLayout::DisplayListLinks,
+                                          "llMVCommonRoomBackgroundMObjSub");
         room_sunlight_ = loader_->display_list("llMVCommonRoomSunlightDisplayList", GeometryLayout::DisplayListLinks);
         room_desk_ = loader_->model("llMVCommonRoomDeskDObjDesc", {}, GeometryLayout::Direct);
         room_outside_ = loader_->display_list("llMVCommonRoomOutsideDisplayList", GeometryLayout::DisplayListLinks);
@@ -196,17 +197,24 @@ public:
         room_tissues_ = loader_->display_list("llMVCommonRoomTissuesDisplayList");
         if (const auto animation = archive_->symbol("llMVCommonRoomTissuesAnimJoint"))
             room_tissues_.animation[0] = animation;
-        room_desk_ground_ = loader_->model("llMVCommonRoomDeskGroundDObjDesc", {}, GeometryLayout::DisplayListLinks);
-        room_logo_ = loader_->model("llMVCommonRoomLogoDObjDesc", {}, GeometryLayout::DisplayListLinks);
+        room_desk_ground_ = loader_->model("llMVCommonRoomDeskGroundDObjDesc", {}, GeometryLayout::DisplayListLinks,
+                                           "llMVCommonRoomDeskGroundMObjSub");
+        room_logo_ = loader_->model("llMVCommonRoomLogoDObjDesc", {}, GeometryLayout::DisplayListLinks,
+                                    "llMVCommonRoomLogoMObjSub");
         room_snap_ = loader_->model("llMVCommonRoomSnapDObjDesc", "llMVCommonRoomSnapAnimJoint");
         room_closeup_air_ = loader_->model("llMVCommonRoomCloseUpEffectAirDObjDesc",
-                                           "llMVCommonRoomCloseUpEffectAirAnimJoint");
+                                           "llMVCommonRoomCloseUpEffectAirAnimJoint",
+                                           GeometryLayout::DisplayListLinks,
+                                           "llMVCommonRoomCloseUpEffectAirMObjSub");
         room_closeup_ground_ = loader_->model("llMVCommonRoomCloseUpEffectGroundDObjDesc",
-                                              "llMVCommonRoomCloseUpEffectGroundAnimJoint");
+                                              "llMVCommonRoomCloseUpEffectGroundAnimJoint",
+                                              GeometryLayout::DisplayListLinks,
+                                              "llMVCommonRoomCloseUpEffectGroundMObjSub");
         room_boss_shadow_ = loader_->display_list("llMVCommonRoomBossShadowDisplayList");
         if (const auto animation = archive_->symbol("llMVCommonRoomBossShadowAnimJoint"))
             room_boss_shadow_.animation[0] = animation;
-        room_spotlight_ = loader_->display_list("llMVCommonRoomSpotlightDisplayList");
+        room_spotlight_ = loader_->display_list("llMVCommonRoomSpotlightDisplayList",GeometryLayout::Direct,
+                                                "llMVCommonRoomSpotlightMObjSub");
         room_transition_outline_ = loader_->display_list("llMVOpeningRoomTransitionOutlineDisplayList");
         room_transition_overlay_ = loader_->display_list("llMVOpeningRoomTransitionOverlayDisplayList");
         if (const auto animation = archive_->symbol("llMVOpeningRoomTransitionOutlineAnimJoint"))
@@ -215,20 +223,28 @@ public:
             room_transition_overlay_.animation[0] = animation;
         n64::AnimationDecoder animation(*archive_);
         const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file, GeometryLayout layout = GeometryLayout::Direct) {
-            auto model = loader_->model(descriptor, {}, layout);
-            model.animation = animation.table({file,0},model.nodes.size());
+            auto model = loader_->fighter_model(descriptor,layout);
+            const auto scripts=animation.table({file,0},model.nodes.size()+1);
+            model.fighter_root.scale={1,1,1};
+            model.fighter_root_animation=scripts.front();
+            model.animation.assign(scripts.begin()+1,scripts.end());
             model.fighter_animation = true;
             return model;
         };
         const auto transition_fighter = [&](const Model3D& previous, float previous_frame,
                                             std::uint32_t next_file) {
             auto model=previous;
+            if (previous.fighter_root_animation)
+                n64::AnimationDecoder::apply(model.fighter_root,animation.sample16(
+                    *previous.fighter_root_animation,previous_frame,animation.pose(previous.fighter_root)));
             for (std::size_t i=0;i<model.nodes.size();++i) {
                 if (i<previous.animation.size() && previous.animation[i])
                     n64::AnimationDecoder::apply(model.nodes[i],animation.sample16(
                         *previous.animation[i],previous_frame,animation.pose(previous.nodes[i])));
             }
-            model.animation=animation.table({next_file,0},model.nodes.size());
+            const auto scripts=animation.table({next_file,0},model.nodes.size()+1);
+            model.fighter_root_animation=scripts.front();
+            model.animation.assign(scripts.begin()+1,scripts.end());
             return model;
         };
         boss_pose1_ = animated_fighter("llBossModelJointTreeDObjDesc", 458, GeometryLayout::JointPairs);
@@ -385,13 +401,13 @@ private:
             const auto draw_pulled_fighter = [&] {
                 if (local < 380) {
                     const float pickup_frame=static_cast<float>(local-280);
-                    // Runtime joint 5 (item-heavy) maps to descriptor node 3;
-                    // XRotN/YRotN are implicit fighter joints 2 and 3.
-                    const auto held=renderer_->placed_at_joint(mario_pickup_,pickup_frame,boss,boss_frame,3);
+                    // Runtime joint 5 (item-heavy) is descriptor node 1;
+                    // the four special fighter joints precede this tree.
+                    const auto held=renderer_->placed_at_joint(mario_pickup_,pickup_frame,boss,boss_frame,1);
                     renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},warm_room);
                 } else {
                     auto falling=mario_fall_;
-                    const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,3);
+                    const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,1);
                     if (release.root_transform) {
                         falling.position={(*release.root_transform)[3],(*release.root_transform)[7],
                                           (*release.root_transform)[11]};
@@ -438,7 +454,7 @@ private:
                 renderer_->draw(r,room_closeup_ground_,camera,closeup_frame,{255,255,255,255},warm_room);
                 renderer_->draw(r,room_closeup_air_,camera,closeup_frame,{255,255,255,210},warm_room);
                 auto revival=mario_revival_;
-                const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,3);
+                const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,1);
                 if (release.root_transform)
                     revival.position={(*release.root_transform)[3],(*release.root_transform)[7],
                                       (*release.root_transform)[11]};

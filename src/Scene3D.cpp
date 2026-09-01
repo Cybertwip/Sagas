@@ -56,10 +56,17 @@ std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model
     std::array<Matrix,18> parents{};
     std::vector<Matrix> result;
     result.reserve(model.nodes.size());
-    const Matrix model_matrix=model.root_transform ? Matrix{*model.root_transform}
+    Matrix model_matrix=model.root_transform ? Matrix{*model.root_transform}
         : multiply(multiply(translation({model.position.x,model.position.y,model.position.z}),
                             rotation({model.rotation.x,model.rotation.y,model.rotation.z})),
                    scale({model.scale.x,model.scale.y,model.scale.z}));
+    if (!model.root_transform && model.fighter_root_animation) {
+        auto root=model.fighter_root;
+        n64::AnimationDecoder::apply(root,animation.sample16(*model.fighter_root_animation,frame,
+                                                              animation.pose(root)));
+        model_matrix=multiply(model_matrix,multiply(multiply(translation(root.translate),rotation(root.rotate)),
+                                                    scale(root.scale)));
+    }
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
         auto node=model.nodes[node_index];
         if (node_index < model.animation.size() && model.animation[node_index])
@@ -85,20 +92,27 @@ std::uint8_t channel(float value) {
 
 } // namespace
 
-Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view animation, GeometryLayout layout) {
+Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view animation,
+                            GeometryLayout layout, std::string_view material_symbol) {
     const auto desc = archive_.symbol(descriptor);
     if (!desc) throw std::runtime_error("missing model descriptor symbol: " + std::string(descriptor));
     Model3D model;
     model.nodes = n64::SkeletonDecoder(archive_).decode(*desc);
     model.meshes.resize(model.nodes.size());
     n64::DisplayListDecoder decoder(archive_);
+    std::vector<std::vector<n64::Material>> materials(model.nodes.size());
+    if (!material_symbol.empty()) {
+        const auto table=archive_.symbol(material_symbol);
+        if (!table) throw std::runtime_error("missing material symbol: " + std::string(material_symbol));
+        materials=decoder.materials(*table,model.nodes.size());
+    }
     for (std::size_t i=0; i<model.nodes.size(); ++i) if (model.nodes[i].display_list) {
         if (layout == GeometryLayout::JointPairs)
-            model.meshes[i] = decoder.decode_pairs(*model.nodes[i].display_list);
+            model.meshes[i] = decoder.decode_pairs(*model.nodes[i].display_list,materials[i]);
         else if (layout == GeometryLayout::DisplayListLinks)
-            model.meshes[i] = decoder.decode_links(*model.nodes[i].display_list);
+            model.meshes[i] = decoder.decode_links(*model.nodes[i].display_list,materials[i]);
         else
-            model.meshes[i] = decoder.decode(*model.nodes[i].display_list);
+            model.meshes[i] = decoder.decode(*model.nodes[i].display_list,materials[i]);
     }
     if (!animation.empty()) {
         const auto symbol = archive_.symbol(animation);
@@ -108,18 +122,45 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
     return model;
 }
 
-Model3D Scene3DLoader::display_list(std::string_view symbol, GeometryLayout layout) {
+Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout layout) {
+    const auto desc=archive_.symbol(descriptor);
+    if (!desc) throw std::runtime_error("missing fighter descriptor symbol: "+std::string(descriptor));
+    Model3D model;
+    model.nodes=n64::SkeletonDecoder(archive_).decode(*desc);
+    model.meshes.resize(model.nodes.size());
+    model.animation.resize(model.nodes.size());
+    n64::DisplayListDecoder decoder(archive_);
+    const auto materials=decoder.materials({desc->file,0},model.nodes.size());
+    for (std::size_t i=0;i<model.nodes.size();++i) if (model.nodes[i].display_list) {
+        if (layout==GeometryLayout::JointPairs)
+            model.meshes[i]=decoder.decode_pairs(*model.nodes[i].display_list,materials[i]);
+        else if (layout==GeometryLayout::DisplayListLinks)
+            model.meshes[i]=decoder.decode_links(*model.nodes[i].display_list,materials[i]);
+        else model.meshes[i]=decoder.decode(*model.nodes[i].display_list,materials[i]);
+    }
+    return model;
+}
+
+Model3D Scene3DLoader::display_list(std::string_view symbol, GeometryLayout layout,
+                                   std::string_view material_symbol) {
     const auto address = archive_.symbol(symbol);
     if (!address) throw std::runtime_error("missing display-list symbol: " + std::string(symbol));
     Model3D model;
     model.nodes.push_back({0,0,{}, {0,0,0},{0,0,0},{1,1,1}, address});
     n64::DisplayListDecoder decoder(archive_);
+    std::vector<n64::Material> materials;
+    if (!material_symbol.empty()) {
+        const auto table=archive_.symbol(material_symbol);
+        if (!table) throw std::runtime_error("missing material symbol: "+std::string(material_symbol));
+        auto decoded=decoder.materials(*table,1);
+        materials=std::move(decoded.front());
+    }
     if (layout == GeometryLayout::JointPairs)
-        model.meshes.push_back(decoder.decode_pairs(*address));
+        model.meshes.push_back(decoder.decode_pairs(*address,materials));
     else if (layout == GeometryLayout::DisplayListLinks)
-        model.meshes.push_back(decoder.decode_links(*address));
+        model.meshes.push_back(decoder.decode_links(*address,materials));
     else
-        model.meshes.push_back(decoder.decode(*address));
+        model.meshes.push_back(decoder.decode(*address,materials));
     model.animation.resize(1);
     return model;
 }
@@ -153,12 +194,11 @@ Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame
     Model3D placed=model;
     const auto carrier_matrices=world_matrices(animation_,carrier,carrier_frame);
     if (carrier_joint>=carrier_matrices.size() || model.nodes.empty()) return placed;
-    const std::size_t child_index=model.nodes.size()>1 ? 1 : 0;
-    auto first_child=model.nodes[child_index];
-    if (child_index<model.animation.size() && model.animation[child_index])
+    auto first_child=model.nodes.front();
+    if (!model.animation.empty() && model.animation.front())
         n64::AnimationDecoder::apply(first_child,model.fighter_animation
-            ? animation_.sample16(*model.animation[child_index],model_frame,animation_.pose(first_child))
-            : animation_.sample(*model.animation[child_index],model_frame,animation_.pose(first_child)));
+            ? animation_.sample16(*model.animation.front(),model_frame,animation_.pose(first_child))
+            : animation_.sample(*model.animation.front(),model_frame,animation_.pose(first_child)));
     const Matrix attachment=multiply(carrier_matrices[carrier_joint],
                                      translation({-first_child.translate[0],-first_child.translate[1],
                                                   -first_child.translate[2]}));

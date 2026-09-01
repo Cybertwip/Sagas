@@ -21,6 +21,8 @@ struct Model3D {
     std::vector<n64::Node> nodes;
     std::vector<n64::Mesh> meshes;
     std::vector<std::optional<n64::Address>> animation;
+    n64::Node fighter_root{};
+    std::optional<n64::Address> fighter_root_animation;
     bool fighter_animation{};
     Vec3 position{};
     Vec3 rotation{};
@@ -33,9 +35,13 @@ class Scene3DLoader final {
 public:
     explicit Scene3DLoader(n64::RelocArchive& archive) : archive_(archive) {}
     [[nodiscard]] Model3D model(std::string_view descriptor, std::string_view animation = {},
-                                GeometryLayout layout = GeometryLayout::DisplayListLinks);
+                                GeometryLayout layout = GeometryLayout::DisplayListLinks,
+                                std::string_view materials = {});
+    [[nodiscard]] Model3D fighter_model(std::string_view descriptor,
+                                        GeometryLayout layout = GeometryLayout::Direct);
     [[nodiscard]] Model3D display_list(std::string_view symbol,
-                                      GeometryLayout layout = GeometryLayout::Direct);
+                                      GeometryLayout layout = GeometryLayout::Direct,
+                                      std::string_view materials = {});
     [[nodiscard]] Camera3D camera(std::string_view animation, float frame,
                                   Camera3D initial = {});
 private:

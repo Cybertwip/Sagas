@@ -11,6 +11,8 @@ struct Vertex {
     bool lit{};
     Color color{255, 255, 255, 255};
     std::shared_ptr<const RasterImage> texture;
+    std::uint8_t texture_mode_s{}, texture_mode_t{};
+    std::uint8_t texture_mask_s{}, texture_mask_t{};
 };
 
 struct Mesh {

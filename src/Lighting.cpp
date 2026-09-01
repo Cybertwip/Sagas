@@ -19,16 +19,21 @@ std::uint8_t channel(float value) {
 
 } // namespace
 
-Color LightingSystem::shade(Color surface, Vec3 normal, const LightingRig& rig) {
+Color LightingSystem::shade(Color surface, Vec3 normal, Vec3 view_direction, const LightingRig& rig) {
     normal = normalize(normal);
     const Vec3 light = normalize(rig.key.direction);
+    view_direction = normalize(view_direction);
     // The N64 fighter/scene setup uses a strong ambient term and broad
     // vertex-light falloff.  A wrapped diffuse lobe avoids the black/white
     // discontinuity of a hard one-sided Lambert term on low-poly meshes.
     const float facing = dot(normal, light);
-    const float diffuse = std::clamp((facing + 0.38f) / 1.38f, 0.0f, 1.0f) * rig.key.intensity;
+    const float wrapped = std::clamp((facing + 0.45f) / 1.45f, 0.0f, 1.0f);
+    const float diffuse = wrapped*wrapped*(3.0f-2.0f*wrapped) * rig.key.intensity;
+    const Vec3 half_vector=normalize({light.x+view_direction.x,light.y+view_direction.y,
+                                      light.z+view_direction.z});
+    const float reflection=std::pow(std::max(dot(normal,half_vector),0.0f),6.0f)*0.12f;
     const auto one = [&](std::uint8_t base, std::uint8_t ambient, std::uint8_t direct) {
-        const float illumination = ambient * rig.ambient_intensity + direct * diffuse;
+        const float illumination = ambient * rig.ambient_intensity + direct * (diffuse+reflection);
         return channel(base * illumination / 255.0f);
     };
     return {one(surface.r, rig.ambient.r, rig.key.color.r),

@@ -18,7 +18,8 @@ struct LightingRig {
 
 class LightingSystem final {
 public:
-    [[nodiscard]] static Color shade(Color surface, Vec3 normal, const LightingRig& rig);
+    [[nodiscard]] static Color shade(Color surface, Vec3 normal, Vec3 view_direction,
+                                     const LightingRig& rig);
 };
 
 } // namespace sagas

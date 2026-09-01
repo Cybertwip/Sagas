@@ -90,17 +90,6 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
     const auto& tile = state.tiles[state.render_tile];
     const float width = image ? static_cast<float>(image->width) : 1.0f;
     const float height = image ? static_cast<float>(image->height) : 1.0f;
-    const auto coordinate = [](float value, float extent, unsigned mode, unsigned mask) {
-        if ((mode & 2U) != 0) return std::clamp(value / extent,0.0f,1.0f);
-        const float period = mask ? static_cast<float>(1U << mask) : extent;
-        float wrapped = std::fmod(value,period);
-        if (wrapped < 0) wrapped += period;
-        if ((mode & 1U) != 0) {
-            const auto section = static_cast<int>(std::floor(value / period));
-            if (section & 1) wrapped = period-wrapped;
-        }
-        return wrapped/extent;
-    };
     for (const unsigned index : {a,b,c}) {
         auto vertex = state.cache[index].vertex;
         vertex.texture = image;
@@ -110,8 +99,15 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
                                                 : static_cast<float>(1U<<(16-tile.shifts));
         if (tile.shiftt) v *= tile.shiftt <= 10 ? 1.0f/static_cast<float>(1U<<tile.shiftt)
                                                 : static_cast<float>(1U<<(16-tile.shiftt));
-        vertex.u = coordinate(u,width,tile.cms,tile.masks);
-        vertex.v = coordinate(v,height,tile.cmt,tile.maskt);
+        // Preserve continuous coordinates through interpolation. N64
+        // clamp/wrap/mirror is a sampling operation; doing it independently
+        // at each vertex creates seams across texture-period boundaries.
+        vertex.u = u/width;
+        vertex.v = v/height;
+        vertex.texture_mode_s=static_cast<std::uint8_t>(tile.cms);
+        vertex.texture_mode_t=static_cast<std::uint8_t>(tile.cmt);
+        vertex.texture_mask_s=static_cast<std::uint8_t>(tile.masks);
+        vertex.texture_mask_t=static_cast<std::uint8_t>(tile.maskt);
         mesh.vertices.push_back(std::move(vertex));
     }
 }
@@ -252,7 +248,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                         };
                         out.vertex.normal = {component(24), component(16), component(8)};
                         out.vertex.color = {state.primitive.r, state.primitive.g, state.primitive.b,
-                                            255};
+                                            state.primitive.a};
                     } else {
                         out.vertex.color = Color{static_cast<std::uint8_t>(packed >> 24),
                             static_cast<std::uint8_t>(packed >> 16), static_cast<std::uint8_t>(packed >> 8),

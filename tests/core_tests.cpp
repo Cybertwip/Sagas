@@ -94,6 +94,7 @@ int main() {
               << " opaque-texture-refs=" << mario_opaque << '\n';
     struct ModelCase { const char* descriptor; const char* animation; sagas::GeometryLayout layout; };
     const ModelCase opening_models[]{
+        {"llMVCommonRoomBackgroundDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
         {"llMVOpeningYosterNestDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
         {"llMVOpeningYosterGroundDObjDesc", "llMVOpeningYosterGroundAnimJoint", sagas::GeometryLayout::DisplayListLinks},
         {"llMVOpeningCliffHillsDObjDesc", "", sagas::GeometryLayout::Direct},
@@ -113,12 +114,22 @@ int main() {
         const auto model = scene_loader.model(item.descriptor, item.animation, item.layout);
         std::size_t triangles{};
         std::size_t textured{};
+        float min_u=1e9f,max_u=-1e9f,min_v=1e9f,max_v=-1e9f;
+        const sagas::n64::Vertex* sample{};
         for (const auto& part : model.meshes) {
             triangles += part.vertices.size() / 3;
-            for (const auto& vertex : part.vertices) if (vertex.texture) ++textured;
+            for (const auto& vertex : part.vertices) if (vertex.texture) {
+                ++textured; sample=&vertex;
+                min_u=std::min(min_u,vertex.u); max_u=std::max(max_u,vertex.u);
+                min_v=std::min(min_v,vertex.v); max_v=std::max(max_v,vertex.v);
+            }
         }
         std::cout << "  nodes: " << model.nodes.size() << " meshes: " << model.meshes.size()
                   << " triangles: " << triangles << " textured: " << textured << '\n';
+        if (sample) std::cout << "  texture " << sample->texture->width << 'x' << sample->texture->height
+                              << " uv " << min_u << ',' << min_v << ".." << max_u << ',' << max_v
+                              << " mode " << unsigned(sample->texture_mode_s) << ',' << unsigned(sample->texture_mode_t)
+                              << " mask " << unsigned(sample->texture_mask_s) << ',' << unsigned(sample->texture_mask_t) << '\n';
         assert(triangles > 0);
     }
     std::cout << "Sagas core tests passed\n";

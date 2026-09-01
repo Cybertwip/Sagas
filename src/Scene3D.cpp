@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 
@@ -185,7 +183,6 @@ Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame
 void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
                            float frame, Color tint, LightingRig lights) {
     const bool immediate = !batching_;
-    const auto queued_before=triangles_.size();
     const Vec3 forward=normalize(sub(camera.at,camera.eye));
     const Vec3 right=normalize(cross(forward,camera.up));
     const Vec3 up=cross(right,forward);
@@ -205,7 +202,8 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 const Vec3 point=transform(world,{source.x,source.y,source.z});
                 const Vec3 relative=sub(point,camera.eye);
                 Color color=modulate(source.color,tint);
-                if (source.lit) color=LightingSystem::shade(color,transform_direction(world,source.normal),lights);
+                if (source.lit) color=LightingSystem::shade(color,transform_direction(world,source.normal),
+                                                           normalize(sub(camera.eye,point)),lights);
                 polygon.push_back({relative,color,{source.u,source.v}});
             }
             const auto clip = [&](float plane, bool keep_greater) {
@@ -253,18 +251,11 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                     triangle[j]={{160+dot(source.relative,right)*focal*focal_x/depth,
                                   120-dot(source.relative,up)*focal*focal_y/depth},source.color,source.uv,depth};
                 }
-                triangles_.push_back({triangle,mesh.vertices[i].texture});
+                const auto& sampler=mesh.vertices[i];
+                triangles_.push_back({triangle,sampler.texture,sampler.texture_mode_s,sampler.texture_mode_t,
+                                      sampler.texture_mask_s,sampler.texture_mask_t});
             }
         }
-    }
-    if ((model.fighter_animation || triangles_.size()-queued_before==34) && std::getenv("SAGAS_TRACE_FIGHTERS")) {
-        float min_x=std::numeric_limits<float>::infinity(),min_y=min_x,max_x=-min_x,max_y=-min_x;
-        for (std::size_t i=queued_before;i<triangles_.size();++i) for (const auto& point:triangles_[i].points) {
-            min_x=std::min(min_x,point.position.x); min_y=std::min(min_y,point.position.y);
-            max_x=std::max(max_x,point.position.x); max_y=std::max(max_y,point.position.y);
-        }
-        std::fprintf(stderr,"fighter frame %.1f queued %zu bounds %.1f %.1f %.1f %.1f\n",frame,
-                     triangles_.size()-queued_before,min_x,min_y,max_x,max_y);
     }
     if (immediate) flush(render);
 }
@@ -310,11 +301,25 @@ void Scene3DRenderer::flush(RenderEngine& render) {
             const auto pixel=static_cast<std::size_t>(y*width+x);
             if (pixel_depth>=depth_buffer[pixel]) continue;
 
-            const float u=(w0*a.uv.x/a.depth+w1*b.uv.x/b.depth+w2*c.uv.x/c.depth)/inverse_depth;
-            const float v=(w0*a.uv.y/a.depth+w1*b.uv.y/b.depth+w2*c.uv.y/c.depth)/inverse_depth;
+            float u=(w0*a.uv.x/a.depth+w1*b.uv.x/b.depth+w2*c.uv.x/c.depth)/inverse_depth;
+            float v=(w0*a.uv.y/a.depth+w1*b.uv.y/b.depth+w2*c.uv.y/c.depth)/inverse_depth;
             Color texture_color{255,255,255,255};
             if (triangle.texture && triangle.texture->width>0 && triangle.texture->height>0 &&
                 triangle.texture->rgba.size()>=static_cast<std::size_t>(triangle.texture->width*triangle.texture->height*4)) {
+                const auto sample_coordinate=[](float normalized, int extent, unsigned mode, unsigned mask) {
+                    const float value=normalized*extent;
+                    if ((mode&2U)!=0) return std::clamp(normalized,0.0f,1.0f);
+                    const float period=mask ? static_cast<float>(1U<<mask) : static_cast<float>(extent);
+                    float sampled=std::fmod(value,period);
+                    if (sampled<0) sampled+=period;
+                    if ((mode&1U)!=0) {
+                        const auto section=static_cast<int>(std::floor(value/period));
+                        if (section&1) sampled=period-sampled;
+                    }
+                    return sampled/extent;
+                };
+                u=sample_coordinate(u,triangle.texture->width,triangle.texture_mode_s,triangle.texture_mask_s);
+                v=sample_coordinate(v,triangle.texture->height,triangle.texture_mode_t,triangle.texture_mask_t);
                 const int tx=std::clamp(static_cast<int>(u*triangle.texture->width),0,triangle.texture->width-1);
                 const int ty=std::clamp(static_cast<int>(v*triangle.texture->height),0,triangle.texture->height-1);
                 const auto texel=static_cast<std::size_t>((ty*triangle.texture->width+tx)*4);

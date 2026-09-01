@@ -63,6 +63,8 @@ private:
     struct ProjectedTriangle {
         std::array<ProjectedVertex,3> points;
         std::shared_ptr<const RasterImage> texture;
+        std::uint8_t texture_mode_s{}, texture_mode_t{};
+        std::uint8_t texture_mask_s{}, texture_mask_t{};
     };
     n64::AnimationDecoder animation_;
     std::vector<ProjectedTriangle> triangles_;

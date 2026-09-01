@@ -15,6 +15,8 @@ WRAPPERS = {"none": 0, "transn": 1, "xrotn": 2}
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, type=pathlib.Path)
+    parser.add_argument("--sequence", required=True, type=pathlib.Path)
+    parser.add_argument("--cues", required=True, type=pathlib.Path)
     parser.add_argument("--output", required=True, type=pathlib.Path)
     args = parser.parse_args()
 
@@ -22,6 +24,10 @@ def main() -> None:
         rows = list(csv.DictReader(stream, delimiter="\t"))
     if not rows:
         raise SystemExit("scene table has no resources")
+    with args.sequence.open(newline="", encoding="utf-8") as stream:
+        segments = list(csv.DictReader(stream, delimiter="\t"))
+    with args.cues.open(newline="", encoding="utf-8") as stream:
+        cues = list(csv.DictReader(stream, delimiter="\t"))
 
     bundles: dict[str, list[dict[str, str]]] = {}
     keys: set[str] = set()
@@ -44,6 +50,8 @@ def main() -> None:
 
     bundle_records = bytearray()
     resource_records = bytearray()
+    segment_records = bytearray()
+    cue_records = bytearray()
     first = 0
     for bundle, resources in bundles.items():
         bundle_records.extend(struct.pack("<III", string_offset(bundle), first, len(resources)))
@@ -59,9 +67,27 @@ def main() -> None:
                 int(row["animation_file"]), float(row["transition_frame"]), float(row["material_start"]),
                 float(row["position_x"]), float(row["position_y"]), float(row["position_z"])))
 
-    header = struct.pack("<4sHHIII", b"SGSC", 1, 0, len(bundles), len(rows), len(strings))
+    segment_names = {row["name"] for row in segments}
+    for row in segments:
+        color = (int(row["red"]) | (int(row["green"]) << 8) |
+                 (int(row["blue"]) << 16) | (int(row["alpha"]) << 24))
+        segment_records.extend(struct.pack(
+            "<IIIIIIffI", string_offset(row["name"]), string_offset(row["renderer"]),
+            string_offset(row["argument"]), string_offset(row["bundle"]), int(row["duration"]),
+            int(row["preload_lead"]), float(row["scale_x"]), float(row["scale_y"]), color))
+    for row in cues:
+        if row["segment"] not in segment_names:
+            raise SystemExit(f"render cue references unknown segment: {row['segment']}")
+        color = (int(row["red"]) | (int(row["green"]) << 8) |
+                 (int(row["blue"]) << 16) | (int(row["alpha"]) << 24))
+        cue_records.extend(struct.pack(
+            "<IIIII", string_offset(row["segment"]), string_offset(row["resource"]),
+            string_offset(row["camera"]), int(row["order"]), color))
+
+    header = struct.pack("<4sHHIIIII", b"SGSC", 2, 0, len(bundles), len(rows),
+                         len(segments), len(cues), len(strings))
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_bytes(header + bundle_records + resource_records + strings)
+    args.output.write_bytes(header + bundle_records + resource_records + segment_records + cue_records + strings)
 
 
 if __name__ == "__main__":

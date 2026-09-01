@@ -7,6 +7,24 @@
 
 namespace sagas {
 
+struct SceneRenderCue {
+    std::string resource;
+    std::string camera;
+    std::uint32_t order{};
+    Color tint{255,255,255,255};
+};
+
+struct SceneTimelineSegment {
+    std::string name;
+    std::string renderer;
+    std::string argument;
+    std::string bundle;
+    std::uint32_t duration{}, preload_lead{};
+    Vec2 scale{1,1};
+    Color color{0,0,0,255};
+    std::vector<SceneRenderCue> cues;
+};
+
 // Manifest + Repository + Factory: scene code asks for stable logical keys;
 // the binary manifest owns all relocation links and the factory decodes only
 // the bundle needed by the current timeline segment.
@@ -23,6 +41,7 @@ public:
     [[nodiscard]] bool ready(std::string_view bundle) const;
     [[nodiscard]] bool loaded(std::string_view bundle) const;
     [[nodiscard]] const Model3D& model(std::string_view key) const;
+    [[nodiscard]] std::span<const SceneTimelineSegment> timeline() const noexcept { return timeline_; }
     void release(std::string_view bundle);
     void clear();
 
@@ -58,6 +77,7 @@ private:
     std::unordered_map<std::string, Model3D> models_;
     std::unordered_map<std::string, std::string> owners_;
     std::unordered_map<std::string, bool> loaded_bundles_;
+    std::vector<SceneTimelineSegment> timeline_;
     std::future<BuiltBundle> pending_;
     std::string pending_name_;
     std::string manifest_;

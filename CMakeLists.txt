@@ -79,9 +79,13 @@ add_custom_command(
     OUTPUT "${SAGAS_OPENING_SCENE}"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/pack_scene.py"
             --input "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/opening.scene.tsv"
+            --sequence "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/opening.sequence.tsv"
+            --cues "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/opening.cues.tsv"
             --output "${SAGAS_OPENING_SCENE}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/pack_scene.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/opening.scene.tsv"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/opening.sequence.tsv"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/opening.cues.tsv"
             "${SAGAS_ASSET_STAMP}"
     COMMENT "Baking opening scene resource manifest"
     VERBATIM)

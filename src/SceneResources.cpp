@@ -1,5 +1,6 @@
 #include <sagas/SceneResources.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <bit>
 #include <cstring>
@@ -8,9 +9,11 @@
 namespace sagas {
 namespace {
 
-constexpr std::size_t header_size = 20;
+constexpr std::size_t header_size = 28;
 constexpr std::size_t bundle_size = 12;
 constexpr std::size_t resource_size = 52;
+constexpr std::size_t segment_size = 36;
+constexpr std::size_t cue_size = 20;
 
 std::uint16_t u16(std::span<const std::byte> data, std::size_t at) {
     if (at + 2 > data.size()) throw std::runtime_error("truncated scene manifest");
@@ -57,6 +60,11 @@ Model3D::FighterWrapper wrapper(std::uint8_t value) {
     }
 }
 
+Color color(std::uint32_t value) {
+    return {static_cast<std::uint8_t>(value), static_cast<std::uint8_t>(value >> 8),
+            static_cast<std::uint8_t>(value >> 16), static_cast<std::uint8_t>(value >> 24)};
+}
+
 } // namespace
 
 SceneResourceManager::SceneResourceManager(AssetRepository& assets)
@@ -71,16 +79,20 @@ void SceneResourceManager::load_manifest(std::string_view logical) {
     clear();
     const auto blob = assets_.blob(logical);
     const std::span<const std::byte> data(*blob);
-    if (data.size() < header_size || std::memcmp(data.data(), "SGSC", 4) != 0 || u16(data, 4) != 1)
+    if (data.size() < header_size || std::memcmp(data.data(), "SGSC", 4) != 0 || u16(data, 4) != 2)
         throw std::runtime_error("unsupported scene resource manifest: " + std::string(logical));
     const auto bundle_count = u32(data, 8);
     const auto resource_count = u32(data, 12);
-    const auto string_bytes = u32(data, 16);
-    if (bundle_count > 1024 || resource_count > 65536)
+    const auto segment_count = u32(data, 16);
+    const auto cue_count = u32(data, 20);
+    const auto string_bytes = u32(data, 24);
+    if (bundle_count > 1024 || resource_count > 65536 || segment_count > 4096 || cue_count > 65536)
         throw std::runtime_error("scene resource manifest exceeds runtime bounds");
     const auto bundle_at = header_size;
     const auto resource_at = bundle_at + static_cast<std::size_t>(bundle_count) * bundle_size;
-    const auto string_at_offset = resource_at + static_cast<std::size_t>(resource_count) * resource_size;
+    const auto segment_at = resource_at + static_cast<std::size_t>(resource_count) * resource_size;
+    const auto cue_at = segment_at + static_cast<std::size_t>(segment_count) * segment_size;
+    const auto string_at_offset = cue_at + static_cast<std::size_t>(cue_count) * cue_size;
     if (string_at_offset > data.size() || string_bytes > data.size() - string_at_offset)
         throw std::runtime_error("truncated scene resource manifest tables");
     const auto strings = data.subspan(string_at_offset, string_bytes);
@@ -122,6 +134,36 @@ void SceneResourceManager::load_manifest(std::string_view logical) {
         if (!bundles_.emplace(bundle.name, std::move(bundle)).second)
             throw std::runtime_error("scene manifest contains a duplicate bundle");
     }
+    timeline_.reserve(segment_count);
+    std::unordered_map<std::string, std::size_t> segment_indices;
+    for (std::uint32_t i = 0; i < segment_count; ++i) {
+        const auto item = segment_at + static_cast<std::size_t>(i) * segment_size;
+        SceneTimelineSegment segment;
+        segment.name = string_at(strings, u32(data, item));
+        segment.renderer = string_at(strings, u32(data, item + 4));
+        segment.argument = string_at(strings, u32(data, item + 8));
+        segment.bundle = string_at(strings, u32(data, item + 12));
+        segment.duration = u32(data, item + 16);
+        segment.preload_lead = u32(data, item + 20);
+        segment.scale = {f32(data, item + 24), f32(data, item + 28)};
+        segment.color = color(u32(data, item + 32));
+        if (segment.name.empty() || segment.duration == 0 || segment_indices.contains(segment.name))
+            throw std::runtime_error("scene manifest contains an invalid timeline segment");
+        segment_indices.emplace(segment.name, timeline_.size());
+        timeline_.push_back(std::move(segment));
+    }
+    for (std::uint32_t i = 0; i < cue_count; ++i) {
+        const auto item = cue_at + static_cast<std::size_t>(i) * cue_size;
+        const auto segment_name = string_at(strings, u32(data, item));
+        const auto found = segment_indices.find(segment_name);
+        if (found == segment_indices.end()) throw std::runtime_error("render cue references an unknown segment");
+        timeline_[found->second].cues.push_back({string_at(strings, u32(data, item + 4)),
+                                                 string_at(strings, u32(data, item + 8)),
+                                                 u32(data, item + 12), color(u32(data, item + 16))});
+    }
+    for (auto& segment : timeline_)
+        std::stable_sort(segment.cues.begin(), segment.cues.end(),
+                         [](const auto& a, const auto& b) { return a.order < b.order; });
     manifest_ = logical;
 }
 
@@ -281,6 +323,7 @@ void SceneResourceManager::clear() {
     bundles_.clear();
     owners_.clear();
     loaded_bundles_.clear();
+    timeline_.clear();
     manifest_.clear();
 }
 

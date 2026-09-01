@@ -1,0 +1,11 @@
+segment	order	resource	camera	red	green	blue	alpha
+cliff	0	cliff.hills	llMVOpeningCliffCamAnimJoint	255	255	255	255
+cliff	1	cliff.ocarina	llMVOpeningCliffCamAnimJoint	255	255	255	255
+yamabuki	0	yamabuki.shadow	llMVOpeningYamabukiCamAnimJoint	45	45	55	120
+yamabuki	1	yamabuki.legs	llMVOpeningYamabukiCamAnimJoint	255	255	255	255
+yamabuki	2	yamabuki.ball	llMVOpeningYamabukiCamAnimJoint	255	255	255	255
+yoster	0	yoster.nest	llMVOpeningYosterCamAnimJoint	255	255	255	255
+yoster	1	yoster.ground	llMVOpeningYosterCamAnimJoint	255	255	255	255
+sector	0	sector.great_fox	llMVOpeningSectorCamAnimJoint	255	255	255	255
+standoff	0	standoff.ground	llMVOpeningStandoffCamAnimJoint	255	255	255	255
+standoff	1	standoff.lightning	llMVOpeningStandoffCamAnimJoint	255	255	255	255

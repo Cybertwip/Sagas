@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 
 namespace sagas {
 namespace {
@@ -19,13 +20,13 @@ public:
         resources_->activate("room.base");
         loader_ = &resources_->loader();
         renderer_ = std::make_unique<Scene3DRenderer>(resources_->archive());
+        for (const auto& segment : resources_->timeline()) total_duration_ += segment.duration;
         services.audio.play_music("audio/opening.sgpcm", 1.0f);
         resources_->prefetch("room.action");
     }
     void update(Services& services, const InputState& input, float) override {
         ++tic_;
-        // Look-ahead loading is aligned with quiet portions of the source
-        // timeline, leaving the render loop free of relocation/model stalls.
+        // The room has source-scripted sub-scenes inside one timeline segment.
         if (tic_ == 250) services.resources.activate("room.action");
         if (tic_ == 900) services.resources.prefetch("room.transition");
         if (tic_ == 1030) {
@@ -39,112 +40,72 @@ public:
             services.resources.release("room.transition");
             services.resources.release("room.closeup");
         }
-        if (tic_ == 2000) services.resources.prefetch("cliff");
-        if (tic_ == 2160) {
-            services.resources.activate("cliff");
-            services.resources.prefetch("yamabuki");
+
+        std::uint32_t start{};
+        for (const auto& segment : resources_->timeline()) {
+            if (!segment.bundle.empty()) {
+                if (segment.preload_lead <= start &&
+                    tic_ == static_cast<int>(start - segment.preload_lead))
+                    services.resources.prefetch(segment.bundle);
+                if (tic_ == static_cast<int>(start)) services.resources.activate(segment.bundle);
+                if (tic_ == static_cast<int>(start + segment.duration))
+                    services.resources.release(segment.bundle);
+            }
+            start += segment.duration;
         }
-        if (tic_ == 2320) {
-            services.resources.activate("yamabuki");
-            services.resources.prefetch("yoster");
-        }
-        if (tic_ == 2330) services.resources.release("cliff");
-        if (tic_ == 2490) services.resources.release("yamabuki");
-        if (tic_ == 2800) services.resources.activate("yoster");
-        if (tic_ == 2840) services.resources.prefetch("sector");
-        if (tic_ == 2960) {
-            services.resources.activate("sector");
-            services.resources.prefetch("standoff");
-        }
-        if (tic_ == 2970) services.resources.release("yoster");
-        if (tic_ == 3120) services.resources.activate("standoff");
-        if (tic_ == 3130) services.resources.release("sector");
-        if (tic_ == 3450) services.resources.release("standoff");
         if (tic_ >= 10 && (input.accept_pressed || input.cancel_pressed || input.skip_pressed)) done_ = true;
-        if (tic_ >= total_duration) done_ = true;
+        if (tic_ >= total_duration_) done_ = true;
     }
     void draw(Services& services) override {
         auto& r = services.render;
         r.begin({0, 0, 0, 255});
         renderer_->begin();
-        const auto [kind, local] = locate(tic_);
-        switch (kind) {
-            case Segment::Room: room(r, local); break;
-            case Segment::Portraits: portraits(r, local); break;
-            case Segment::Mario: fighter(r, local, "MVOpeningPortraitsSet1/Mario.png", {164, 42, 36, 255}); break;
-            case Segment::Donkey: fighter(r, local, "MVOpeningPortraitsSet2/Donkey.png", {91, 52, 31, 255}); break;
-            case Segment::Link: fighter(r, local, "MVOpeningPortraitsSet2/Link.png", {34, 80, 44, 255}); break;
-            case Segment::Samus: fighter(r, local, "MVOpeningPortraitsSet1/Samus.png", {116, 63, 31, 255}); break;
-            case Segment::Yoshi: fighter(r, local, "MVOpeningPortraitsSet2/Yoshi.png", {36, 105, 49, 255}); break;
-            case Segment::Kirby: fighter(r, local, "MVOpeningPortraitsSet2/Kirby.png", {141, 76, 92, 255}); break;
-            case Segment::Fox: fighter(r, local, "MVOpeningPortraitsSet1/Fox.png", {74, 77, 94, 255}); break;
-            case Segment::Pikachu: fighter(r, local, "MVOpeningPortraitsSet1/Pikachu.png", {139, 113, 32, 255}); break;
-            case Segment::Run: wallpaper(r, "MVOpeningRun/Wallpaper.png", {2,2}); break;
-            case Segment::Cliff: {
-                wallpaper(r, "MVOpeningStandoffWallpaper.png", {2,2});
-                const auto camera = loader_->camera("llMVOpeningCliffCamAnimJoint", local);
-                renderer_->draw(r, model("cliff.hills"), camera, local);
-                renderer_->draw(r, model("cliff.ocarina"), camera, local);
-                break;
+        const auto position = locate(tic_);
+        const auto& segment = *position.segment;
+        const int local = position.local;
+        if (segment.renderer == "room") {
+            room(r, local);
+        } else if (segment.renderer == "portraits") {
+            portraits(r, local);
+        } else if (segment.renderer == "fighter") {
+            fighter(r, local, segment.argument, segment.color);
+        } else if (segment.renderer == "wallpaper") {
+            wallpaper(r, segment.argument, segment.scale);
+        } else if (segment.renderer == "models" || segment.renderer == "models_cockpit") {
+            wallpaper(r, segment.argument, segment.scale);
+            for (const auto& cue : segment.cues) {
+                const auto camera = loader_->camera(cue.camera, static_cast<float>(local));
+                renderer_->draw(r, model(cue.resource), camera, static_cast<float>(local), cue.tint);
             }
-            case Segment::Yamabuki: {
-                wallpaper(r, "MVOpeningYamabuki/Wallpaper.png");
-                const auto camera = loader_->camera("llMVOpeningYamabukiCamAnimJoint", local);
-                renderer_->draw(r, model("yamabuki.shadow"), camera, local, {45,45,55,120});
-                renderer_->draw(r, model("yamabuki.legs"), camera, local);
-                renderer_->draw(r, model("yamabuki.ball"), camera, local);
-                break;
-            }
-            case Segment::Jungle: fighter(r, local, "MVOpeningPortraitsSet2/Donkey.png", {22, 67, 32, 255}); break;
-            case Segment::Yoster: {
-                wallpaper(r, "StageYoshi.png");
-                const auto camera = loader_->camera("llMVOpeningYosterCamAnimJoint", local);
-                renderer_->draw(r, model("yoster.nest"), camera, local);
-                renderer_->draw(r, model("yoster.ground"), camera, local);
-                break;
-            }
-            case Segment::Sector: {
-                wallpaper(r, "MVOpeningSectorWallpaper.png");
-                renderer_->draw(r, model("sector.great_fox"),
-                                loader_->camera("llMVOpeningSectorCamAnimJoint", local), local);
+            if (segment.renderer == "models_cockpit") {
                 renderer_->flush(r);
                 r.sprite("textures/MVOpeningSector/Cockpit.png", {160,120});
-                break;
             }
-            case Segment::Standoff: {
-                wallpaper(r, "MVOpeningStandoffWallpaper.png", {2,2});
-                const auto camera = loader_->camera("llMVOpeningStandoffCamAnimJoint", local);
-                renderer_->draw(r, model("standoff.ground"), camera, local);
-                renderer_->draw(r, model("standoff.lightning"), camera, local);
-                break;
-            }
-            case Segment::Clash: clash(r, local); break;
-            case Segment::Newcomers: newcomers(r, local); break;
+        } else if (segment.renderer == "clash") {
+            clash(r, local);
+        } else if (segment.renderer == "newcomers") {
+            newcomers(r, local);
+        } else {
+            throw std::runtime_error("unknown opening render strategy: " + segment.renderer);
         }
         renderer_->end(r);
-        // Original opening scenes all fade through black at their boundaries.
-        const auto duration = durations[static_cast<std::size_t>(kind)];
-        const float edge = std::min({1.0f, local / 10.0f, (duration - local) / 10.0f});
-        if (edge < 1) r.fill(0, 0, 320, 240, {0,0,0,static_cast<std::uint8_t>((1-edge)*255)});
+        const float edge = std::min({1.0f, local / 10.0f,
+                                     (static_cast<int>(segment.duration) - local) / 10.0f});
+        if (edge < 1) r.fill(0, 0, 320, 240,
+                             {0,0,0,static_cast<std::uint8_t>((1-edge)*255)});
         r.end();
     }
     std::unique_ptr<Scene> next() override { return done_ ? make_title_scene() : nullptr; }
 private:
-    enum class Segment : std::size_t {
-        Room, Portraits, Mario, Donkey, Link, Samus, Yoshi, Kirby, Fox, Pikachu,
-        Run, Cliff, Yamabuki, Jungle, Yoster, Sector, Standoff, Clash, Newcomers
-    };
-    static constexpr std::array<int, 19> durations{
-        1320, 150, 60, 60, 60, 60, 60, 60, 60, 60, 220, 160, 160, 320, 160, 160, 320, 160, 40};
-    static constexpr int total_duration = 3650;
-
-    static std::pair<Segment, int> locate(int tic) {
+    struct TimelinePosition { const SceneTimelineSegment* segment{}; int local{}; };
+    [[nodiscard]] TimelinePosition locate(int tic) const {
         int start{};
-        for (std::size_t i = 0; i < durations.size(); ++i) {
-            if (tic < start + durations[i]) return {static_cast<Segment>(i), tic - start};
-            start += durations[i];
+        for (const auto& segment : resources_->timeline()) {
+            if (tic < start + static_cast<int>(segment.duration)) return {&segment, tic - start};
+            start += segment.duration;
         }
-        return {Segment::Newcomers, durations.back() - 1};
+        const auto& last = resources_->timeline().back();
+        return {&last, static_cast<int>(last.duration) - 1};
     }
     static void wallpaper(RenderEngine& r, std::string_view name, Vec2 scale = {1,1}) {
         r.sprite(std::string("textures/") + std::string(name), {160,120}, scale);
@@ -300,6 +261,7 @@ private:
         return resources_->model(key);
     }
     int tic_{};
+    int total_duration_{};
     bool done_{};
     SceneResourceManager* resources_{};
     Scene3DLoader* loader_{};

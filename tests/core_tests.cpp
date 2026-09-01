@@ -1,5 +1,6 @@
 #include <sagas/Engine.hpp>
 #include <sagas/N64.hpp>
+#include <sagas/Scene3D.hpp>
 
 #include <cassert>
 #include <cmath>
@@ -26,5 +27,34 @@ int main() {
     assert(yoster);
     const auto nodes = sagas::n64::SkeletonDecoder(archive).decode(*yoster);
     assert(nodes.size() == 33);
+    const auto animation = archive.symbol("llMVOpeningYosterGroundAnimJoint");
+    assert(animation);
+    sagas::n64::AnimationDecoder animation_decoder(archive);
+    const auto scripts = animation_decoder.table(*animation, nodes.size());
+    assert(scripts.size() == nodes.size());
+    assert(scripts[2]);
+    const auto at_start = animation_decoder.sample(*scripts[2], 0, animation_decoder.pose(nodes[2]));
+    const auto at_middle = animation_decoder.sample(*scripts[2], 40, animation_decoder.pose(nodes[2]));
+    for (const auto value : at_middle.tracks) assert(std::isfinite(value));
+    assert(at_start.tracks != at_middle.tracks);
+    sagas::Scene3DLoader scene_loader(archive);
+    struct ModelCase { const char* descriptor; const char* animation; sagas::GeometryLayout layout; };
+    const ModelCase opening_models[]{
+        {"llMVOpeningYosterNestDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
+        {"llMVOpeningYosterGroundDObjDesc", "llMVOpeningYosterGroundAnimJoint", sagas::GeometryLayout::DisplayListLinks},
+        {"llMVOpeningCliffHillsDObjDesc", "", sagas::GeometryLayout::Direct},
+        {"llMVOpeningCliffOcarinaDObjDesc", "llMVOpeningCliffOcarinaAnimJoint", sagas::GeometryLayout::Direct},
+        {"llMVOpeningYamabukiLegsDObjDesc", "llMVOpeningYamabukiLegsAnimJoint", sagas::GeometryLayout::Direct},
+        {"llMVOpeningYamabukiLegsShadowDObjDesc", "llMVOpeningYamabukiLegsShadowAnimJoint", sagas::GeometryLayout::DisplayListLinks},
+        {"llMVOpeningYamabukiMBallDObjDesc", "llMVOpeningYamabukiMBallAnimJoint", sagas::GeometryLayout::DisplayListLinks},
+        {"llMVOpeningSectorGreatFoxDObjDesc", "llMVOpeningSectorGreatFoxAnimJoint", sagas::GeometryLayout::DisplayListLinks},
+        {"llMVOpeningStandoffLightningDObjDesc", "llMVOpeningStandoffLightningAnimJoint", sagas::GeometryLayout::DisplayListLinks},
+    };
+    for (const auto& item : opening_models) {
+        const auto model = scene_loader.model(item.descriptor, item.animation, item.layout);
+        std::size_t triangles{};
+        for (const auto& part : model.meshes) triangles += part.vertices.size() / 3;
+        assert(triangles > 0);
+    }
     std::cout << "Sagas core tests passed\n";
 }

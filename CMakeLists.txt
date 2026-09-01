@@ -62,8 +62,17 @@ add_custom_command(
 add_custom_target(sagas_music_assets ALL DEPENDS "${SAGAS_OPENING_MUSIC}")
 
 add_library(sagas_engine
+    src/Application.cpp
+    src/Audio.cpp
+    src/Core.cpp
     src/Engine.cpp
-    src/N64.cpp)
+    src/n64/Animation.cpp
+    src/n64/Archive.cpp
+    src/n64/DisplayList.cpp
+    src/n64/SceneGraph.cpp
+    src/Render.cpp
+    src/Scene.cpp
+    src/Scene3D.cpp)
 target_include_directories(sagas_engine PUBLIC include)
 target_link_libraries(sagas_engine PUBLIC SDL3::SDL3 PNG::PNG)
 target_compile_definitions(sagas_engine PUBLIC

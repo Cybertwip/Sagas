@@ -1,5 +1,6 @@
 #include <sagas/Engine.hpp>
 #include <sagas/N64.hpp>
+#include <sagas/Scene3D.hpp>
 
 #include <SDL3/SDL.h>
 #include <png.h>
@@ -17,6 +18,7 @@
 namespace sagas {
 namespace {
 
+#if 0 // Audio implementation moved to Audio.cpp; retained until scene split lands.
 [[noreturn]] void fail(std::string message) {
     if (const char* detail = SDL_GetError(); detail && *detail) message += ": " + std::string(detail);
     throw std::runtime_error(std::move(message));
@@ -145,6 +147,7 @@ MusicPackage load_music_package(std::span<const std::byte> bytes) {
     }
     return music;
 }
+#endif
 
 class StartupScene final : public Scene {
 public:
@@ -179,9 +182,19 @@ class OpeningScene final : public Scene {
 public:
     void enter(Services& services) override {
         services.audio.play_music("audio/opening.sgm", 0.72f);
-        n64::RelocArchive archive(services.assets);
-        if (const auto ground = archive.symbol("llMVOpeningStandoffGroundDisplayList"))
-            standoff_ground_ = n64::DisplayListDecoder(archive).decode(*ground);
+        archive_ = std::make_unique<n64::RelocArchive>(services.assets);
+        loader_ = std::make_unique<Scene3DLoader>(*archive_);
+        renderer_ = std::make_unique<Scene3DRenderer>(*archive_);
+        yoster_nest_ = loader_->model("llMVOpeningYosterNestDObjDesc");
+        yoster_ground_ = loader_->model("llMVOpeningYosterGroundDObjDesc", "llMVOpeningYosterGroundAnimJoint");
+        cliff_hills_ = loader_->model("llMVOpeningCliffHillsDObjDesc", {}, GeometryLayout::Direct);
+        cliff_ocarina_ = loader_->model("llMVOpeningCliffOcarinaDObjDesc", "llMVOpeningCliffOcarinaAnimJoint", GeometryLayout::Direct);
+        yamabuki_legs_ = loader_->model("llMVOpeningYamabukiLegsDObjDesc", "llMVOpeningYamabukiLegsAnimJoint", GeometryLayout::Direct);
+        yamabuki_shadow_ = loader_->model("llMVOpeningYamabukiLegsShadowDObjDesc", "llMVOpeningYamabukiLegsShadowAnimJoint");
+        yamabuki_ball_ = loader_->model("llMVOpeningYamabukiMBallDObjDesc", "llMVOpeningYamabukiMBallAnimJoint");
+        sector_great_fox_ = loader_->model("llMVOpeningSectorGreatFoxDObjDesc", "llMVOpeningSectorGreatFoxAnimJoint");
+        standoff_ground_ = loader_->display_list("llMVOpeningStandoffGroundDisplayList");
+        standoff_lightning_ = loader_->model("llMVOpeningStandoffLightningDObjDesc", "llMVOpeningStandoffLightningAnimJoint");
     }
     void update(Services&, const InputState& input, float) override {
         ++tic_;
@@ -204,18 +217,42 @@ public:
             case Segment::Fox: fighter(r, local, "MVOpeningPortraitsSet1/Fox.png", {74, 77, 94, 255}); break;
             case Segment::Pikachu: fighter(r, local, "MVOpeningPortraitsSet1/Pikachu.png", {139, 113, 32, 255}); break;
             case Segment::Run: wallpaper(r, "MVOpeningRun/Wallpaper.png", {2,2}); break;
-            case Segment::Cliff: fighter(r, local, "MVOpeningPortraitsSet2/Link.png", {26, 38, 55, 255}); break;
-            case Segment::Yamabuki: wallpaper(r, "MVOpeningYamabuki/Wallpaper.png"); break;
+            case Segment::Cliff: {
+                wallpaper(r, "MVOpeningStandoffWallpaper.png", {2,2});
+                const auto camera = loader_->camera("llMVOpeningCliffCamAnimJoint", local);
+                renderer_->draw(r, cliff_hills_, camera, local);
+                renderer_->draw(r, cliff_ocarina_, camera, local);
+                break;
+            }
+            case Segment::Yamabuki: {
+                wallpaper(r, "MVOpeningYamabuki/Wallpaper.png");
+                const auto camera = loader_->camera("llMVOpeningYamabukiCamAnimJoint", local);
+                renderer_->draw(r, yamabuki_shadow_, camera, local, {45,45,55,120});
+                renderer_->draw(r, yamabuki_legs_, camera, local);
+                renderer_->draw(r, yamabuki_ball_, camera, local);
+                break;
+            }
             case Segment::Jungle: fighter(r, local, "MVOpeningPortraitsSet2/Donkey.png", {22, 67, 32, 255}); break;
-            case Segment::Yoster: fighter(r, local, "MVOpeningPortraitsSet2/Yoshi.png", {69, 116, 105, 255}); break;
-            case Segment::Sector:
+            case Segment::Yoster: {
+                wallpaper(r, "StageYoshi.png");
+                const auto camera = loader_->camera("llMVOpeningYosterCamAnimJoint", local);
+                renderer_->draw(r, yoster_nest_, camera, local);
+                renderer_->draw(r, yoster_ground_, camera, local);
+                break;
+            }
+            case Segment::Sector: {
                 wallpaper(r, "MVOpeningSectorWallpaper.png");
+                renderer_->draw(r, sector_great_fox_, loader_->camera("llMVOpeningSectorCamAnimJoint", local), local);
                 r.sprite("textures/MVOpeningSector/Cockpit.png", {160,120});
                 break;
-            case Segment::Standoff:
+            }
+            case Segment::Standoff: {
                 wallpaper(r, "MVOpeningStandoffWallpaper.png", {2,2});
-                geometry(r, standoff_ground_, local);
+                const auto camera = loader_->camera("llMVOpeningStandoffCamAnimJoint", local);
+                renderer_->draw(r, standoff_ground_, camera, local);
+                renderer_->draw(r, standoff_lightning_, camera, local);
                 break;
+            }
             case Segment::Clash: clash(r, local); break;
             case Segment::Newcomers: newcomers(r, local); break;
         }
@@ -288,46 +325,14 @@ private:
                      {160, 37.5f + static_cast<float>(i)*55});
         if (local < 8) r.fill(0,0,320,240,{255,255,255,static_cast<std::uint8_t>((8-local)*28)});
     }
-    static void geometry(RenderEngine& r, const n64::Mesh& mesh, int local) {
-        if (mesh.vertices.empty()) return;
-        struct Projected { TriangleVertex vertex; float depth; };
-        std::vector<std::array<Projected, 3>> triangles;
-        triangles.reserve(mesh.vertices.size() / 3);
-        const float yaw = 0.28f + local * 0.0018f;
-        const float cosine = std::cos(yaw), sine = std::sin(yaw);
-        float min_x = 1e30f, max_x = -1e30f, min_y = 1e30f, max_y = -1e30f;
-        for (std::size_t i = 0; i < mesh.vertices.size(); i += 3) {
-            std::array<Projected, 3> triangle;
-            for (int j = 0; j < 3; ++j) {
-                const auto& source = mesh.vertices[i + j];
-                const float x = source.x * cosine - source.z * sine;
-                const float z = source.x * sine + source.z * cosine;
-                const float y = -source.y * 0.82f + z * 0.30f;
-                triangle[j] = {{{x, y}, source.color}, z};
-                min_x = std::min(min_x, x); max_x = std::max(max_x, x);
-                min_y = std::min(min_y, y); max_y = std::max(max_y, y);
-            }
-            triangles.push_back(triangle);
-        }
-        std::sort(triangles.begin(), triangles.end(), [](const auto& a, const auto& b) {
-            return (a[0].depth + a[1].depth + a[2].depth) < (b[0].depth + b[1].depth + b[2].depth);
-        });
-        const float scale = std::min(280.0f / std::max(1.0f, max_x-min_x), 190.0f / std::max(1.0f, max_y-min_y));
-        const float center_x = (min_x + max_x) * 0.5f, center_y = (min_y + max_y) * 0.5f;
-        std::vector<TriangleVertex> output;
-        output.reserve(mesh.vertices.size());
-        for (const auto& triangle : triangles) for (const auto& point : triangle) {
-            auto color = point.vertex.color;
-            color.r = static_cast<std::uint8_t>(std::min(255, color.r / 2 + 90));
-            color.g = static_cast<std::uint8_t>(std::min(255, color.g / 2 + 75));
-            output.push_back({{160 + (point.vertex.position.x-center_x)*scale,
-                               120 + (point.vertex.position.y-center_y)*scale}, color});
-        }
-        r.triangles(output);
-    }
     int tic_{};
     bool done_{};
-    n64::Mesh standoff_ground_;
+    std::unique_ptr<n64::RelocArchive> archive_;
+    std::unique_ptr<Scene3DLoader> loader_;
+    std::unique_ptr<Scene3DRenderer> renderer_;
+    Model3D yoster_nest_, yoster_ground_, cliff_hills_, cliff_ocarina_;
+    Model3D yamabuki_legs_, yamabuki_shadow_, yamabuki_ball_;
+    Model3D sector_great_fox_, standoff_ground_, standoff_lightning_;
 };
 
 class TitleScene final : public Scene {
@@ -383,120 +388,13 @@ private:
 
 } // namespace
 
-AssetRepository::AssetRepository(std::filesystem::path root) : root_(std::move(root)) {
-    if (!std::filesystem::exists(root_ / ".complete"))
-        throw std::runtime_error("asset bundle is missing or incomplete: " + root_.string());
-}
-std::filesystem::path AssetRepository::path(std::string_view logical) const { return root_ / logical; }
-bool AssetRepository::exists(std::string_view logical) const { return std::filesystem::is_regular_file(path(logical)); }
-std::shared_ptr<const std::vector<std::byte>> AssetRepository::blob(std::string_view logical) {
-    const std::string key(logical);
-    if (const auto found = blobs_.find(key); found != blobs_.end())
-        if (auto cached = found->second.lock()) return cached;
-    std::ifstream input(path(logical), std::ios::binary | std::ios::ate);
-    if (!input) throw std::runtime_error("missing asset: " + path(logical).string());
-    const auto size = input.tellg();
-    input.seekg(0);
-    auto data = std::make_shared<std::vector<std::byte>>(static_cast<std::size_t>(size));
-    if (!input.read(reinterpret_cast<char*>(data->data()), size)) throw std::runtime_error("failed to read asset: " + key);
-    blobs_[key] = data;
-    return data;
-}
-
-void PhysicsWorld::step(std::span<Body> bodies, float seconds) const noexcept {
-    for (auto& body : bodies) {
-        body.velocity = body.velocity + gravity_ * seconds;
-        body.position = body.position + body.velocity * seconds;
-        const float bottom = body.position.y + body.half_extent.y;
-        body.grounded = bottom >= ground_y_;
-        if (body.grounded) { body.position.y = ground_y_ - body.half_extent.y; body.velocity.y = std::min(0.0f, body.velocity.y); }
-    }
-}
-
-float AnimationClip::sample(float time) const noexcept {
-    if (keys_.empty()) return 0;
-    if (time <= keys_.front().time) return keys_.front().value;
-    if (time >= keys_.back().time) return keys_.back().value;
-    const auto right = std::upper_bound(keys_.begin(), keys_.end(), time,
-        [](float t, const Keyframe& key) { return t < key.time; });
-    const auto& b = *right;
-    const auto& a = *(right - 1);
-    const float mix = (time - a.time) / (b.time - a.time);
-    return a.value + (b.value - a.value) * mix;
-}
-
-bool InputState::pressed(Action action) const noexcept {
-    switch (action) {
-        case Action::Accept: return accept_pressed;
-        case Action::Cancel: return cancel_pressed;
-        case Action::Skip: return skip_pressed;
-        case Action::Quit: return quit;
-    }
-    return false;
-}
-
-RenderEngine::RenderEngine(SDL_Window* window, SDL_Renderer* renderer, AssetRepository& assets)
-    : renderer_(renderer), assets_(assets) {
-    (void)window;
-    if (!SDL_SetRenderLogicalPresentation(renderer_, 320, 240, SDL_LOGICAL_PRESENTATION_LETTERBOX)) fail("logical renderer setup failed");
-}
-RenderEngine::~RenderEngine() { for (auto& [_, texture] : textures_) SDL_DestroyTexture(texture.handle); }
-RenderEngine::Texture& RenderEngine::texture(std::string_view logical) {
-    const std::string key(logical);
-    if (auto found = textures_.find(key); found != textures_.end()) return found->second;
-    png_image image{};
-    image.version = PNG_IMAGE_VERSION;
-    const auto file = assets_.path(logical).string();
-    if (!png_image_begin_read_from_file(&image, file.c_str())) throw std::runtime_error("PNG read failed: " + file);
-    image.format = PNG_FORMAT_RGBA;
-    std::vector<std::uint8_t> pixels(PNG_IMAGE_SIZE(image));
-    if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr)) {
-        png_image_free(&image);
-        throw std::runtime_error("PNG decode failed: " + file);
-    }
-    SDL_Texture* handle = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
-                                            static_cast<int>(image.width), static_cast<int>(image.height));
-    if (!handle) fail("texture creation failed");
-    SDL_UpdateTexture(handle, nullptr, pixels.data(), static_cast<int>(image.width * 4));
-    SDL_SetTextureScaleMode(handle, SDL_SCALEMODE_NEAREST);
-    SDL_SetTextureBlendMode(handle, SDL_BLENDMODE_BLEND);
-    auto [inserted, _] = textures_.emplace(key, Texture{handle, static_cast<float>(image.width), static_cast<float>(image.height)});
-    png_image_free(&image);
-    return inserted->second;
-}
-void RenderEngine::begin(Color clear) { SDL_SetRenderDrawColor(renderer_, clear.r, clear.g, clear.b, clear.a); SDL_RenderClear(renderer_); }
-void RenderEngine::sprite(std::string_view logical, Vec2 center, Vec2 scale, Color tint) {
-    auto& source = texture(logical);
-    SDL_SetTextureColorMod(source.handle, tint.r, tint.g, tint.b);
-    SDL_SetTextureAlphaMod(source.handle, tint.a);
-    const SDL_FRect destination{center.x - source.width * scale.x * 0.5f, center.y - source.height * scale.y * 0.5f,
-                                source.width * scale.x, source.height * scale.y};
-    SDL_RenderTexture(renderer_, source.handle, nullptr, &destination);
-}
-void RenderEngine::fill(float x, float y, float w, float h, Color color) {
-    SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer_, color.r, color.g, color.b, color.a);
-    const SDL_FRect rect{x, y, w, h};
-    SDL_RenderFillRect(renderer_, &rect);
-}
-void RenderEngine::triangles(std::span<const TriangleVertex> vertices) {
-    if (vertices.empty()) return;
-    std::vector<SDL_Vertex> native;
-    native.reserve(vertices.size());
-    for (const auto& vertex : vertices)
-        native.push_back({{vertex.position.x, vertex.position.y},
-                          {vertex.color.r / 255.0f, vertex.color.g / 255.0f,
-                           vertex.color.b / 255.0f, vertex.color.a / 255.0f}, {0,0}});
-    SDL_RenderGeometry(renderer_, nullptr, native.data(), static_cast<int>(native.size()), nullptr, 0);
-}
-void RenderEngine::end() { SDL_RenderPresent(renderer_); }
-
+#if 0 // Audio implementation moved to Audio.cpp.
 AudioEngine::AudioEngine(AssetRepository& assets) : assets_(assets) {}
 AudioEngine::~AudioEngine() { if (stream_) SDL_DestroyAudioStream(stream_); }
 void AudioEngine::stop() { if (stream_) SDL_ClearAudioStream(stream_); }
-void AudioEngine::queue(std::span<const std::int16_t> samples, int rate) {
+void AudioEngine::queue(std::span<const std::int16_t> samples, int rate, int channels) {
     if (stream_) SDL_DestroyAudioStream(stream_);
-    const SDL_AudioSpec spec{SDL_AUDIO_S16, 1, rate};
+    const SDL_AudioSpec spec{SDL_AUDIO_S16, channels, rate};
     stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
     if (!stream_) fail("audio device open failed");
     if (!SDL_PutAudioStreamData(stream_, samples.data(), static_cast<int>(samples.size_bytes()))) fail("audio queue failed");
@@ -585,81 +483,10 @@ void AudioEngine::play_music(std::string_view logical, float gain) {
     }
     queue(output, 32000);
 }
-
-SceneMachine::SceneMachine(std::unique_ptr<Scene> initial, Services& services)
-    : services_(services), scene_(std::move(initial)) { scene_->enter(services_); }
-void SceneMachine::update(const InputState& input, float fixed_seconds) {
-    scene_->update(services_, input, fixed_seconds);
-    if (auto next = scene_->next()) { scene_ = std::move(next); scene_->enter(services_); }
-}
-void SceneMachine::draw() { scene_->draw(services_); }
+#endif
 
 std::unique_ptr<Scene> make_startup_scene() { return std::make_unique<StartupScene>(); }
 std::unique_ptr<Scene> make_opening_scene() { return std::make_unique<OpeningScene>(); }
 std::unique_ptr<Scene> make_title_scene() { return std::make_unique<TitleScene>(); }
-
-Application::Application(ApplicationOptions options) : options_(std::move(options)) {
-    if (options_.headless) {
-        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
-        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
-        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-    }
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) fail("SDL initialization failed");
-    const auto flags = options_.headless ? SDL_WINDOW_HIDDEN : SDL_WINDOW_RESIZABLE;
-    if (!SDL_CreateWindowAndRenderer("Sagas | Smash Remix", 960, 720, flags, &window_, &renderer_)) fail("window creation failed");
-    assets_ = std::make_unique<AssetRepository>(options_.asset_root);
-    render_ = std::make_unique<RenderEngine>(window_, renderer_, *assets_);
-    audio_ = std::make_unique<AudioEngine>(*assets_);
-    services_ = std::make_unique<Services>(Services{*assets_, *render_, *audio_, physics_});
-    scenes_ = std::make_unique<SceneMachine>(options_.start_at_title ? make_title_scene() : make_startup_scene(), *services_);
-}
-Application::~Application() {
-    scenes_.reset(); services_.reset(); audio_.reset(); render_.reset(); assets_.reset();
-    if (renderer_) SDL_DestroyRenderer(renderer_);
-    if (window_) SDL_DestroyWindow(window_);
-    SDL_Quit();
-}
-InputState Application::poll_input() {
-    InputState input;
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_EVENT_QUIT) input.quit = true;
-        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-            input.accept_pressed |= event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE || event.key.key == SDLK_A;
-            input.cancel_pressed |= event.key.key == SDLK_ESCAPE || event.key.key == SDLK_B;
-            input.skip_pressed |= event.key.key == SDLK_S;
-        }
-        if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
-            input.accept_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH || event.gbutton.button == SDL_GAMEPAD_BUTTON_START;
-            input.cancel_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST;
-        }
-    }
-    return input;
-}
-int Application::run() {
-    using clock = std::chrono::steady_clock;
-    constexpr auto step = std::chrono::duration<double>(1.0 / 60.0);
-    auto previous = clock::now();
-    std::chrono::duration<double> accumulator{};
-    int frames{};
-    bool running = true;
-    while (running && (options_.frame_limit <= 0 || frames < options_.frame_limit)) {
-        const auto input = poll_input();
-        running = !input.quit;
-        const auto now = clock::now();
-        accumulator += options_.headless ? step : std::min(now - previous, std::chrono::duration_cast<clock::duration>(std::chrono::milliseconds(250)));
-        previous = now;
-        bool first = true;
-        while (accumulator >= step) {
-            scenes_->update(first ? input : InputState{}, static_cast<float>(step.count()));
-            accumulator -= step;
-            first = false;
-        }
-        scenes_->draw();
-        ++frames;
-        if (!options_.headless) SDL_Delay(1);
-    }
-    return 0;
-}
 
 } // namespace sagas

@@ -573,6 +573,12 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(data.size()));
 }
 
+void RenderEngine::clear_depth() {
+    glDepthMask(GL_TRUE);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    shadows_ready_=false;
+}
+
 void RenderEngine::request_capture(std::filesystem::path path) { capture_path_=std::move(path); }
 
 void RenderEngine::end() {

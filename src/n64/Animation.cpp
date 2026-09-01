@@ -73,7 +73,12 @@ JointPose AnimationDecoder::sample(Address script, float frame, JointPose initia
         }
         if (opcode == 2) { cursor += duration; continue; }
         if (opcode == 13) { command.offset += 4; continue; }
-        if (opcode == 15 || opcode == 16) { cursor += duration; continue; }
+        if (opcode == 15) {
+            initial.flags=static_cast<std::uint16_t>(flags);
+            cursor += duration;
+            continue;
+        }
+        if (opcode == 16) { cursor += duration; continue; }
         if (opcode == 17) {
             for (unsigned bit = 0; bit < 10; ++bit) if (flags & (1U << bit)) command.offset += 4;
             cursor += duration;
@@ -119,6 +124,139 @@ JointPose AnimationDecoder::sample(Address script, float frame, JointPose initia
     }
     for (std::size_t i = 0; i < tracks.size(); ++i)
         if (tracks[i].active) initial.tracks[i] = tracks[i].value(frame);
+    return initial;
+}
+
+MaterialPose AnimationDecoder::sample_material(Address script,float frame,MaterialPose initial) {
+    enum class Kind { None, Step, Linear, Cubic };
+    struct FloatTrack {
+        Kind kind{Kind::None};
+        float base{},target{},rate_base{},rate_target{},start{},duration{1};
+        bool active{};
+        [[nodiscard]] float value(float time) const {
+            const float length=std::clamp(time-start,0.0f,duration);
+            if (kind==Kind::Step) return duration==0||length>=duration ? target : base;
+            if (kind==Kind::Linear) return base+length*rate_base;
+            if (kind!=Kind::Cubic||duration==0) return target;
+            const float inverse=1.0f/duration;
+            const float square=length*length;
+            const float inverse_square=inverse*inverse;
+            const float cube_term=square*length*inverse_square;
+            const float twice=2.0f*cube_term*inverse;
+            const float thrice=3.0f*square*inverse_square;
+            const float square_term=square*inverse;
+            const float tangent=cube_term-square_term;
+            return base*((twice-thrice)+1.0f)+target*(thrice-twice)+
+                   rate_base*((tangent-square_term)+length)+rate_target*tangent;
+        }
+    };
+    struct ColorTrack {
+        Kind kind{Kind::None};
+        Color base{},target{};
+        float start{},duration{1};
+        bool active{};
+        [[nodiscard]] Color value(float time) const {
+            if (kind==Kind::Step) return duration==0||time-start>=duration ? target : base;
+            const float amount=duration==0 ? 1.0f : std::clamp((time-start)/duration,0.0f,1.0f);
+            const auto blend=[&](std::uint8_t a,std::uint8_t b) {
+                return static_cast<std::uint8_t>(std::clamp(std::lround(a+(b-a)*amount),0L,255L));
+            };
+            return {blend(base.r,target.r),blend(base.g,target.g),blend(base.b,target.b),blend(base.a,target.a)};
+        }
+    };
+    std::array<FloatTrack,10> tracks{};
+    std::array<ColorTrack,5> colors{};
+    for (std::size_t i=0;i<tracks.size();++i) tracks[i].base=tracks[i].target=initial.tracks[i];
+    for (std::size_t i=0;i<colors.size();++i) colors[i].base=colors[i].target=initial.colors[i];
+    const auto packed_color=[&](Address at) {
+        const auto packed=archive_.u32(at);
+        return Color{static_cast<std::uint8_t>(packed>>24),static_cast<std::uint8_t>(packed>>16),
+                     static_cast<std::uint8_t>(packed>>8),static_cast<std::uint8_t>(packed)};
+    };
+    Address command=script;
+    float cursor{};
+    std::size_t budget=16'384;
+    while (budget--&&cursor<=frame) {
+        const auto word=archive_.u32(command);
+        const unsigned opcode=word>>25;
+        const unsigned flags=(word>>15)&0x3ffU;
+        const float duration=static_cast<float>(word&0x7fffU);
+        command.offset+=4;
+        if (opcode==0) break;
+        if (opcode==1||opcode==14) {
+            const auto target=archive_.resolve(command);
+            if (!target) break;
+            command=*target;
+            continue;
+        }
+        if (opcode==2) { cursor+=duration; continue; }
+        if (opcode==12) continue;
+        if (opcode==13) { command.offset+=4; continue; }
+        if (opcode==15||opcode==16) { cursor+=duration; continue; }
+        if (opcode==17) {
+            for (unsigned bit=0;bit<10;++bit) if (flags&(1U<<bit)) command.offset+=4;
+            cursor+=duration;
+            continue;
+        }
+        if (opcode>=18&&opcode<=21) {
+            for (unsigned bit=0;bit<colors.size();++bit) if (flags&(1U<<bit)) {
+                auto& track=colors[bit];
+                track.base=track.target;
+                track.target=packed_color(command);
+                command.offset+=4;
+                track.start=cursor;
+                track.duration=duration;
+                track.kind=(opcode==18||opcode==19) ? Kind::Step : Kind::Linear;
+                track.active=true;
+            }
+            if (opcode==18||opcode==20) cursor+=duration;
+            continue;
+        }
+        if (opcode==22) {
+            for (unsigned bit=0;bit<5;++bit) if (flags&(1U<<bit)) command.offset+=4;
+            cursor+=duration;
+            continue;
+        }
+        if (opcode==7) {
+            for (unsigned bit=0;bit<tracks.size();++bit) if (flags&(1U<<bit)) {
+                tracks[bit].rate_target=archive_.f32(command);
+                command.offset+=4;
+            }
+            continue;
+        }
+        const bool values=opcode==3||opcode==4||opcode==5||opcode==6||
+                          opcode==8||opcode==9||opcode==10||opcode==11;
+        if (!values) break;
+        for (unsigned bit=0;bit<tracks.size();++bit) if (flags&(1U<<bit)) {
+            auto& track=tracks[bit];
+            track.base=track.target;
+            track.target=archive_.f32(command);
+            command.offset+=4;
+            track.start=cursor;
+            track.duration=duration;
+            track.active=true;
+            if (opcode==3||opcode==4) {
+                track.kind=Kind::Linear;
+                track.rate_base=duration!=0 ? (track.target-track.base)/duration : 0;
+                track.rate_target=0;
+            } else if (opcode==5||opcode==6) {
+                track.rate_base=track.rate_target;
+                track.rate_target=archive_.f32(command);
+                command.offset+=4;
+                track.kind=Kind::Cubic;
+            } else if (opcode==8||opcode==9) {
+                track.rate_base=track.rate_target;
+                track.rate_target=0;
+                track.kind=Kind::Cubic;
+            } else {
+                track.rate_target=0;
+                track.kind=Kind::Step;
+            }
+        }
+        if (opcode==3||opcode==5||opcode==8||opcode==10) cursor+=duration;
+    }
+    for (std::size_t i=0;i<tracks.size();++i) if (tracks[i].active) initial.tracks[i]=tracks[i].value(frame);
+    for (std::size_t i=0;i<colors.size();++i) if (colors[i].active) initial.colors[i]=colors[i].value(frame);
     return initial;
 }
 
@@ -199,6 +337,7 @@ JointPose AnimationDecoder::sample16(Address script, float frame, JointPose init
         }
         if (opcode == 11) continue;
         if (opcode == 14) {
+            initial.flags=static_cast<std::uint16_t>(flags);
             cursor += duration;
             continue;
         }

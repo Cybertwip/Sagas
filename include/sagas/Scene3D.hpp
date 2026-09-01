@@ -24,12 +24,15 @@ struct Model3D {
     // Fighter JointPairs slot 0 is drawn in the parent matrix; slot 1 is
     // drawn after applying the current joint matrix.
     std::vector<n64::Mesh> parent_meshes;
+    std::vector<std::vector<n64::Material>> materials;
+    std::vector<std::vector<std::optional<n64::Address>>> material_animation;
     std::vector<std::optional<n64::Address>> animation;
     n64::Node fighter_root{};
     std::optional<n64::Address> fighter_root_animation;
     FighterWrapper fighter_wrapper{FighterWrapper::None};
     bool fighter_animation{};
     bool receive_lighting{true};
+    float material_animation_start{};
     Vec3 position{};
     Vec3 rotation{};
     Vec3 scale{1,1,1};
@@ -42,12 +45,14 @@ public:
     explicit Scene3DLoader(n64::RelocArchive& archive) : archive_(archive) {}
     [[nodiscard]] Model3D model(std::string_view descriptor, std::string_view animation = {},
                                 GeometryLayout layout = GeometryLayout::DisplayListLinks,
-                                std::string_view materials = {});
+                                std::string_view materials = {},
+                                std::string_view material_animation = {});
     [[nodiscard]] Model3D fighter_model(std::string_view descriptor,
                                         GeometryLayout layout = GeometryLayout::Direct);
     [[nodiscard]] Model3D display_list(std::string_view symbol,
                                       GeometryLayout layout = GeometryLayout::Direct,
-                                      std::string_view materials = {});
+                                      std::string_view materials = {},
+                                      std::string_view material_animation = {});
     [[nodiscard]] Camera3D camera(std::string_view animation, float frame,
                                   Camera3D initial = {});
 private:

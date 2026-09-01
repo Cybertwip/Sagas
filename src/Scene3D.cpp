@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
 #include <stdexcept>
 
 namespace sagas {
@@ -52,6 +51,24 @@ Color modulate(Color a, Color b) {
             static_cast<std::uint8_t>(a.b*b.b/255), static_cast<std::uint8_t>(a.a*b.a/255)};
 }
 
+std::vector<std::vector<std::optional<n64::Address>>> material_animation_table(
+    n64::RelocArchive& archive,n64::Address table,
+    const std::vector<std::vector<n64::Material>>& materials) {
+    std::vector<std::vector<std::optional<n64::Address>>> result(materials.size());
+    for (std::size_t node=0;node<materials.size();++node) {
+        result[node].resize(materials[node].size());
+        const n64::Address node_slot{table.file,table.offset+static_cast<std::uint32_t>(node*4)};
+        if (archive.u32(node_slot)==0) continue;
+        const auto scripts=archive.resolve(node_slot);
+        if (!scripts) continue;
+        for (std::size_t material=0;material<materials[node].size();++material) {
+            const n64::Address script_slot{scripts->file,scripts->offset+static_cast<std::uint32_t>(material*4)};
+            if (archive.u32(script_slot)!=0) result[node][material]=archive.resolve(script_slot);
+        }
+    }
+    return result;
+}
+
 std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model3D& model, float frame) {
     std::array<Matrix,18> parents{};
     std::vector<Matrix> result;
@@ -82,18 +99,11 @@ std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model
     return result;
 }
 
-float edge(Vec2 a, Vec2 b, Vec2 point) {
-    return (point.x-a.x)*(b.y-a.y)-(point.y-a.y)*(b.x-a.x);
-}
-
-std::uint8_t channel(float value) {
-    return static_cast<std::uint8_t>(std::clamp(std::lround(value), 0L, 255L));
-}
-
 } // namespace
 
 Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view animation,
-                            GeometryLayout layout, std::string_view material_symbol) {
+                            GeometryLayout layout, std::string_view material_symbol,
+                            std::string_view material_animation_symbol) {
     const auto desc = archive_.symbol(descriptor);
     if (!desc) throw std::runtime_error("missing model descriptor symbol: " + std::string(descriptor));
     Model3D model;
@@ -106,6 +116,14 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
         const auto table=archive_.symbol(material_symbol);
         if (!table) throw std::runtime_error("missing material symbol: " + std::string(material_symbol));
         materials=decoder.materials(*table,model.nodes.size());
+    }
+    model.materials=materials;
+    model.material_animation.resize(model.nodes.size());
+    if (!material_animation_symbol.empty()) {
+        const auto table=archive_.symbol(material_animation_symbol);
+        if (!table) throw std::runtime_error("missing material animation symbol: "+
+                                             std::string(material_animation_symbol));
+        model.material_animation=material_animation_table(archive_,*table,model.materials);
     }
     for (std::size_t i=0; i<model.nodes.size(); ++i) if (model.nodes[i].display_list) {
         if (layout == GeometryLayout::JointPairs) {
@@ -138,6 +156,8 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
     model.animation.resize(model.nodes.size());
     n64::DisplayListDecoder decoder(archive_);
     const auto materials=decoder.materials({desc->file,0},model.nodes.size());
+    model.materials=materials;
+    model.material_animation.resize(model.nodes.size());
     for (std::size_t i=0;i<model.nodes.size();++i) if (model.nodes[i].display_list) {
         if (layout==GeometryLayout::JointPairs) {
             const auto pair=*model.nodes[i].display_list;
@@ -154,7 +174,8 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
 }
 
 Model3D Scene3DLoader::display_list(std::string_view symbol, GeometryLayout layout,
-                                   std::string_view material_symbol) {
+                                   std::string_view material_symbol,
+                                   std::string_view material_animation_symbol) {
     const auto address = archive_.symbol(symbol);
     if (!address) throw std::runtime_error("missing display-list symbol: " + std::string(symbol));
     Model3D model;
@@ -167,6 +188,14 @@ Model3D Scene3DLoader::display_list(std::string_view symbol, GeometryLayout layo
         if (!table) throw std::runtime_error("missing material symbol: "+std::string(material_symbol));
         auto decoded=decoder.materials(*table,1);
         materials=std::move(decoded.front());
+    }
+    model.materials.push_back(materials);
+    model.material_animation.resize(1);
+    if (!material_animation_symbol.empty()) {
+        const auto table=archive_.symbol(material_animation_symbol);
+        if (!table) throw std::runtime_error("missing material animation symbol: "+
+                                             std::string(material_animation_symbol));
+        model.material_animation=material_animation_table(archive_,*table,model.materials);
     }
     if (layout == GeometryLayout::JointPairs) {
         if (const auto parent=archive_.resolve(*address))
@@ -252,9 +281,42 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
     const Vec3 key=normalize(lights.key.direction);
     lights.key.direction=normalize({dot(key,right),dot(key,up),dot(key,forward)});
     const auto matrices=world_matrices(animation_,model,frame);
+    std::vector<std::uint16_t> runtime_flags(model.nodes.size());
+    for (std::size_t node=0;node<model.nodes.size();++node) {
+        if (node<model.animation.size()&&model.animation[node]) {
+            const auto pose=model.fighter_animation
+                ? animation_.sample16(*model.animation[node],frame,animation_.pose(model.nodes[node]))
+                : animation_.sample(*model.animation[node],frame,animation_.pose(model.nodes[node]));
+            runtime_flags[node]=pose.flags;
+        }
+    }
     std::array<std::size_t,18> latest_at_depth{};
+    int hidden_depth=-1;
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
+        const int node_depth=model.nodes[node_index].depth;
+        if (hidden_depth>=0&&node_depth<=hidden_depth) hidden_depth=-1;
+        if (hidden_depth>=0) continue;
+        if ((runtime_flags[node_index]&2U)!=0) {
+            hidden_depth=node_depth;
+            continue;
+        }
         const Matrix& world=matrices[node_index];
+        std::vector<n64::MaterialPose> material_poses;
+        if (node_index<model.materials.size()) {
+            material_poses.resize(model.materials[node_index].size());
+            for (std::size_t material=0;material<material_poses.size();++material) {
+                const auto& source=model.materials[node_index][material];
+                auto& pose=material_poses[material];
+                pose.colors[0]=source.primitive;
+                if (source.light1) pose.colors[3]=*source.light1;
+                if (source.light2) pose.colors[4]=*source.light2;
+                if (node_index<model.material_animation.size()&&
+                    material<model.material_animation[node_index].size()&&
+                    model.material_animation[node_index][material])
+                    pose=animation_.sample_material(*model.material_animation[node_index][material],
+                                                    std::max(frame-model.material_animation_start,0.0f),pose);
+            }
+        }
         const auto render_mesh=[&](const n64::Mesh& mesh,const Matrix& mesh_world) {
         for (std::size_t i=0;i+2<mesh.vertices.size();i+=3) {
             std::array<Vec3,3> world_points{};
@@ -276,26 +338,43 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 const Vec3 relative=sub(point,camera.eye);
                 const Vec3 world_normal=source.lit
                     ? normalize(transform_direction(mesh_world,source.normal)) : face_normal;
+                Color surface=source.color;
+                if (source.material_index<material_poses.size()) {
+                    const bool animated=node_index<model.material_animation.size()&&
+                        source.material_index<model.material_animation[node_index].size()&&
+                        model.material_animation[node_index][source.material_index].has_value();
+                    if (animated) surface=source.lit ? material_poses[source.material_index].colors[0]
+                                                    : modulate(surface,material_poses[source.material_index].colors[0]);
+                }
                 triangle[j]={{dot(relative,right),dot(relative,up),dot(relative,forward)},
-                             modulate(source.color,tint),{source.u,source.v},
+                             modulate(surface,tint),{source.u,source.v},
                              normalize({dot(world_normal,right),dot(world_normal,up),dot(world_normal,forward)})};
             }
             const auto& sampler=mesh.vertices[i];
+            auto material_light1=sampler.light1;
+            auto material_light2=sampler.light2;
+            bool animated_translucency{};
+            if (sampler.material_index<material_poses.size()) {
+                material_light1=material_poses[sampler.material_index].colors[3];
+                material_light2=material_poses[sampler.material_index].colors[4];
+                animated_translucency=material_poses[sampler.material_index].colors[0].a<255;
+            }
             triangles_.push_back({triangle,sampler.texture,sampler.texture_mode_s,sampler.texture_mode_t,
                                   sampler.texture_mask_s,sampler.texture_mask_t,
                                   sampler.texture_window_s,sampler.texture_window_t,lights,
-                                  sampler.light1,sampler.light2,camera.fov_y,camera.near_plane,camera.far_plane,
+                                  material_light1,material_light2,camera.fov_y,camera.near_plane,camera.far_plane,
                                   sampler.lit||model.receive_lighting,
-                                  sampler.translucent||tint.a<255});
+                                  sampler.translucent||tint.a<255||animated_translucency});
         }
         };
-        if (node_index<model.parent_meshes.size() && !model.parent_meshes[node_index].vertices.empty()) {
+        if ((runtime_flags[node_index]&1U)==0&&node_index<model.parent_meshes.size() &&
+            !model.parent_meshes[node_index].vertices.empty()) {
             const auto depth=model.nodes[node_index].depth;
             const Matrix& parent_world=(depth>0 && depth<=18)
                 ? matrices[latest_at_depth[static_cast<std::size_t>(depth-1)]] : world;
             render_mesh(model.parent_meshes[node_index],parent_world);
         }
-        render_mesh(model.meshes[node_index],world);
+        if ((runtime_flags[node_index]&1U)==0) render_mesh(model.meshes[node_index],world);
         const auto depth=model.nodes[node_index].depth;
         if (depth>=0 && depth<18) latest_at_depth[static_cast<std::size_t>(depth)]=node_index;
     }

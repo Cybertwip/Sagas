@@ -32,6 +32,7 @@ struct DisplayListDecoder::State {
     Color primitive{255,255,255,255};
     std::optional<Color> light1;
     std::optional<Color> light2;
+    std::optional<std::uint16_t> material_index;
     std::uint32_t render_mode{};
     bool translucent{};
     std::span<const Material> materials;
@@ -209,6 +210,7 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
         vertex.texture_window_t=static_cast<std::uint16_t>(
             tile.window_set && tile.lrt>=tile.ult ? ((tile.lrt-tile.ult)>>2)+1U
                                                   : (image ? image->height : 1U));
+        if (state.material_index) vertex.material_index=*state.material_index;
         vertex.translucent=state.translucent;
         mesh.vertices.push_back(std::move(vertex));
     }
@@ -434,6 +436,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                             if (material.set_primitive) state.primitive=material.primitive;
                             if (material.light1) state.light1=material.light1;
                             if (material.light2) state.light2=material.light2;
+                            state.material_index=static_cast<std::uint16_t>(material_index);
                             auto& tile=state.tiles[state.render_tile];
                             tile.uls=material.tile_uls; tile.ult=material.tile_ult;
                             tile.lrs=material.tile_lrs; tile.lrt=material.tile_lrt;

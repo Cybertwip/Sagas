@@ -43,6 +43,7 @@ public:
                    const std::shared_ptr<const RasterImage>& image = {});
     void prepare_forward_shadows(std::span<const ForwardVertex> vertices, Vec3 light_direction);
     void forward(std::span<const ForwardVertex> vertices, const ForwardMaterial& material);
+    void clear_depth();
     void request_capture(std::filesystem::path path);
     void end();
 private:

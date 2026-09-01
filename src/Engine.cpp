@@ -186,7 +186,9 @@ public:
         loader_ = std::make_unique<Scene3DLoader>(*archive_);
         renderer_ = std::make_unique<Scene3DRenderer>(*archive_);
         room_background_ = loader_->model("llMVCommonRoomBackgroundDObjDesc", {}, GeometryLayout::DisplayListLinks,
-                                          "llMVCommonRoomBackgroundMObjSub");
+                                          "llMVCommonRoomBackgroundMObjSub",
+                                          "llMVCommonRoomBackgroundMatAnimJoint");
+        room_background_.material_animation_start=1080.0f;
         room_sunlight_ = loader_->display_list("llMVCommonRoomSunlightDisplayList", GeometryLayout::DisplayListLinks);
         room_sunlight_.receive_lighting=false;
         room_desk_ = loader_->model("llMVCommonRoomDeskDObjDesc", {}, GeometryLayout::Direct);
@@ -200,25 +202,29 @@ public:
         if (const auto animation = archive_->symbol("llMVCommonRoomTissuesAnimJoint"))
             room_tissues_.animation[0] = animation;
         room_desk_ground_ = loader_->model("llMVCommonRoomDeskGroundDObjDesc", {}, GeometryLayout::DisplayListLinks,
-                                           "llMVCommonRoomDeskGroundMObjSub");
+                                           "llMVCommonRoomDeskGroundMObjSub",
+                                           "llMVCommonRoomDeskGroundMatAnimJoint");
         room_logo_ = loader_->model("llMVCommonRoomLogoDObjDesc", {}, GeometryLayout::DisplayListLinks,
-                                    "llMVCommonRoomLogoMObjSub");
+                                    "llMVCommonRoomLogoMObjSub","llMVCommonRoomLogoMatAnimJoint");
         room_logo_.receive_lighting=false;
         room_snap_ = loader_->model("llMVCommonRoomSnapDObjDesc", "llMVCommonRoomSnapAnimJoint");
         room_closeup_air_ = loader_->model("llMVCommonRoomCloseUpEffectAirDObjDesc",
                                            "llMVCommonRoomCloseUpEffectAirAnimJoint",
                                            GeometryLayout::DisplayListLinks,
-                                           "llMVCommonRoomCloseUpEffectAirMObjSub");
+                                           "llMVCommonRoomCloseUpEffectAirMObjSub",
+                                           "llMVCommonRoomCloseUpEffectAirMatAnimJoint");
         room_closeup_ground_ = loader_->model("llMVCommonRoomCloseUpEffectGroundDObjDesc",
                                               "llMVCommonRoomCloseUpEffectGroundAnimJoint",
                                               GeometryLayout::DisplayListLinks,
-                                              "llMVCommonRoomCloseUpEffectGroundMObjSub");
+                                              "llMVCommonRoomCloseUpEffectGroundMObjSub",
+                                              "llMVCommonRoomCloseUpEffectGroundMatAnimJoint");
         room_boss_shadow_ = loader_->display_list("llMVCommonRoomBossShadowDisplayList");
         room_boss_shadow_.receive_lighting=false;
         if (const auto animation = archive_->symbol("llMVCommonRoomBossShadowAnimJoint"))
             room_boss_shadow_.animation[0] = animation;
         room_spotlight_ = loader_->display_list("llMVCommonRoomSpotlightDisplayList",GeometryLayout::Direct,
-                                                "llMVCommonRoomSpotlightMObjSub");
+                                                "llMVCommonRoomSpotlightMObjSub",
+                                                "llMVCommonRoomSpotlightMatAnimJoint");
         room_spotlight_.receive_lighting=false;
         room_transition_outline_ = loader_->display_list("llMVOpeningRoomTransitionOutlineDisplayList");
         room_transition_overlay_ = loader_->display_list("llMVOpeningRoomTransitionOverlayDisplayList");
@@ -434,10 +440,8 @@ private:
                     renderer_->draw(r,falling,camera,static_cast<float>(local-380),{255,255,255,255},warm_room);
                 }
             };
-            // All room geometry targets the same original Z image.  Keep
-            // static props, animated fighters, shadows, and the HAL logo in
-            // one software pass so every primitive participates in the same
-            // depth test as the camera moves.
+            // Static props and animated fighters share the native GPU depth
+            // buffer, regardless of whether their source mesh was skinned.
             if (local >= 280 && local < 500) draw_pulled_fighter();
             if (local >= 695) renderer_->draw(r,link_fall_,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
             if (local < 280) renderer_->draw(r,room_boss_shadow_,camera,static_cast<float>(local),
@@ -454,6 +458,7 @@ private:
             // continue to share scene depth.
             if (local < 280) {
                 renderer_->flush(r);
+                r.clear_depth();
                 renderer_->draw(r,room_logo_,camera,static_cast<float>(local),
                                 {255,255,255,255},warm_room);
             }

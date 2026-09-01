@@ -360,8 +360,19 @@ private:
             const float boss_frame = static_cast<float>(local < 560 ? local : (local < 860 ? local-560 : local-860));
             renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
             if (local >= 280) {
-                if (local < 380) renderer_->draw(r,mario_pickup_,camera,static_cast<float>(local-280),{255,255,255,255},warm_room);
-                else renderer_->draw(r,mario_fall_,camera,static_cast<float>(local-380),{255,255,255,255},warm_room);
+                if (local < 380) {
+                    const float pickup_frame=static_cast<float>(local-280);
+                    const auto held=renderer_->placed_at_joint(mario_pickup_,pickup_frame,boss,boss_frame,1);
+                    renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},warm_room);
+                } else {
+                    auto falling=mario_fall_;
+                    const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,1);
+                    if (release.root_transform) {
+                        falling.position={(*release.root_transform)[3],(*release.root_transform)[7],
+                                          (*release.root_transform)[11]};
+                    }
+                    renderer_->draw(r,falling,camera,static_cast<float>(local-380),{255,255,255,255},warm_room);
+                }
             }
             if (local >= 695) renderer_->draw(r,link_fall_,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
         } else {

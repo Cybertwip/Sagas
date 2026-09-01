@@ -25,6 +25,7 @@ struct Model3D {
     Vec3 position{};
     Vec3 rotation{};
     Vec3 scale{1,1,1};
+    std::optional<std::array<float,16>> root_transform;
 };
 
 // Builder pattern: converts reloc symbols into immutable renderable models.
@@ -47,6 +48,9 @@ public:
     void begin();
     void draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
               float frame, Color tint = {255,255,255,255}, LightingRig lights = {});
+    [[nodiscard]] Model3D placed_at_joint(const Model3D& model, float model_frame,
+                                          const Model3D& carrier, float carrier_frame,
+                                          std::size_t carrier_joint);
     void flush(RenderEngine& render);
     void end(RenderEngine& render);
 private:

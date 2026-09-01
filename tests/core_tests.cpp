@@ -56,6 +56,42 @@ int main() {
                       << " s=" << pose.tracks[7] << ',' << pose.tracks[8] << ',' << pose.tracks[9] << '\n';
         }
     }
+    const auto boss_debug = scene_loader.model("llBossModelJointTreeDObjDesc", {}, sagas::GeometryLayout::JointPairs);
+    const auto boss_scripts = animation_decoder.table({460, 0}, 26);
+    std::cout << "boss descriptor\n";
+    for (std::size_t i=0; i<boss_debug.nodes.size(); ++i) {
+        const auto& node=boss_debug.nodes[i];
+        std::cout << "  " << i << " depth=" << node.depth << " flags=" << node.flags << " t=" << node.translate[0] << ','
+                  << node.translate[1] << ',' << node.translate[2] << " triangles="
+                  << boss_debug.meshes[i].vertices.size()/3 << '\n';
+    }
+    for (std::size_t i=0; i<3; ++i) if (boss_scripts[i]) {
+        const auto pose=animation_decoder.sample16(*boss_scripts[i],40,animation_decoder.pose(boss_debug.nodes[i]));
+        std::cout << "boss pose " << i << " t=" << pose.tracks[4] << ',' << pose.tracks[5] << ',' << pose.tracks[6]
+                  << " s=" << pose.tracks[7] << ',' << pose.tracks[8] << ',' << pose.tracks[9] << '\n';
+    }
+    auto boss_animated=boss_debug;
+    boss_animated.animation=animation_decoder.table({458,0},boss_animated.nodes.size());
+    boss_animated.fighter_animation=true;
+    auto mario_animated=mario_debug;
+    mario_animated.animation=fighter_scripts;
+    mario_animated.fighter_animation=true;
+    sagas::Scene3DRenderer debug_renderer(archive);
+    for (float frame : {20.0f,70.0f,100.0f}) {
+        const auto placed=debug_renderer.placed_at_joint(mario_animated,frame,boss_animated,frame+280.0f,1);
+        std::cout << "attached " << frame << " root=" << (*placed.root_transform)[3] << ','
+                  << (*placed.root_transform)[7] << ',' << (*placed.root_transform)[11] << '\n';
+    }
+    std::size_t mario_textured{},mario_opaque{},mario_vertices{};
+    for (const auto& mesh : mario_debug.meshes) for (const auto& vertex : mesh.vertices) {
+        ++mario_vertices;
+        if (vertex.texture) {
+            ++mario_textured;
+            for (std::size_t i=3;i<vertex.texture->rgba.size();i+=4) if (vertex.texture->rgba[i]) { ++mario_opaque; break; }
+        }
+    }
+    std::cout << "mario vertices=" << mario_vertices << " textured=" << mario_textured
+              << " opaque-texture-refs=" << mario_opaque << '\n';
     struct ModelCase { const char* descriptor; const char* animation; sagas::GeometryLayout layout; };
     const ModelCase opening_models[]{
         {"llMVOpeningYosterNestDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
@@ -76,8 +112,13 @@ int main() {
         std::cout << "loading " << item.descriptor << '\n';
         const auto model = scene_loader.model(item.descriptor, item.animation, item.layout);
         std::size_t triangles{};
-        for (const auto& part : model.meshes) triangles += part.vertices.size() / 3;
-        std::cout << "  nodes: " << model.nodes.size() << " meshes: " << model.meshes.size() << " triangles: " << triangles << '\n';
+        std::size_t textured{};
+        for (const auto& part : model.meshes) {
+            triangles += part.vertices.size() / 3;
+            for (const auto& vertex : part.vertices) if (vertex.texture) ++textured;
+        }
+        std::cout << "  nodes: " << model.nodes.size() << " meshes: " << model.meshes.size()
+                  << " triangles: " << triangles << " textured: " << textured << '\n';
         assert(triangles > 0);
     }
     std::cout << "Sagas core tests passed\n";

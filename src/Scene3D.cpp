@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 
@@ -50,6 +52,29 @@ Vec3 normalize(Vec3 v) {
 Color modulate(Color a, Color b) {
     return {static_cast<std::uint8_t>(a.r*b.r/255), static_cast<std::uint8_t>(a.g*b.g/255),
             static_cast<std::uint8_t>(a.b*b.b/255), static_cast<std::uint8_t>(a.a*b.a/255)};
+}
+
+std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model3D& model, float frame) {
+    std::array<Matrix,18> parents{};
+    std::vector<Matrix> result;
+    result.reserve(model.nodes.size());
+    const Matrix model_matrix=model.root_transform ? Matrix{*model.root_transform}
+        : multiply(multiply(translation({model.position.x,model.position.y,model.position.z}),
+                            rotation({model.rotation.x,model.rotation.y,model.rotation.z})),
+                   scale({model.scale.x,model.scale.y,model.scale.z}));
+    for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
+        auto node=model.nodes[node_index];
+        if (node_index < model.animation.size() && model.animation[node_index])
+            n64::AnimationDecoder::apply(node, model.fighter_animation
+                ? animation.sample16(*model.animation[node_index],frame,animation.pose(node))
+                : animation.sample(*model.animation[node_index],frame,animation.pose(node)));
+        const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
+        Matrix world=multiply(model_matrix,local);
+        if (node.depth>0 && node.depth<=18) world=multiply(parents[node.depth-1],local);
+        if (node.depth>=0 && node.depth<18) parents[node.depth]=world;
+        result.push_back(world);
+    }
+    return result;
 }
 
 float edge(Vec2 a, Vec2 b, Vec2 point) {
@@ -124,44 +149,120 @@ void Scene3DRenderer::begin() {
     batching_ = true;
 }
 
+Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame,
+                                         const Model3D& carrier, float carrier_frame,
+                                         std::size_t carrier_joint) {
+    Model3D placed=model;
+    const auto carrier_matrices=world_matrices(animation_,carrier,carrier_frame);
+    if (carrier_joint>=carrier_matrices.size() || model.nodes.empty()) return placed;
+    auto first=model.nodes.front();
+    if (!model.animation.empty() && model.animation.front())
+        n64::AnimationDecoder::apply(first,model.fighter_animation
+            ? animation_.sample16(*model.animation.front(),model_frame,animation_.pose(first))
+            : animation_.sample(*model.animation.front(),model_frame,animation_.pose(first)));
+    const Matrix attachment=multiply(carrier_matrices[carrier_joint],
+                                     translation({-first.translate[0],-first.translate[1],-first.translate[2]}));
+    // The original attachment helper copies the holding joint's world
+    // position and orientation into the fighter root, but deliberately does
+    // not inherit Master Hand's animated scale.
+    Matrix root;
+    for (int column=0;column<3;++column) {
+        Vec3 axis{carrier_matrices[carrier_joint].m[column],
+                  carrier_matrices[carrier_joint].m[4+column],
+                  carrier_matrices[carrier_joint].m[8+column]};
+        axis=normalize(axis);
+        root.m[column]=axis.x;
+        root.m[4+column]=axis.y;
+        root.m[8+column]=axis.z;
+    }
+    root.m[3]=attachment.m[3];
+    root.m[7]=attachment.m[7];
+    root.m[11]=attachment.m[11];
+    placed.root_transform=root.m;
+    return placed;
+}
+
 void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
                            float frame, Color tint, LightingRig lights) {
     const bool immediate = !batching_;
-    std::array<Matrix,18> parents{};
+    const auto queued_before=triangles_.size();
     const Vec3 forward=normalize(sub(camera.at,camera.eye));
     const Vec3 right=normalize(cross(forward,camera.up));
     const Vec3 up=cross(right,forward);
     const float focal=1.0f/std::tan(camera.fov_y*0.008726646259971648f);
-    const Matrix model_matrix=multiply(multiply(translation({model.position.x,model.position.y,model.position.z}),
-                                                rotation({model.rotation.x,model.rotation.y,model.rotation.z})),
-                                       scale({model.scale.x,model.scale.y,model.scale.z}));
+    const auto matrices=world_matrices(animation_,model,frame);
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
-        auto node=model.nodes[node_index];
-        if (node_index < model.animation.size() && model.animation[node_index])
-            n64::AnimationDecoder::apply(node, model.fighter_animation
-                ? animation_.sample16(*model.animation[node_index],frame,animation_.pose(node))
-                : animation_.sample(*model.animation[node_index],frame,animation_.pose(node)));
-        const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
-        Matrix world=multiply(model_matrix,local);
-        if (node.depth>0 && node.depth<=18) world=multiply(parents[node.depth-1],local);
-        if (node.depth>=0 && node.depth<18) parents[node.depth]=world;
+        const Matrix& world=matrices[node_index];
         const auto& mesh=model.meshes[node_index];
         for (std::size_t i=0;i+2<mesh.vertices.size();i+=3) {
-            std::array<ProjectedVertex,3> triangle{};
-            bool visible=true;
+            struct CameraVertex { Vec3 relative; Color color; Vec2 uv; };
+            std::vector<CameraVertex> polygon;
+            polygon.reserve(5);
             for (int j=0;j<3;++j) {
                 const auto& source=mesh.vertices[i+j];
                 const Vec3 point=transform(world,{source.x,source.y,source.z});
                 const Vec3 relative=sub(point,camera.eye);
-                const float depth=dot(relative,forward);
-                if (depth<camera.near_plane || depth>camera.far_plane) visible=false;
                 Color color=modulate(source.color,tint);
                 if (source.lit) color=LightingSystem::shade(color,transform_direction(world,source.normal),lights);
-                triangle[j]={{160+dot(relative,right)*focal*150/depth,
-                              120-dot(relative,up)*focal*150/depth},color,{source.u,source.v},depth};
+                polygon.push_back({relative,color,{source.u,source.v}});
             }
-            if (visible) triangles_.push_back({triangle,mesh.vertices[i].texture});
+            const auto clip = [&](float plane, bool keep_greater) {
+                std::vector<CameraVertex> output;
+                if (polygon.empty()) return output;
+                const auto distance = [&](const CameraVertex& vertex) { return dot(vertex.relative,forward); };
+                const auto inside = [&](float value) { return keep_greater ? value>=plane : value<=plane; };
+                const auto blend = [](const CameraVertex& a,const CameraVertex& b,float t) {
+                    return CameraVertex{
+                        {a.relative.x+(b.relative.x-a.relative.x)*t,
+                         a.relative.y+(b.relative.y-a.relative.y)*t,
+                         a.relative.z+(b.relative.z-a.relative.z)*t},
+                        {channel(a.color.r+(b.color.r-a.color.r)*t),
+                         channel(a.color.g+(b.color.g-a.color.g)*t),
+                         channel(a.color.b+(b.color.b-a.color.b)*t),
+                         channel(a.color.a+(b.color.a-a.color.a)*t)},
+                        {a.uv.x+(b.uv.x-a.uv.x)*t,a.uv.y+(b.uv.y-a.uv.y)*t}};
+                };
+                CameraVertex previous=polygon.back();
+                float previous_depth=distance(previous);
+                bool previous_inside=inside(previous_depth);
+                for (const auto& current:polygon) {
+                    const float current_depth=distance(current);
+                    const bool current_inside=inside(current_depth);
+                    if (current_inside != previous_inside) {
+                        const float denominator=current_depth-previous_depth;
+                        const float t=std::abs(denominator)>1e-8f ? (plane-previous_depth)/denominator : 0;
+                        output.push_back(blend(previous,current,std::clamp(t,0.0f,1.0f)));
+                    }
+                    if (current_inside) output.push_back(current);
+                    previous=current;
+                    previous_depth=current_depth;
+                    previous_inside=current_inside;
+                }
+                return output;
+            };
+            polygon=clip(camera.near_plane,true);
+            polygon=clip(camera.far_plane,false);
+            for (std::size_t fan=1;fan+1<polygon.size();++fan) {
+                const std::array<CameraVertex,3> clipped{polygon[0],polygon[fan],polygon[fan+1]};
+                std::array<ProjectedVertex,3> triangle{};
+                for (int j=0;j<3;++j) {
+                    const auto& source=clipped[j];
+                    const float depth=dot(source.relative,forward);
+                    triangle[j]={{160+dot(source.relative,right)*focal*150/depth,
+                                  120-dot(source.relative,up)*focal*150/depth},source.color,source.uv,depth};
+                }
+                triangles_.push_back({triangle,mesh.vertices[i].texture});
+            }
         }
+    }
+    if (model.fighter_animation && std::getenv("SAGAS_TRACE_FIGHTERS")) {
+        float min_x=std::numeric_limits<float>::infinity(),min_y=min_x,max_x=-min_x,max_y=-min_x;
+        for (std::size_t i=queued_before;i<triangles_.size();++i) for (const auto& point:triangles_[i].points) {
+            min_x=std::min(min_x,point.position.x); min_y=std::min(min_y,point.position.y);
+            max_x=std::max(max_x,point.position.x); max_y=std::max(max_y,point.position.y);
+        }
+        std::fprintf(stderr,"fighter frame %.1f queued %zu bounds %.1f %.1f %.1f %.1f\n",frame,
+                     triangles_.size()-queued_before,min_x,min_y,max_x,max_y);
     }
     if (immediate) flush(render);
 }

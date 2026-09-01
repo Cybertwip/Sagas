@@ -246,9 +246,11 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
     const Vec3 forward=normalize(sub(camera.at,camera.eye));
     const Vec3 right=normalize(cross(forward,camera.up));
     const Vec3 up=cross(right,forward);
-    const float focal=1.0f/std::tan(camera.fov_y*0.008726646259971648f);
-    constexpr float focal_x=112.5f; // 300px viewport at the N64 camera's 4:3 aspect
-    constexpr float focal_y=110.0f; // original viewport spans y=10..230
+    // All lighting is evaluated in camera space by the forward shader.
+    // Transform the directional light once per model rather than once per
+    // fragment, while preserving its surface-to-light convention.
+    const Vec3 key=normalize(lights.key.direction);
+    lights.key.direction=normalize({dot(key,right),dot(key,up),dot(key,forward)});
     const auto matrices=world_matrices(animation_,model,frame);
     std::array<std::size_t,18> latest_at_depth{};
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
@@ -267,78 +269,24 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                               (world_points[0].z+world_points[1].z+world_points[2].z)/3.0f};
             if (dot(face_normal,sub(camera.eye,center))<0.0f)
                 face_normal={-face_normal.x,-face_normal.y,-face_normal.z};
-            struct CameraVertex { Vec3 relative; Color color; Vec2 uv; Vec3 normal; Vec3 view_direction; };
-            std::vector<CameraVertex> polygon;
-            polygon.reserve(5);
+            std::array<ProjectedVertex,3> triangle{};
             for (int j=0;j<3;++j) {
                 const auto& source=mesh.vertices[i+j];
                 const Vec3 point=world_points[j];
                 const Vec3 relative=sub(point,camera.eye);
-                Color surface=source.color;
-                if (!model.honor_vertex_alpha) surface.a=255;
-                Color color=modulate(surface,tint);
-                polygon.push_back({relative,color,{source.u,source.v},
-                                   source.lit ? normalize(transform_direction(mesh_world,source.normal)) : face_normal,
-                                   normalize(sub(camera.eye,point))});
+                const Vec3 world_normal=source.lit
+                    ? normalize(transform_direction(mesh_world,source.normal)) : face_normal;
+                triangle[j]={{dot(relative,right),dot(relative,up),dot(relative,forward)},
+                             modulate(source.color,tint),{source.u,source.v},
+                             normalize({dot(world_normal,right),dot(world_normal,up),dot(world_normal,forward)})};
             }
-            const auto clip = [&](float plane, bool keep_greater) {
-                std::vector<CameraVertex> output;
-                if (polygon.empty()) return output;
-                const auto distance = [&](const CameraVertex& vertex) { return dot(vertex.relative,forward); };
-                const auto inside = [&](float value) { return keep_greater ? value>=plane : value<=plane; };
-                const auto blend = [](const CameraVertex& a,const CameraVertex& b,float t) {
-                    return CameraVertex{
-                        {a.relative.x+(b.relative.x-a.relative.x)*t,
-                         a.relative.y+(b.relative.y-a.relative.y)*t,
-                         a.relative.z+(b.relative.z-a.relative.z)*t},
-                        {channel(a.color.r+(b.color.r-a.color.r)*t),
-                         channel(a.color.g+(b.color.g-a.color.g)*t),
-                         channel(a.color.b+(b.color.b-a.color.b)*t),
-                         channel(a.color.a+(b.color.a-a.color.a)*t)},
-                        {a.uv.x+(b.uv.x-a.uv.x)*t,a.uv.y+(b.uv.y-a.uv.y)*t},
-                        {a.normal.x+(b.normal.x-a.normal.x)*t,
-                         a.normal.y+(b.normal.y-a.normal.y)*t,
-                         a.normal.z+(b.normal.z-a.normal.z)*t},
-                        {a.view_direction.x+(b.view_direction.x-a.view_direction.x)*t,
-                         a.view_direction.y+(b.view_direction.y-a.view_direction.y)*t,
-                         a.view_direction.z+(b.view_direction.z-a.view_direction.z)*t}};
-                };
-                CameraVertex previous=polygon.back();
-                float previous_depth=distance(previous);
-                bool previous_inside=inside(previous_depth);
-                for (const auto& current:polygon) {
-                    const float current_depth=distance(current);
-                    const bool current_inside=inside(current_depth);
-                    if (current_inside != previous_inside) {
-                        const float denominator=current_depth-previous_depth;
-                        const float t=std::abs(denominator)>1e-8f ? (plane-previous_depth)/denominator : 0;
-                        output.push_back(blend(previous,current,std::clamp(t,0.0f,1.0f)));
-                    }
-                    if (current_inside) output.push_back(current);
-                    previous=current;
-                    previous_depth=current_depth;
-                    previous_inside=current_inside;
-                }
-                return output;
-            };
-            polygon=clip(camera.near_plane,true);
-            polygon=clip(camera.far_plane,false);
-            for (std::size_t fan=1;fan+1<polygon.size();++fan) {
-                const std::array<CameraVertex,3> clipped{polygon[0],polygon[fan],polygon[fan+1]};
-                std::array<ProjectedVertex,3> triangle{};
-                for (int j=0;j<3;++j) {
-                    const auto& source=clipped[j];
-                    const float depth=dot(source.relative,forward);
-                    triangle[j]={{160+dot(source.relative,right)*focal*focal_x/depth,
-                                  120-dot(source.relative,up)*focal*focal_y/depth},source.color,source.uv,depth,
-                                 source.normal,source.view_direction};
-                }
-                const auto& sampler=mesh.vertices[i];
-                triangles_.push_back({triangle,sampler.texture,sampler.texture_mode_s,sampler.texture_mode_t,
-                                      sampler.texture_mask_s,sampler.texture_mask_t,
-                                      sampler.texture_window_s,sampler.texture_window_t,lights,
-                                      sampler.light1,sampler.light2,sampler.lit||model.receive_lighting});
-            }
+            const auto& sampler=mesh.vertices[i];
+            triangles_.push_back({triangle,sampler.texture,sampler.texture_mode_s,sampler.texture_mode_t,
+                                  sampler.texture_mask_s,sampler.texture_mask_t,
+                                  sampler.texture_window_s,sampler.texture_window_t,lights,
+                                  sampler.light1,sampler.light2,camera.fov_y,camera.near_plane,camera.far_plane,
+                                  sampler.lit||model.receive_lighting,
+                                  sampler.translucent||tint.a<255});
         }
         };
         if (node_index<model.parent_meshes.size() && !model.parent_meshes[node_index].vertices.empty()) {
@@ -356,132 +304,78 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
 
 void Scene3DRenderer::flush(RenderEngine& render) {
     if (triangles_.empty()) return;
-    std::stable_sort(triangles_.begin(),triangles_.end(),[](const auto& a,const auto& b){
-        return a.points[0].depth+a.points[1].depth+a.points[2].depth>
-               b.points[0].depth+b.points[1].depth+b.points[2].depth;
+    std::stable_sort(triangles_.begin(),triangles_.end(),[](const auto& a,const auto& b) {
+        if (a.translucent!=b.translucent) return !a.translucent;
+        if (!a.translucent) return false;
+        const float az=a.points[0].position.z+a.points[1].position.z+a.points[2].position.z;
+        const float bz=b.points[0].position.z+b.points[1].position.z+b.points[2].position.z;
+        return az>bz;
     });
 
-    constexpr int width = 320;
-    constexpr int height = 240;
-    RasterImage frame{width,height,std::vector<std::uint8_t>(width*height*4)};
-    std::vector<float> depth_buffer(width*height,std::numeric_limits<float>::infinity());
-    for (const auto& triangle : triangles_) {
-        const auto& a=triangle.points[0];
-        const auto& b=triangle.points[1];
-        const auto& c=triangle.points[2];
-        if (!std::isfinite(a.position.x) || !std::isfinite(a.position.y) ||
-            !std::isfinite(b.position.x) || !std::isfinite(b.position.y) ||
-            !std::isfinite(c.position.x) || !std::isfinite(c.position.y)) continue;
-        const float area=edge(a.position,b.position,c.position);
-        if (std::abs(area)<1e-5f) continue;
-        const float left=std::min({a.position.x,b.position.x,c.position.x});
-        const float right=std::max({a.position.x,b.position.x,c.position.x});
-        const float top=std::min({a.position.y,b.position.y,c.position.y});
-        const float bottom=std::max({a.position.y,b.position.y,c.position.y});
-        if (right<0 || bottom<0 || left>=width || top>=height) continue;
-        const int x0=static_cast<int>(std::max(0.0f,std::floor(left)));
-        const int x1=static_cast<int>(std::min(static_cast<float>(width-1),std::ceil(right)));
-        const int y0=static_cast<int>(std::max(0.0f,std::floor(top)));
-        const int y1=static_cast<int>(std::min(static_cast<float>(height-1),std::ceil(bottom)));
-        for (int y=y0;y<=y1;++y) for (int x=x0;x<=x1;++x) {
-            const Vec2 sample{static_cast<float>(x)+0.5f,static_cast<float>(y)+0.5f};
-            const float w0=edge(b.position,c.position,sample)/area;
-            const float w1=edge(c.position,a.position,sample)/area;
-            const float w2=1.0f-w0-w1;
-            if (w0 < -1e-5f || w1 < -1e-5f || w2 < -1e-5f) continue;
-            const float inverse_depth=w0/a.depth+w1/b.depth+w2/c.depth;
-            if (!(inverse_depth>0) || !std::isfinite(inverse_depth)) continue;
-            const float pixel_depth=1.0f/inverse_depth;
-            const auto pixel=static_cast<std::size_t>(y*width+x);
-            if (pixel_depth>=depth_buffer[pixel]) continue;
+    const auto convert=[](const ProjectedVertex& vertex) {
+        return ForwardVertex{vertex.position,vertex.normal,vertex.color,vertex.uv};
+    };
+    std::vector<ForwardVertex> shadow_geometry;
+    shadow_geometry.reserve(triangles_.size()*3);
+    for (const auto& triangle:triangles_) if (!triangle.translucent)
+        for (const auto& point:triangle.points) shadow_geometry.push_back(convert(point));
+    render.prepare_forward_shadows(shadow_geometry,triangles_.front().lights.key.direction);
 
-            float u=(w0*a.uv.x/a.depth+w1*b.uv.x/b.depth+w2*c.uv.x/c.depth)/inverse_depth;
-            float v=(w0*a.uv.y/a.depth+w1*b.uv.y/b.depth+w2*c.uv.y/c.depth)/inverse_depth;
-            Color texture_color{255,255,255,255};
-            if (triangle.texture && triangle.texture->width>0 && triangle.texture->height>0 &&
-                triangle.texture->rgba.size()>=static_cast<std::size_t>(triangle.texture->width*triangle.texture->height*4)) {
-                const auto sample_coordinate=[](float normalized, int extent, unsigned mode,
-                                                unsigned mask, unsigned window) {
-                    float value=normalized*extent;
-                    // Clamp applies to the sampling tile, not necessarily to
-                    // the loaded image. Room materials deliberately describe
-                    // a large tile window backed by a small repeated texture.
-                    if ((mode&2U)!=0) {
-                        const float last=static_cast<float>((window ? window : extent)-1U);
-                        value=std::clamp(value,0.0f,std::max(last,0.0f));
-                    }
-                    const float period=mask ? static_cast<float>(1U<<mask) : static_cast<float>(extent);
-                    float sampled=std::fmod(value,period);
-                    if (sampled<0) sampled+=period;
-                    if ((mode&1U)!=0) {
-                        const auto section=static_cast<int>(std::floor(value/period));
-                        if (section&1) sampled=period-sampled;
-                    }
-                    return sampled/extent;
-                };
-                const float sample_x=sample_coordinate(u,triangle.texture->width,triangle.texture_mode_s,
-                                                       triangle.texture_mask_s,triangle.texture_window_s)
-                                     *triangle.texture->width;
-                const float sample_y=sample_coordinate(v,triangle.texture->height,triangle.texture_mode_t,
-                                                       triangle.texture_mask_t,triangle.texture_window_t)
-                                     *triangle.texture->height;
-                const int x0=std::clamp(static_cast<int>(std::floor(sample_x)),0,triangle.texture->width-1);
-                const int y0=std::clamp(static_cast<int>(std::floor(sample_y)),0,triangle.texture->height-1);
-                const int x1=std::min(x0+1,triangle.texture->width-1);
-                const int y1=std::min(y0+1,triangle.texture->height-1);
-                const float fx=std::clamp(sample_x-x0,0.0f,1.0f);
-                const float fy=std::clamp(sample_y-y0,0.0f,1.0f);
-                const auto texel=[&](int x,int y,int component) {
-                    return triangle.texture->rgba[static_cast<std::size_t>((y*triangle.texture->width+x)*4+component)];
-                };
-                const auto filtered=[&](int component) {
-                    const float top=texel(x0,y0,component)*(1-fx)+texel(x1,y0,component)*fx;
-                    const float bottom=texel(x0,y1,component)*(1-fx)+texel(x1,y1,component)*fx;
-                    return channel(top*(1-fy)+bottom*fy);
-                };
-                texture_color={filtered(0),filtered(1),filtered(2),filtered(3)};
-            }
-            Color vertex_color{
-                channel(w0*a.color.r+w1*b.color.r+w2*c.color.r),
-                channel(w0*a.color.g+w1*b.color.g+w2*c.color.g),
-                channel(w0*a.color.b+w1*b.color.b+w2*c.color.b),
-                channel(w0*a.color.a+w1*b.color.a+w2*c.color.a)};
-            if (triangle.lit) {
-                const auto interpolate_vec3=[&](Vec3 av,Vec3 bv,Vec3 cv) {
-                    return normalize({(w0*av.x/a.depth+w1*bv.x/b.depth+w2*cv.x/c.depth)/inverse_depth,
-                                      (w0*av.y/a.depth+w1*bv.y/b.depth+w2*cv.y/c.depth)/inverse_depth,
-                                      (w0*av.z/a.depth+w1*bv.z/b.depth+w2*cv.z/c.depth)/inverse_depth});
-                };
-                auto pixel_lights=triangle.lights;
-                if (triangle.material_light1) pixel_lights.key.color=*triangle.material_light1;
-                if (triangle.material_light2) pixel_lights.ambient=*triangle.material_light2;
-                vertex_color=LightingSystem::shade(vertex_color,
-                    interpolate_vec3(a.normal,b.normal,c.normal),
-                    interpolate_vec3(a.view_direction,b.view_direction,c.view_direction),pixel_lights);
-            }
-            Color source=modulate(texture_color,vertex_color);
-            if (source.a==0) continue;
-            const auto output=pixel*4;
-            if (source.a==255) {
-                frame.rgba[output]=source.r;
-                frame.rgba[output+1]=source.g;
-                frame.rgba[output+2]=source.b;
-                frame.rgba[output+3]=255;
-                depth_buffer[pixel]=pixel_depth;
-            } else {
-                const float alpha=source.a/255.0f;
-                const float destination_alpha=frame.rgba[output+3]/255.0f;
-                const float combined=alpha+destination_alpha*(1-alpha);
-                if (combined>0) {
-                    frame.rgba[output]=channel((source.r*alpha+frame.rgba[output]*destination_alpha*(1-alpha))/combined);
-                    frame.rgba[output+1]=channel((source.g*alpha+frame.rgba[output+1]*destination_alpha*(1-alpha))/combined);
-                    frame.rgba[output+2]=channel((source.b*alpha+frame.rgba[output+2]*destination_alpha*(1-alpha))/combined);
-                    frame.rgba[output+3]=channel(combined*255);
-                }
-            }
-        }
+    const auto make_material=[](const ProjectedTriangle& triangle) {
+        ForwardMaterial material;
+        material.texture=triangle.texture;
+        material.lights=triangle.lights;
+        if (triangle.material_light1) material.lights.key.color=*triangle.material_light1;
+        if (triangle.material_light2) material.lights.ambient=*triangle.material_light2;
+        material.fov_y=triangle.fov_y;
+        material.near_plane=triangle.near_plane;
+        material.far_plane=triangle.far_plane;
+        material.texture_mode_s=triangle.texture_mode_s;
+        material.texture_mode_t=triangle.texture_mode_t;
+        material.texture_mask_s=triangle.texture_mask_s;
+        material.texture_mask_t=triangle.texture_mask_t;
+        material.texture_window_s=triangle.texture_window_s;
+        material.texture_window_t=triangle.texture_window_t;
+        material.lit=triangle.lit;
+        material.translucent=triangle.translucent;
+        return material;
+    };
+    const auto same_color=[](Color a,Color b) {
+        return a.r==b.r&&a.g==b.g&&a.b==b.b&&a.a==b.a;
+    };
+    const auto same_material=[&](const ForwardMaterial& a,const ForwardMaterial& b) {
+        return a.texture.get()==b.texture.get() && a.fov_y==b.fov_y &&
+            a.near_plane==b.near_plane && a.far_plane==b.far_plane &&
+            a.texture_mode_s==b.texture_mode_s && a.texture_mode_t==b.texture_mode_t &&
+            a.texture_mask_s==b.texture_mask_s && a.texture_mask_t==b.texture_mask_t &&
+            a.texture_window_s==b.texture_window_s && a.texture_window_t==b.texture_window_t &&
+            a.lit==b.lit && a.translucent==b.translucent &&
+            same_color(a.lights.ambient,b.lights.ambient) &&
+            same_color(a.lights.key.color,b.lights.key.color) &&
+            same_color(a.lights.reflection,b.lights.reflection) &&
+            a.lights.ambient_intensity==b.lights.ambient_intensity &&
+            a.lights.key.intensity==b.lights.key.intensity &&
+            a.lights.key.direction.x==b.lights.key.direction.x &&
+            a.lights.key.direction.y==b.lights.key.direction.y &&
+            a.lights.key.direction.z==b.lights.key.direction.z &&
+            a.lights.reflection_intensity==b.lights.reflection_intensity &&
+            a.lights.shininess==b.lights.shininess;
+    };
+    std::vector<ForwardVertex> batch;
+    ForwardMaterial material{};
+    bool have_material{};
+    const auto submit=[&]() {
+        if (!batch.empty()) render.forward(batch,material);
+        batch.clear();
+    };
+    for (const auto& triangle:triangles_) {
+        const auto next=make_material(triangle);
+        if (have_material&&!same_material(material,next)) submit();
+        material=next;
+        have_material=true;
+        for (const auto& point:triangle.points) batch.push_back(convert(point));
     }
-    render.composite(frame);
+    submit();
     triangles_.clear();
 }
 

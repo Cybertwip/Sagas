@@ -30,7 +30,6 @@ struct Model3D {
     FighterWrapper fighter_wrapper{FighterWrapper::None};
     bool fighter_animation{};
     bool receive_lighting{true};
-    bool honor_vertex_alpha{};
     Vec3 position{};
     Vec3 rotation{};
     Vec3 scale{1,1,1};
@@ -68,12 +67,10 @@ public:
     void end(RenderEngine& render);
 private:
     struct ProjectedVertex {
-        Vec2 position{};
+        Vec3 position{};
         Color color{255,255,255,255};
         Vec2 uv{};
-        float depth{};
         Vec3 normal{};
-        Vec3 view_direction{};
     };
     struct ProjectedTriangle {
         std::array<ProjectedVertex,3> points;
@@ -84,7 +81,8 @@ private:
         LightingRig lights{};
         std::optional<Color> material_light1;
         std::optional<Color> material_light2;
-        bool lit{};
+        float fov_y{45}, near_plane{16}, far_plane{65536};
+        bool lit{}, translucent{};
     };
     n64::AnimationDecoder animation_;
     std::vector<ProjectedTriangle> triangles_;

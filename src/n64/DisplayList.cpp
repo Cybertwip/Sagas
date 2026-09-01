@@ -32,6 +32,8 @@ struct DisplayListDecoder::State {
     Color primitive{255,255,255,255};
     std::optional<Color> light1;
     std::optional<Color> light2;
+    std::uint32_t render_mode{};
+    bool translucent{};
     std::span<const Material> materials;
 };
 
@@ -42,6 +44,16 @@ Color rgba16(std::uint16_t value) {
             static_cast<std::uint8_t>(((value >> 6) & 31) * 255 / 31),
             static_cast<std::uint8_t>(((value >> 1) & 31) * 255 / 31),
             static_cast<std::uint8_t>((value & 1) ? 255 : 0)};
+}
+
+bool source_alpha_blend(std::uint32_t mode) {
+    // Decode the two RDP blender cycles instead of treating every vertex
+    // alpha byte as transparency.  XLU modes blend input colour by input
+    // alpha with framebuffer colour by (1-alpha); opaque FORCE_BL modes use
+    // a different denominator and remain depth-writing surfaces.
+    const bool cycle1=((mode>>26)&3U)==0U && ((mode>>22)&3U)==1U && ((mode>>18)&3U)==0U;
+    const bool cycle2=((mode>>24)&3U)==0U && ((mode>>20)&3U)==1U && ((mode>>16)&3U)==0U;
+    return ((mode&0x0c00U)==0x0800U) || cycle1 || cycle2;
 }
 
 } // namespace
@@ -197,6 +209,7 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
         vertex.texture_window_t=static_cast<std::uint16_t>(
             tile.window_set && tile.lrt>=tile.ult ? ((tile.lrt-tile.ult)>>2)+1U
                                                   : (image ? image->height : 1U));
+        vertex.translucent=state.translucent;
         mesh.vertices.push_back(std::move(vertex));
     }
 }
@@ -314,6 +327,18 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
         switch (opcode) {
             case 0x00: case 0xe1: case 0xe3: case 0xe6: case 0xe7: case 0xe8: case 0xe9:
             case 0xf1: case 0xfc:
+                break;
+            case 0xe2: // F3DEX2 SetOtherModeL
+                if ((w0&0xffffU)==0x001cU) {
+                    state.render_mode=w1;
+                    state.translucent=source_alpha_blend(state.render_mode);
+                }
+                break;
+            case 0xb9: // legacy F3DEX SetOtherModeL / SetRenderMode
+                if ((w0&0xffffU)==0x031dU || (w0&0x00ffffffU)==0U) {
+                    state.render_mode=w1;
+                    state.translucent=source_alpha_blend(state.render_mode);
+                }
                 break;
             case 0x01: {
                 const unsigned count = (w0 >> 12) & 0xffU;

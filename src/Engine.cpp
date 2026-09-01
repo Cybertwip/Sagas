@@ -189,12 +189,10 @@ public:
                                           "llMVCommonRoomBackgroundMObjSub");
         room_sunlight_ = loader_->display_list("llMVCommonRoomSunlightDisplayList", GeometryLayout::DisplayListLinks);
         room_sunlight_.receive_lighting=false;
-        room_sunlight_.honor_vertex_alpha=true;
         room_desk_ = loader_->model("llMVCommonRoomDeskDObjDesc", {}, GeometryLayout::Direct);
         room_outside_ = loader_->display_list("llMVCommonRoomOutsideDisplayList", GeometryLayout::DisplayListLinks);
         room_haze_ = loader_->display_list("llMVCommonRoomHazeDisplayList", GeometryLayout::DisplayListLinks);
         room_haze_.receive_lighting=false;
-        room_haze_.honor_vertex_alpha=true;
         room_books_ = loader_->model("llMVCommonRoomBooksDObjDesc", "llMVCommonRoomBooksAnimJoint", GeometryLayout::Direct);
         room_pencils_ = loader_->model("llMVCommonRoomPencilsDObjDesc", "llMVCommonRoomPencilsAnimJoint", GeometryLayout::Direct);
         room_lamp_ = loader_->model("llMVCommonRoomLampDObjDesc", "llMVCommonRoomLampAnimJoint", GeometryLayout::Direct);
@@ -206,7 +204,6 @@ public:
         room_logo_ = loader_->model("llMVCommonRoomLogoDObjDesc", {}, GeometryLayout::DisplayListLinks,
                                     "llMVCommonRoomLogoMObjSub");
         room_logo_.receive_lighting=false;
-        room_logo_.honor_vertex_alpha=true;
         room_snap_ = loader_->model("llMVCommonRoomSnapDObjDesc", "llMVCommonRoomSnapAnimJoint");
         room_closeup_air_ = loader_->model("llMVCommonRoomCloseUpEffectAirDObjDesc",
                                            "llMVCommonRoomCloseUpEffectAirAnimJoint",
@@ -216,17 +213,13 @@ public:
                                               "llMVCommonRoomCloseUpEffectGroundAnimJoint",
                                               GeometryLayout::DisplayListLinks,
                                               "llMVCommonRoomCloseUpEffectGroundMObjSub");
-        room_closeup_air_.honor_vertex_alpha=true;
-        room_closeup_ground_.honor_vertex_alpha=true;
         room_boss_shadow_ = loader_->display_list("llMVCommonRoomBossShadowDisplayList");
         room_boss_shadow_.receive_lighting=false;
-        room_boss_shadow_.honor_vertex_alpha=true;
         if (const auto animation = archive_->symbol("llMVCommonRoomBossShadowAnimJoint"))
             room_boss_shadow_.animation[0] = animation;
         room_spotlight_ = loader_->display_list("llMVCommonRoomSpotlightDisplayList",GeometryLayout::Direct,
                                                 "llMVCommonRoomSpotlightMObjSub");
         room_spotlight_.receive_lighting=false;
-        room_spotlight_.honor_vertex_alpha=true;
         room_transition_outline_ = loader_->display_list("llMVOpeningRoomTransitionOutlineDisplayList");
         room_transition_overlay_ = loader_->display_list("llMVOpeningRoomTransitionOverlayDisplayList");
         if (const auto animation = archive_->symbol("llMVOpeningRoomTransitionOutlineAnimJoint"))

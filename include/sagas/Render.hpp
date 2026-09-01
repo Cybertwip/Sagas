@@ -6,6 +6,7 @@
 #include <filesystem>
 
 struct SDL_Window;
+struct SDL_GLContextState;
 
 namespace sagas {
 
@@ -40,6 +41,7 @@ public:
     void fill(float x, float y, float w, float h, Color color);
     void triangles(std::span<const TriangleVertex> vertices,
                    const std::shared_ptr<const RasterImage>& image = {});
+    void prepare_forward_shadows(std::span<const ForwardVertex> vertices, Vec3 light_direction);
     void forward(std::span<const ForwardVertex> vertices, const ForwardMaterial& material);
     void request_capture(std::filesystem::path path);
     void end();
@@ -49,11 +51,16 @@ private:
     std::uint32_t raster_texture(const std::shared_ptr<const RasterImage>& image);
     void draw_2d(std::span<const TriangleVertex> vertices, std::uint32_t texture);
     SDL_Window* window_{};
-    void* context_{};
+    SDL_GLContextState* context_{};
     AssetRepository& assets_;
     std::unordered_map<std::string, Texture> textures_;
     std::unordered_map<const RasterImage*, std::uint32_t> raster_textures_;
-    std::uint32_t program_2d_{}, program_forward_{}, vao_2d_{}, vbo_2d_{}, vao_forward_{}, vbo_forward_{};
+    std::uint32_t program_2d_{}, program_forward_{}, program_shadow_{};
+    std::uint32_t vao_2d_{}, vbo_2d_{}, vao_forward_{}, vbo_forward_{};
+    std::uint32_t shadow_framebuffer_{}, shadow_texture_{};
+    Vec3 shadow_right_{1,0,0}, shadow_up_{0,1,0}, shadow_forward_{0,0,1};
+    Vec3 shadow_min_{-1,-1,-1}, shadow_max_{1,1,1};
+    bool shadows_ready_{};
     int viewport_x_{}, viewport_y_{}, viewport_width_{320}, viewport_height_{240};
     std::filesystem::path capture_path_;
 };

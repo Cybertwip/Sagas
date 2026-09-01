@@ -91,7 +91,6 @@ add_library(sagas_engine
     src/Application.cpp
     src/Audio.cpp
     src/Core.cpp
-    src/Engine.cpp
     src/Lighting.cpp
     src/n64/Animation.cpp
     src/n64/Archive.cpp
@@ -101,6 +100,10 @@ add_library(sagas_engine
     src/Scene.cpp
     src/Scene3D.cpp
     src/SceneResources.cpp)
+target_sources(sagas_engine PRIVATE
+    src/scenes/StartupScene.cpp
+    src/scenes/OpeningScene.cpp
+    src/scenes/TitleScene.cpp)
 target_include_directories(sagas_engine PUBLIC include)
 target_link_libraries(sagas_engine PUBLIC SDL3::SDL3 PNG::PNG OpenGL::GL)
 target_compile_definitions(sagas_engine PUBLIC

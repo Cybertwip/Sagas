@@ -38,7 +38,8 @@ public:
         if (tic_ >= 170) {
             const float scale = std::clamp((tic_ - 170) / 50.0f, 0.0f, 1.0f);
             const Color yellow{255, 254, 42, static_cast<std::uint8_t>(255 * scale)};
-            r.sprite("textures/MNTitle/Cutout.png", {157, 94}, {scale, scale}, yellow);
+            r.sprite("textures/MNTitle/Cutout.png", {157, 94}, {scale, scale},
+                     {0,0,0,yellow.a});
             r.sprite("textures/MNTitle/Smash.png", {161, 88}, {scale, scale}, {255,255,255,yellow.a});
             r.sprite("textures/MNTitle/Super.png", {55, 96}, {scale, scale}, yellow);
             r.sprite("textures/MNTitle/Bros.png", {268, 96}, {scale, scale}, yellow);

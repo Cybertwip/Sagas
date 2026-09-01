@@ -345,6 +345,20 @@ RenderEngine::Texture& RenderEngine::texture(std::string_view logical) {
         png_image_free(&image);
         throw std::runtime_error("PNG decode failed: "+file);
     }
+    // The extraction tree stores N64 I/IA sprite masks as opaque grayscale
+    // PNGs.  In the source combiner their intensity is coverage, not a black
+    // rectangular background.  Recover that representation before upload.
+    bool intensity_mask=true;
+    for (std::size_t i=0;i<pixels.size();i+=4) {
+        if (pixels[i]!=pixels[i+1] || pixels[i]!=pixels[i+2] || pixels[i+3]!=255) {
+            intensity_mask=false;
+            break;
+        }
+    }
+    if (intensity_mask) for (std::size_t i=0;i<pixels.size();i+=4) {
+        pixels[i+3]=pixels[i];
+        pixels[i]=pixels[i+1]=pixels[i+2]=255;
+    }
     GLuint handle{};
     glGenTextures(1,&handle);
     glBindTexture(GL_TEXTURE_2D,handle);

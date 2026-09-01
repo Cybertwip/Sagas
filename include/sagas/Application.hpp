@@ -12,6 +12,7 @@ namespace sagas {
 struct ApplicationOptions {
     std::filesystem::path asset_root{SAGAS_DEFAULT_ASSET_ROOT};
     bool start_at_title{};
+    bool start_at_menu{};
     bool headless{};
     int frame_limit{};
     std::filesystem::path capture_path;

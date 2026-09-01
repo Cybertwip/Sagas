@@ -36,7 +36,9 @@ Application::Application(ApplicationOptions options) : options_(std::move(option
     audio_ = std::make_unique<AudioEngine>(*assets_);
     resources_ = std::make_unique<SceneResourceManager>(*assets_);
     services_ = std::make_unique<Services>(Services{*assets_, *render_, *audio_, physics_, *resources_});
-    scenes_ = std::make_unique<SceneMachine>(options_.start_at_title ? make_title_scene() : make_startup_scene(), *services_);
+    auto first_scene = options_.start_at_menu ? make_menu_scene() :
+                       (options_.start_at_title ? make_title_scene() : make_startup_scene());
+    scenes_ = std::make_unique<SceneMachine>(std::move(first_scene), *services_);
 }
 Application::~Application() {
     scenes_.reset(); services_.reset(); resources_.reset(); audio_.reset(); render_.reset(); assets_.reset();

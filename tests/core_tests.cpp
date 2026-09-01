@@ -50,9 +50,9 @@ int main() {
         {"llMVOpeningSectorGreatFoxDObjDesc", "llMVOpeningSectorGreatFoxAnimJoint", sagas::GeometryLayout::DisplayListLinks},
         {"llMVOpeningStandoffLightningDObjDesc", "llMVOpeningStandoffLightningAnimJoint", sagas::GeometryLayout::DisplayListLinks},
         {"llMVCommonRoomLogoDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
-        {"llBossModelJointTreeDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
-        {"llMarioModelJointTreeDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
-        {"llLinkModelJointTreeDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
+        {"llBossModelJointTreeDObjDesc", "", sagas::GeometryLayout::JointPairs},
+        {"llMarioModelJointTreeDObjDesc", "", sagas::GeometryLayout::Direct},
+        {"llLinkModelJointTreeDObjDesc", "", sagas::GeometryLayout::Direct},
     };
     for (const auto& item : opening_models) {
         std::cout << "loading " << item.descriptor << '\n';

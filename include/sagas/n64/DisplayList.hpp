@@ -24,6 +24,7 @@ public:
     explicit DisplayListDecoder(RelocArchive& archive) : archive_(archive) {}
     [[nodiscard]] Mesh decode(Address display_list);
     [[nodiscard]] Mesh decode_links(Address links);
+    [[nodiscard]] Mesh decode_pairs(Address pairs);
 private:
     struct State;
     void list(Mesh& mesh, State& state, Address address, int depth);

@@ -60,9 +60,14 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
     model.nodes = n64::SkeletonDecoder(archive_).decode(*desc);
     model.meshes.resize(model.nodes.size());
     n64::DisplayListDecoder decoder(archive_);
-    for (std::size_t i=0; i<model.nodes.size(); ++i) if (model.nodes[i].display_list)
-        model.meshes[i] = layout == GeometryLayout::DisplayListLinks
-            ? decoder.decode_links(*model.nodes[i].display_list) : decoder.decode(*model.nodes[i].display_list);
+    for (std::size_t i=0; i<model.nodes.size(); ++i) if (model.nodes[i].display_list) {
+        if (layout == GeometryLayout::JointPairs)
+            model.meshes[i] = decoder.decode_pairs(*model.nodes[i].display_list);
+        else if (layout == GeometryLayout::DisplayListLinks)
+            model.meshes[i] = decoder.decode_links(*model.nodes[i].display_list);
+        else
+            model.meshes[i] = decoder.decode(*model.nodes[i].display_list);
+    }
     if (!animation.empty()) {
         const auto symbol = archive_.symbol(animation);
         if (!symbol) throw std::runtime_error("missing animation symbol: " + std::string(animation));
@@ -77,8 +82,12 @@ Model3D Scene3DLoader::display_list(std::string_view symbol, GeometryLayout layo
     Model3D model;
     model.nodes.push_back({0,0,{}, {0,0,0},{0,0,0},{1,1,1}, address});
     n64::DisplayListDecoder decoder(archive_);
-    model.meshes.push_back(layout == GeometryLayout::DisplayListLinks
-        ? decoder.decode_links(*address) : decoder.decode(*address));
+    if (layout == GeometryLayout::JointPairs)
+        model.meshes.push_back(decoder.decode_pairs(*address));
+    else if (layout == GeometryLayout::DisplayListLinks)
+        model.meshes.push_back(decoder.decode_links(*address));
+    else
+        model.meshes.push_back(decoder.decode(*address));
     model.animation.resize(1);
     return model;
 }

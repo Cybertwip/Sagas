@@ -114,6 +114,21 @@ Mesh DisplayListDecoder::decode_links(Address links) {
     throw std::runtime_error("unterminated N64 display-list links");
 }
 
+Mesh DisplayListDecoder::decode_pairs(Address pairs) {
+    Mesh result;
+    for (std::size_t i = 0; i < 2; ++i) {
+        const auto address = archive_.resolve({pairs.file, pairs.offset + static_cast<std::uint32_t>(i * 4)});
+        if (!address) continue;
+        auto part = decode(*address);
+        result.vertices.insert(result.vertices.end(), part.vertices.begin(), part.vertices.end());
+        result.commands += part.commands;
+        result.display_lists += part.display_lists;
+        result.rejected_triangles += part.rejected_triangles;
+        result.unsupported_commands += part.unsupported_commands;
+    }
+    return result;
+}
+
 void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned b, unsigned c) {
     if (a >= state.cache.size() || b >= state.cache.size() || c >= state.cache.size() ||
         !state.cache[a].valid || !state.cache[b].valid || !state.cache[c].valid) {

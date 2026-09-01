@@ -13,7 +13,7 @@ struct Camera3D {
     float fov_y{45}, near_plane{16}, far_plane{65536};
 };
 
-enum class GeometryLayout { Direct, DisplayListLinks };
+enum class GeometryLayout { Direct, DisplayListLinks, JointPairs };
 
 struct Model3D {
     std::vector<n64::Node> nodes;

@@ -199,18 +199,18 @@ public:
         room_desk_ground_ = loader_->model("llMVCommonRoomDeskGroundDObjDesc", {}, GeometryLayout::DisplayListLinks);
         room_logo_ = loader_->model("llMVCommonRoomLogoDObjDesc", {}, GeometryLayout::DisplayListLinks);
         n64::AnimationDecoder animation(*archive_);
-        const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file) {
-            auto model = loader_->model(descriptor, {}, GeometryLayout::DisplayListLinks);
+        const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file, GeometryLayout layout = GeometryLayout::Direct) {
+            auto model = loader_->model(descriptor, {}, layout);
             model.animation = animation.table({file,0},model.nodes.size());
             return model;
         };
-        boss_pose1_ = animated_fighter("llBossModelJointTreeDObjDesc",458);
-        boss_pose2_ = animated_fighter("llBossModelJointTreeDObjDesc",459);
-        boss_pose3_ = animated_fighter("llBossModelJointTreeDObjDesc",460);
-        mario_pickup_ = animated_fighter("llMarioModelJointTreeDObjDesc",362);
-        mario_fall_ = animated_fighter("llMarioModelJointTreeDObjDesc",363);
-        mario_revival_ = animated_fighter("llMarioModelJointTreeDObjDesc",364);
-        link_fall_ = animated_fighter("llLinkModelJointTreeDObjDesc",409);
+        boss_pose1_ = animated_fighter("llBossModelJointTreeDObjDesc", 458, GeometryLayout::JointPairs);
+        boss_pose2_ = animated_fighter("llBossModelJointTreeDObjDesc", 459, GeometryLayout::JointPairs);
+        boss_pose3_ = animated_fighter("llBossModelJointTreeDObjDesc", 460, GeometryLayout::JointPairs);
+        mario_pickup_ = animated_fighter("llMarioModelJointTreeDObjDesc", 362, GeometryLayout::Direct);
+        mario_fall_ = animated_fighter("llMarioModelJointTreeDObjDesc", 363, GeometryLayout::Direct);
+        mario_revival_ = animated_fighter("llMarioModelJointTreeDObjDesc", 364, GeometryLayout::Direct);
+        link_fall_ = animated_fighter("llLinkModelJointTreeDObjDesc", 409, GeometryLayout::Direct);
         link_fall_.position = {872.32495f,4038.8640f,-4734.6001f};
         yoster_nest_ = loader_->model("llMVOpeningYosterNestDObjDesc");
         yoster_ground_ = loader_->model("llMVOpeningYosterGroundDObjDesc", "llMVOpeningYosterGroundAnimJoint");

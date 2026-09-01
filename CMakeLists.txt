@@ -95,6 +95,7 @@ add_library(sagas_engine
     src/Application.cpp
     src/Audio.cpp
     src/Core.cpp
+    src/Fgm.cpp
     src/Lighting.cpp
     src/n64/Animation.cpp
     src/n64/Archive.cpp

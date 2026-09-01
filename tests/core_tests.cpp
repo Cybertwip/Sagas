@@ -18,6 +18,19 @@ int main() {
     assert(body.grounded && body.position.y == 9 && body.velocity.y == 0);
 
     sagas::AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);
+    const auto menu_select = sagas::decode_fgm(assets, 158);
+    assert(menu_select.end_tick == 24 && menu_select.voices.size() == 4);
+    assert(menu_select.voices[0].wave == 10 && menu_select.voices[0].start_tick == 0);
+    assert(menu_select.voices[1].start_tick == 4 && menu_select.voices[2].start_tick == 7);
+    assert(menu_select.voices[3].start_tick == 12);
+    assert(std::abs(menu_select.voices[0].cents - -580) < 0.01f);
+    assert(std::abs(menu_select.voices[3].cents - 1020) < 0.01f);
+    const auto menu_scroll = sagas::decode_fgm(assets, 164);
+    assert(menu_scroll.end_tick == 24 && menu_scroll.voices.size() == 2);
+    assert(menu_scroll.voices[0].wave == 10 && menu_scroll.voices[1].start_tick == 8);
+    const auto title_start = sagas::decode_fgm(assets, 157);
+    assert(title_start.end_tick == 38 && title_start.voices.size() == 2);
+    assert(title_start.voices[0].wave == 21 && title_start.voices[1].start_tick == 10);
     sagas::n64::RelocArchive archive(assets);
     const auto ground = archive.symbol("llMVOpeningStandoffGroundDisplayList");
     assert(ground);

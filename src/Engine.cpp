@@ -200,7 +200,7 @@ public:
         room_logo_ = loader_->model("llMVCommonRoomLogoDObjDesc", {}, GeometryLayout::DisplayListLinks);
         n64::AnimationDecoder animation(*archive_);
         const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file) {
-            auto model = loader_->model(descriptor, {}, GeometryLayout::Direct);
+            auto model = loader_->model(descriptor, {}, GeometryLayout::DisplayListLinks);
             model.animation = animation.table({file,0},model.nodes.size());
             return model;
         };

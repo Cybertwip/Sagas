@@ -82,8 +82,10 @@ target_compile_options(sagas_engine PRIVATE -Wall -Wextra -Wpedantic)
 
 add_executable(sagas app/main.cpp)
 target_link_libraries(sagas PRIVATE sagas_engine)
-add_dependencies(sagas sagas_assets)
+add_dependencies(sagas_music_assets sagas_assets)
 add_dependencies(sagas sagas_music_assets)
+add_dependencies(sagas sagas_asset_unpack)
+
 
 if(SAGAS_BUILD_TESTS)
     enable_testing()

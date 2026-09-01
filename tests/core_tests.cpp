@@ -49,8 +49,13 @@ int main() {
         {"llMVOpeningYamabukiMBallDObjDesc", "llMVOpeningYamabukiMBallAnimJoint", sagas::GeometryLayout::DisplayListLinks},
         {"llMVOpeningSectorGreatFoxDObjDesc", "llMVOpeningSectorGreatFoxAnimJoint", sagas::GeometryLayout::DisplayListLinks},
         {"llMVOpeningStandoffLightningDObjDesc", "llMVOpeningStandoffLightningAnimJoint", sagas::GeometryLayout::DisplayListLinks},
+        {"llMVCommonRoomLogoDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
+        {"llBossModelJointTreeDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
+        {"llMarioModelJointTreeDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
+        {"llLinkModelJointTreeDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
     };
     for (const auto& item : opening_models) {
+        std::cout << "loading " << item.descriptor << '\n';
         const auto model = scene_loader.model(item.descriptor, item.animation, item.layout);
         std::size_t triangles{};
         for (const auto& part : model.meshes) triangles += part.vertices.size() / 3;

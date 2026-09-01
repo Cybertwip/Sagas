@@ -22,6 +22,7 @@ public:
     void fill(float x, float y, float w, float h, Color color);
     void triangles(std::span<const TriangleVertex> vertices,
                    const std::shared_ptr<const RasterImage>& image = {});
+    void composite(const RasterImage& image);
     void request_capture(std::filesystem::path path);
     void end();
 private:
@@ -31,6 +32,7 @@ private:
     AssetRepository& assets_;
     std::unordered_map<std::string, Texture> textures_;
     std::unordered_map<const RasterImage*, SDL_Texture*> raster_textures_;
+    SDL_Texture* composite_texture_{};
     std::filesystem::path capture_path_;
 };
 

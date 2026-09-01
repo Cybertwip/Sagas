@@ -42,10 +42,25 @@ private:
 class Scene3DRenderer final {
 public:
     explicit Scene3DRenderer(n64::RelocArchive& archive) : animation_(archive) {}
+    void begin();
     void draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
               float frame, Color tint = {255,255,255,255}, LightingRig lights = {});
+    void flush(RenderEngine& render);
+    void end(RenderEngine& render);
 private:
+    struct ProjectedVertex {
+        Vec2 position{};
+        Color color{255,255,255,255};
+        Vec2 uv{};
+        float depth{};
+    };
+    struct ProjectedTriangle {
+        std::array<ProjectedVertex,3> points;
+        std::shared_ptr<const RasterImage> texture;
+    };
     n64::AnimationDecoder animation_;
+    std::vector<ProjectedTriangle> triangles_;
+    bool batching_{};
 };
 
 } // namespace sagas

@@ -21,6 +21,7 @@ RenderEngine::RenderEngine(SDL_Window* window, SDL_Renderer* renderer, AssetRepo
 RenderEngine::~RenderEngine() {
     for (auto& [_, texture] : textures_) SDL_DestroyTexture(texture.handle);
     for (auto& [_, texture] : raster_textures_) SDL_DestroyTexture(texture);
+    SDL_DestroyTexture(composite_texture_);
 }
 RenderEngine::Texture& RenderEngine::texture(std::string_view logical) {
     const std::string key(logical);
@@ -84,6 +85,20 @@ void RenderEngine::triangles(std::span<const TriangleVertex> vertices,
         }
     }
     SDL_RenderGeometry(renderer_, texture_handle, native.data(), static_cast<int>(native.size()), nullptr, 0);
+}
+void RenderEngine::composite(const RasterImage& image) {
+    if (image.width <= 0 || image.height <= 0 || image.rgba.empty()) return;
+    if (!composite_texture_) {
+        composite_texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
+                                               SDL_TEXTUREACCESS_STREAMING, image.width, image.height);
+        if (!composite_texture_) fail("3D composite texture creation failed");
+        SDL_SetTextureScaleMode(composite_texture_, SDL_SCALEMODE_NEAREST);
+        SDL_SetTextureBlendMode(composite_texture_, SDL_BLENDMODE_BLEND);
+    }
+    if (!SDL_UpdateTexture(composite_texture_, nullptr, image.rgba.data(), image.width * 4))
+        fail("3D composite texture update failed");
+    const SDL_FRect destination{0, 0, static_cast<float>(image.width), static_cast<float>(image.height)};
+    SDL_RenderTexture(renderer_, composite_texture_, nullptr, &destination);
 }
 void RenderEngine::request_capture(std::filesystem::path path) { capture_path_ = std::move(path); }
 void RenderEngine::end() {

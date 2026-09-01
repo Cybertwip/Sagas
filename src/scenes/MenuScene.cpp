@@ -46,7 +46,7 @@ public:
         const bool next = input.down_pressed || input.left_pressed;
         if (previous != next) {
             cursor_ = previous ? (cursor_ + count - 1) % count : (cursor_ + 1) % count;
-            services.audio.play("audio/B1_sounds1/wave_021.aiff", 0.35f);
+            services.audio.play(AudioCue::MenuScroll);
         }
         if (input.cancel_pressed) {
             if (screen_ == MenuScreen::Main) exit_to_title_ = true;
@@ -63,7 +63,7 @@ public:
                 if (screen_ == MenuScreen::Options && cursor_ == 0) stereo_ = !stereo_;
                 if (screen_ == MenuScreen::Versus && cursor_ == 1) team_battle_ = !team_battle_;
             }
-            services.audio.play("audio/B1_sounds1/wave_021.aiff", 0.55f);
+            services.audio.play(AudioCue::MenuSelect);
         }
         if (screen_ == MenuScreen::Versus && cursor_ == 2 && (input.left_pressed || input.right_pressed))
             stock_ = std::clamp(stock_ + (input.right_pressed ? 1 : -1), 1, 99);
@@ -99,6 +99,11 @@ private:
         sprite(r,"MNCommon/DecalPaper.png",{140,143},{160,120,20,255});
         sprite(r,"MNCommon/DecalPaper.png",{225,56},{160,120,20,255});
         sprite(r,icon,{10,10},{153,153,153,255});
+        // The original label display list completes the lower paper wedge
+        // with a translucent primitive rectangle.  Omitting this exposed the
+        // collage through the decal and made the bottom-right look like a
+        // corrupt texture atlas.
+        r.fill(225,143,85,87,{160,120,20,230});
         sprite(r,"MNCommon/SmashLogo.png",{235,158},{0,0,0,255});
     }
 
@@ -153,6 +158,7 @@ private:
         } else if (screen_ == MenuScreen::Versus) {
             common_background(r,"MNVSMode/ConsoleIconDark.png");
             sprite(r,"MNVSMode/VSText.png",{158,192},{0,0,0,255});
+            sprite(r,"MNCommon/GameModeText.png",{189,87},{0,0,0,255});
             draw_items(r,versus_items);
             sprite(r,team_battle_?"MNVSMode/TeamText.png":"MNVSMode/StockText.png",
                    {183,78},{255,255,255,255});

@@ -355,6 +355,9 @@ RenderEngine::Texture& RenderEngine::texture(std::string_view logical) {
             break;
         }
     }
+    // Collage is genuine opaque grayscale artwork.  Unlike the I/IA glyphs
+    // and decals around it, its dark pixels are image data rather than alpha.
+    if (key.ends_with("/SmashBrosCollage.png")) intensity_mask=false;
     if (intensity_mask) for (std::size_t i=0;i<pixels.size();i+=4) {
         pixels[i+3]=pixels[i];
         pixels[i]=pixels[i+1]=pixels[i+2]=255;

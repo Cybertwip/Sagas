@@ -14,7 +14,7 @@ public:
     void update(Services& services, const InputState& input, float) override {
         ++tic_;
         if (input.accept_pressed && tic_ >= 170) {
-            services.audio.play("audio/B1_sounds1/wave_021.aiff", 0.86f);
+            services.audio.play(AudioCue::TitlePressStart);
             accepted_ = 3;
         }
         if (accepted_ > 0 && --accepted_ == 0) proceed_ = true;
@@ -44,7 +44,6 @@ public:
             r.sprite("textures/MNTitle/Super.png", {55, 96}, {scale, scale}, yellow);
             r.sprite("textures/MNTitle/Bros.png", {268, 96}, {scale, scale}, yellow);
             r.sprite("textures/MNTitle/TMUnk.png", {270, 132}, {scale, scale}, {0,0,0,yellow.a});
-            r.sprite("textures/MNTitle/TM.png", {277, 157}, {scale, scale}, {21,19,6,yellow.a});
             r.sprite("textures/MNTitle/BorderUpper.png", {160, 15}, {1,1}, {20,18,6,yellow.a});
         }
         if (tic_ >= 240) r.sprite("textures/MNTitle/Copyright.png", {160, 208}, {1,1}, {183,174,124,255});

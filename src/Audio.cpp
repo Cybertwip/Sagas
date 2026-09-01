@@ -76,6 +76,24 @@ Pcm load_aiff(std::span<const std::byte> bytes, float gain) {
     return pcm;
 }
 
+Pcm transpose(Pcm source, float cents, float gain) {
+    if (source.samples.empty()) return source;
+    const double step = std::pow(2.0, cents / 1200.0);
+    const auto count = static_cast<std::size_t>(std::ceil(source.samples.size() / step));
+    std::vector<std::int16_t> samples;
+    samples.reserve(count);
+    for (std::size_t frame = 0; frame < count; ++frame) {
+        const double position = frame * step;
+        const auto first = std::min(static_cast<std::size_t>(position), source.samples.size() - 1);
+        const auto second = std::min(first + 1, source.samples.size() - 1);
+        const double fraction = position - first;
+        const double value = source.samples[first] * (1.0 - fraction) + source.samples[second] * fraction;
+        samples.push_back(static_cast<std::int16_t>(std::clamp(value * gain, -32768.0, 32767.0)));
+    }
+    source.samples = std::move(samples);
+    return source;
+}
+
 struct MusicSound {
     int program{}, velocity_min{}, velocity_max{}, key_min{}, key_max{}, key_base{}, detune{}, wave{};
     int instrument_volume{}, sample_volume{}, instrument_pan{}, sample_pan{}, bend_range{};
@@ -130,20 +148,36 @@ MusicPackage load_music(std::span<const std::byte> bytes) {
 AudioEngine::AudioEngine(AssetRepository& assets) : assets_(assets) {}
 AudioEngine::~AudioEngine() {
     if (music_job_.valid()) music_job_.wait();
-    if (stream_) SDL_DestroyAudioStream(stream_);
+    if (effect_stream_) SDL_DestroyAudioStream(effect_stream_);
+    if (music_stream_) SDL_DestroyAudioStream(music_stream_);
 }
-void AudioEngine::stop() { if (stream_) SDL_ClearAudioStream(stream_); }
-void AudioEngine::queue(std::span<const std::int16_t> samples, int rate, int channels) {
-    if (stream_) SDL_DestroyAudioStream(stream_);
+void AudioEngine::stop() {
+    if (effect_stream_) SDL_ClearAudioStream(effect_stream_);
+    if (music_stream_) SDL_ClearAudioStream(music_stream_);
+}
+void AudioEngine::queue(SDL_AudioStream*& stream, std::span<const std::int16_t> samples,
+                        int rate, int channels) {
+    if (stream) SDL_DestroyAudioStream(stream);
     const SDL_AudioSpec spec{SDL_AUDIO_S16, channels, rate};
-    stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
-    if (!stream_) fail("audio device open failed");
-    if (!SDL_PutAudioStreamData(stream_, samples.data(), static_cast<int>(samples.size_bytes()))) fail("audio queue failed");
-    if (!SDL_ResumeAudioStreamDevice(stream_)) fail("audio resume failed");
+    stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+    if (!stream) fail("audio device open failed");
+    if (!SDL_PutAudioStreamData(stream, samples.data(), static_cast<int>(samples.size_bytes()))) fail("audio queue failed");
+    if (!SDL_ResumeAudioStreamDevice(stream)) fail("audio resume failed");
 }
 void AudioEngine::play(std::string_view logical, float gain) {
     auto pcm = load_aiff(*assets_.blob(logical), gain);
-    queue(pcm.samples, pcm.rate);
+    queue(effect_stream_, pcm.samples, pcm.rate);
+}
+void AudioEngine::play(AudioCue cue) {
+    // Programs from the original fgm bank: title uses articulation 92/wave 21;
+    // menu select and scroll use articulations 18 and 17/wave 10.
+    const bool title = cue == AudioCue::TitlePressStart;
+    const auto wave = title ? "audio/B1_sounds1/wave_021.aiff"
+                            : "audio/B1_sounds1/wave_010.aiff";
+    const float cents = cue == AudioCue::MenuSelect ? 320.0f : 550.0f;
+    const float gain = title ? 0.82f : cue == AudioCue::MenuSelect ? 0.58f : 0.48f;
+    auto pcm = transpose(load_aiff(*assets_.blob(wave), 1.0f), cents, gain);
+    queue(effect_stream_, pcm.samples, pcm.rate);
 }
 AudioEngine::PreparedAudio AudioEngine::synthesize_music(std::string logical, float gain) {
     const auto bytes = assets_.blob(logical);
@@ -291,7 +325,7 @@ void AudioEngine::play_music(std::string_view logical, float gain) {
     } else {
         prepared = synthesize_music(std::string(logical), gain);
     }
-    queue(prepared.samples, prepared.rate, prepared.channels);
+    queue(music_stream_, prepared.samples, prepared.rate, prepared.channels);
 }
 
 } // namespace sagas

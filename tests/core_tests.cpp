@@ -44,54 +44,20 @@ int main() {
     for (const auto value : fighter_pose.tracks) assert(std::isfinite(value));
     assert(std::abs(fighter_pose.tracks[0]) < 10.0f);
     assert(fighter_pose.tracks[7] > 0.01f && fighter_pose.tracks[7] < 10.0f);
-    const auto mario_debug = scene_loader.model("llMarioModelJointTreeDObjDesc", {}, sagas::GeometryLayout::Direct);
-    for (const float frame : {0.0f, 20.0f, 100.0f}) {
-        std::cout << "mario frame " << frame << '\n';
-        for (std::size_t i = 0; i < 3; ++i) {
-            const auto pose = animation_decoder.sample16(*fighter_scripts[i], frame,
-                                                         animation_decoder.pose(mario_debug.nodes[i]));
-            std::cout << "  " << i << " depth=" << mario_debug.nodes[i].depth
-                      << " r=" << pose.tracks[0] << ',' << pose.tracks[1] << ',' << pose.tracks[2]
-                      << " t=" << pose.tracks[4] << ',' << pose.tracks[5] << ',' << pose.tracks[6]
-                      << " s=" << pose.tracks[7] << ',' << pose.tracks[8] << ',' << pose.tracks[9] << '\n';
-        }
-    }
-    const auto boss_debug = scene_loader.model("llBossModelJointTreeDObjDesc", {}, sagas::GeometryLayout::JointPairs);
-    const auto boss_scripts = animation_decoder.table({460, 0}, 26);
-    std::cout << "boss descriptor\n";
-    for (std::size_t i=0; i<boss_debug.nodes.size(); ++i) {
-        const auto& node=boss_debug.nodes[i];
-        std::cout << "  " << i << " depth=" << node.depth << " flags=" << node.flags << " t=" << node.translate[0] << ','
-                  << node.translate[1] << ',' << node.translate[2] << " triangles="
-                  << boss_debug.meshes[i].vertices.size()/3 << '\n';
-    }
-    for (std::size_t i=0; i<3; ++i) if (boss_scripts[i]) {
-        const auto pose=animation_decoder.sample16(*boss_scripts[i],40,animation_decoder.pose(boss_debug.nodes[i]));
-        std::cout << "boss pose " << i << " t=" << pose.tracks[4] << ',' << pose.tracks[5] << ',' << pose.tracks[6]
-                  << " s=" << pose.tracks[7] << ',' << pose.tracks[8] << ',' << pose.tracks[9] << '\n';
-    }
-    auto boss_animated=boss_debug;
+    const auto mario_model = scene_loader.model("llMarioModelJointTreeDObjDesc", {}, sagas::GeometryLayout::Direct);
+    const auto boss_model = scene_loader.model("llBossModelJointTreeDObjDesc", {}, sagas::GeometryLayout::JointPairs);
+    auto boss_animated=boss_model;
     boss_animated.animation=animation_decoder.table({458,0},boss_animated.nodes.size());
     boss_animated.fighter_animation=true;
-    auto mario_animated=mario_debug;
+    auto mario_animated=mario_model;
     mario_animated.animation=fighter_scripts;
     mario_animated.fighter_animation=true;
-    sagas::Scene3DRenderer debug_renderer(archive);
+    sagas::Scene3DRenderer renderer(archive);
     for (float frame : {20.0f,70.0f,100.0f}) {
-        const auto placed=debug_renderer.placed_at_joint(mario_animated,frame,boss_animated,frame+280.0f,1);
-        std::cout << "attached " << frame << " root=" << (*placed.root_transform)[3] << ','
-                  << (*placed.root_transform)[7] << ',' << (*placed.root_transform)[11] << '\n';
+        const auto placed=renderer.placed_at_joint(mario_animated,frame,boss_animated,frame+280.0f,3);
+        assert(placed.root_transform);
+        for (const float value : *placed.root_transform) assert(std::isfinite(value));
     }
-    std::size_t mario_textured{},mario_opaque{},mario_vertices{};
-    for (const auto& mesh : mario_debug.meshes) for (const auto& vertex : mesh.vertices) {
-        ++mario_vertices;
-        if (vertex.texture) {
-            ++mario_textured;
-            for (std::size_t i=3;i<vertex.texture->rgba.size();i+=4) if (vertex.texture->rgba[i]) { ++mario_opaque; break; }
-        }
-    }
-    std::cout << "mario vertices=" << mario_vertices << " textured=" << mario_textured
-              << " opaque-texture-refs=" << mario_opaque << '\n';
     struct ModelCase { const char* descriptor; const char* animation; sagas::GeometryLayout layout; };
     const ModelCase opening_models[]{
         {"llMVCommonRoomBackgroundDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
@@ -109,28 +75,39 @@ int main() {
         {"llMarioModelJointTreeDObjDesc", "", sagas::GeometryLayout::Direct},
         {"llLinkModelJointTreeDObjDesc", "", sagas::GeometryLayout::Direct},
     };
+    bool saw_lit{};
+    bool saw_unlit{};
+    bool saw_textured{};
+    bool saw_repeated_clamp_tile{};
     for (const auto& item : opening_models) {
-        std::cout << "loading " << item.descriptor << '\n';
         const auto model = scene_loader.model(item.descriptor, item.animation, item.layout);
         std::size_t triangles{};
-        std::size_t textured{};
-        float min_u=1e9f,max_u=-1e9f,min_v=1e9f,max_v=-1e9f;
-        const sagas::n64::Vertex* sample{};
         for (const auto& part : model.meshes) {
             triangles += part.vertices.size() / 3;
-            for (const auto& vertex : part.vertices) if (vertex.texture) {
-                ++textured; sample=&vertex;
-                min_u=std::min(min_u,vertex.u); max_u=std::max(max_u,vertex.u);
-                min_v=std::min(min_v,vertex.v); max_v=std::max(max_v,vertex.v);
+            for (const auto& vertex : part.vertices) {
+                assert(std::isfinite(vertex.x) && std::isfinite(vertex.y) && std::isfinite(vertex.z));
+                assert(std::isfinite(vertex.u) && std::isfinite(vertex.v));
+                if (vertex.lit) {
+                    saw_lit=true;
+                    // A lit N64 vertex stores a normal in RGB+A.  Its last
+                    // byte is never surface opacity.
+                    assert(vertex.color.a==255);
+                } else saw_unlit=true;
+                if (vertex.texture) {
+                    saw_textured=true;
+                    assert(vertex.texture->width>0 && vertex.texture->height>0);
+                    assert(vertex.texture->rgba.size()==static_cast<std::size_t>(
+                        vertex.texture->width*vertex.texture->height*4));
+                    if (((vertex.texture_mode_s&2U)!=0 &&
+                         vertex.texture_window_s>vertex.texture->width) ||
+                        ((vertex.texture_mode_t&2U)!=0 &&
+                         vertex.texture_window_t>vertex.texture->height))
+                        saw_repeated_clamp_tile=true;
+                }
             }
         }
-        std::cout << "  nodes: " << model.nodes.size() << " meshes: " << model.meshes.size()
-                  << " triangles: " << triangles << " textured: " << textured << '\n';
-        if (sample) std::cout << "  texture " << sample->texture->width << 'x' << sample->texture->height
-                              << " uv " << min_u << ',' << min_v << ".." << max_u << ',' << max_v
-                              << " mode " << unsigned(sample->texture_mode_s) << ',' << unsigned(sample->texture_mode_t)
-                              << " mask " << unsigned(sample->texture_mask_s) << ',' << unsigned(sample->texture_mask_t) << '\n';
         assert(triangles > 0);
     }
+    assert(saw_lit && saw_unlit && saw_textured && saw_repeated_clamp_tile);
     std::cout << "Sagas core tests passed\n";
 }

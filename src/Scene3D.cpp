@@ -153,13 +153,15 @@ Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame
     Model3D placed=model;
     const auto carrier_matrices=world_matrices(animation_,carrier,carrier_frame);
     if (carrier_joint>=carrier_matrices.size() || model.nodes.empty()) return placed;
-    auto first=model.nodes.front();
-    if (!model.animation.empty() && model.animation.front())
-        n64::AnimationDecoder::apply(first,model.fighter_animation
-            ? animation_.sample16(*model.animation.front(),model_frame,animation_.pose(first))
-            : animation_.sample(*model.animation.front(),model_frame,animation_.pose(first)));
+    const std::size_t child_index=model.nodes.size()>1 ? 1 : 0;
+    auto first_child=model.nodes[child_index];
+    if (child_index<model.animation.size() && model.animation[child_index])
+        n64::AnimationDecoder::apply(first_child,model.fighter_animation
+            ? animation_.sample16(*model.animation[child_index],model_frame,animation_.pose(first_child))
+            : animation_.sample(*model.animation[child_index],model_frame,animation_.pose(first_child)));
     const Matrix attachment=multiply(carrier_matrices[carrier_joint],
-                                     translation({-first.translate[0],-first.translate[1],-first.translate[2]}));
+                                     translation({-first_child.translate[0],-first_child.translate[1],
+                                                  -first_child.translate[2]}));
     // The original attachment helper copies the holding joint's world
     // position and orientation into the fighter root, but deliberately does
     // not inherit Master Hand's animated scale.
@@ -253,7 +255,8 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 }
                 const auto& sampler=mesh.vertices[i];
                 triangles_.push_back({triangle,sampler.texture,sampler.texture_mode_s,sampler.texture_mode_t,
-                                      sampler.texture_mask_s,sampler.texture_mask_t});
+                                      sampler.texture_mask_s,sampler.texture_mask_t,
+                                      sampler.texture_window_s,sampler.texture_window_t});
             }
         }
     }
@@ -306,9 +309,16 @@ void Scene3DRenderer::flush(RenderEngine& render) {
             Color texture_color{255,255,255,255};
             if (triangle.texture && triangle.texture->width>0 && triangle.texture->height>0 &&
                 triangle.texture->rgba.size()>=static_cast<std::size_t>(triangle.texture->width*triangle.texture->height*4)) {
-                const auto sample_coordinate=[](float normalized, int extent, unsigned mode, unsigned mask) {
-                    const float value=normalized*extent;
-                    if ((mode&2U)!=0) return std::clamp(normalized,0.0f,1.0f);
+                const auto sample_coordinate=[](float normalized, int extent, unsigned mode,
+                                                unsigned mask, unsigned window) {
+                    float value=normalized*extent;
+                    // Clamp applies to the sampling tile, not necessarily to
+                    // the loaded image. Room materials deliberately describe
+                    // a large tile window backed by a small repeated texture.
+                    if ((mode&2U)!=0) {
+                        const float last=static_cast<float>((window ? window : extent)-1U);
+                        value=std::clamp(value,0.0f,std::max(last,0.0f));
+                    }
                     const float period=mask ? static_cast<float>(1U<<mask) : static_cast<float>(extent);
                     float sampled=std::fmod(value,period);
                     if (sampled<0) sampled+=period;
@@ -318,8 +328,10 @@ void Scene3DRenderer::flush(RenderEngine& render) {
                     }
                     return sampled/extent;
                 };
-                u=sample_coordinate(u,triangle.texture->width,triangle.texture_mode_s,triangle.texture_mask_s);
-                v=sample_coordinate(v,triangle.texture->height,triangle.texture_mode_t,triangle.texture_mask_t);
+                u=sample_coordinate(u,triangle.texture->width,triangle.texture_mode_s,
+                                    triangle.texture_mask_s,triangle.texture_window_s);
+                v=sample_coordinate(v,triangle.texture->height,triangle.texture_mode_t,
+                                    triangle.texture_mask_t,triangle.texture_window_t);
                 const int tx=std::clamp(static_cast<int>(u*triangle.texture->width),0,triangle.texture->width-1);
                 const int ty=std::clamp(static_cast<int>(v*triangle.texture->height),0,triangle.texture->height-1);
                 const auto texel=static_cast<std::size_t>((ty*triangle.texture->width+tx)*4);

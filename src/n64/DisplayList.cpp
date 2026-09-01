@@ -19,6 +19,7 @@ struct DisplayListDecoder::State {
     struct Tile {
         unsigned format{}, size{}, line{}, tmem{}, palette{}, cms{}, cmt{}, masks{}, maskt{}, shifts{}, shiftt{};
         unsigned uls{}, ult{}, lrs{}, lrt{};
+        bool window_set{};
     };
     std::array<Cached, 32> cache{};
     std::array<Tile, 8> tiles{};
@@ -26,6 +27,7 @@ struct DisplayListDecoder::State {
     std::optional<Address> palette;
     unsigned render_tile{};
     float texture_scale_s{1}, texture_scale_t{1};
+    std::uint32_t geometry_mode{0x00020000U};
     bool lighting{true};
     Color primitive{255,255,255,255};
 };
@@ -108,6 +110,12 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
         vertex.texture_mode_t=static_cast<std::uint8_t>(tile.cmt);
         vertex.texture_mask_s=static_cast<std::uint8_t>(tile.masks);
         vertex.texture_mask_t=static_cast<std::uint8_t>(tile.maskt);
+        vertex.texture_window_s=static_cast<std::uint16_t>(
+            tile.window_set && tile.lrs>=tile.uls ? ((tile.lrs-tile.uls)>>2)+1U
+                                                  : (image ? image->width : 1U));
+        vertex.texture_window_t=static_cast<std::uint16_t>(
+            tile.window_set && tile.lrt>=tile.ult ? ((tile.lrt-tile.ult)>>2)+1U
+                                                  : (image ? image->height : 1U));
         mesh.vertices.push_back(std::move(vertex));
     }
 }
@@ -247,8 +255,11 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                             return static_cast<float>(static_cast<std::int8_t>(packed >> shift)) / 127.0f;
                         };
                         out.vertex.normal = {component(24), component(16), component(8)};
-                        out.vertex.color = {state.primitive.r, state.primitive.g, state.primitive.b,
-                                            state.primitive.a};
+                        // With lighting enabled this fourth byte is not
+                        // vertex opacity (the vertex stores a normal, not
+                        // RGBA). Opaque lit surfaces must still write color
+                        // and depth; scene translucency is supplied by tint.
+                        out.vertex.color = {state.primitive.r, state.primitive.g, state.primitive.b,255};
                     } else {
                         out.vertex.color = Color{static_cast<std::uint8_t>(packed >> 24),
                             static_cast<std::uint8_t>(packed >> 16), static_cast<std::uint8_t>(packed >> 8),
@@ -279,7 +290,20 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                          (w1 & 0xffU) / 10U);
                 break;
             case 0xd9:
-                state.lighting = (((w0 & 0x00ffffffU) | w1) & 0x00020000U) != 0;
+                // F3DEX2 GeometryMode replaces the selected mode bits.  w0
+                // is an AND mask, not a list of enabled modes; treating its
+                // many set bits as flags made every unlit textured surface
+                // look lit (and interpreted vertex RGBA as normals).
+                state.geometry_mode=(state.geometry_mode & (w0&0x00ffffffU))|w1;
+                state.lighting=(state.geometry_mode&0x00020000U)!=0;
+                break;
+            case 0xb6: // legacy F3DEX ClearGeometryMode
+                state.geometry_mode&=~w1;
+                state.lighting=(state.geometry_mode&0x00020000U)!=0;
+                break;
+            case 0xb7: // legacy F3DEX SetGeometryMode
+                state.geometry_mode|=w1;
+                state.lighting=(state.geometry_mode&0x00020000U)!=0;
                 break;
             case 0xd7:
                 state.render_tile = (w0 >> 8) & 7U;
@@ -305,6 +329,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                 auto& tile = state.tiles[(w1 >> 24) & 7U];
                 tile.uls=(w0>>12)&0xfffU; tile.ult=w0&0xfffU;
                 tile.lrs=(w1>>12)&0xfffU; tile.lrt=w1&0xfffU;
+                tile.window_set=true;
                 break;
             }
             case 0xf3: {

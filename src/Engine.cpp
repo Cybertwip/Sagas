@@ -220,12 +220,23 @@ public:
             model.fighter_animation = true;
             return model;
         };
+        const auto transition_fighter = [&](const Model3D& previous, float previous_frame,
+                                            std::uint32_t next_file) {
+            auto model=previous;
+            for (std::size_t i=0;i<model.nodes.size();++i) {
+                if (i<previous.animation.size() && previous.animation[i])
+                    n64::AnimationDecoder::apply(model.nodes[i],animation.sample16(
+                        *previous.animation[i],previous_frame,animation.pose(previous.nodes[i])));
+            }
+            model.animation=animation.table({next_file,0},model.nodes.size());
+            return model;
+        };
         boss_pose1_ = animated_fighter("llBossModelJointTreeDObjDesc", 458, GeometryLayout::JointPairs);
-        boss_pose2_ = animated_fighter("llBossModelJointTreeDObjDesc", 459, GeometryLayout::JointPairs);
-        boss_pose3_ = animated_fighter("llBossModelJointTreeDObjDesc", 460, GeometryLayout::JointPairs);
+        boss_pose2_ = transition_fighter(boss_pose1_,560.0f,459);
+        boss_pose3_ = transition_fighter(boss_pose2_,300.0f,460);
         mario_pickup_ = animated_fighter("llMarioModelJointTreeDObjDesc", 362, GeometryLayout::Direct);
-        mario_fall_ = animated_fighter("llMarioModelJointTreeDObjDesc", 363, GeometryLayout::Direct);
-        mario_revival_ = animated_fighter("llMarioModelJointTreeDObjDesc", 364, GeometryLayout::Direct);
+        mario_fall_ = transition_fighter(mario_pickup_,100.0f,363);
+        mario_revival_ = transition_fighter(mario_fall_,760.0f,364);
         link_fall_ = animated_fighter("llLinkModelJointTreeDObjDesc", 409, GeometryLayout::Direct);
         link_fall_.position = {872.32495f,4038.8640f,-4734.6001f};
         yoster_nest_ = loader_->model("llMVOpeningYosterNestDObjDesc");
@@ -363,39 +374,55 @@ private:
             renderer_->draw(r, room_haze_, camera, camera_frame, {220,225,235,150}, warm_room);
             renderer_->draw(r, room_background_, camera, static_cast<float>(local), {255,255,255,255}, warm_room);
             if (local < 450) renderer_->draw(r, room_sunlight_, camera, camera_frame, {255,240,190,150}, warm_room);
-            if (local < 280) renderer_->draw(r,room_boss_shadow_,camera,static_cast<float>(local),
-                                             {90,80,78,150},warm_room);
             renderer_->draw(r, room_desk_, camera, camera_frame, {255,255,255,255}, warm_room);
             const float prop_frame = static_cast<float>(std::max(local - 560, 0));
             renderer_->draw(r, room_books_, camera, prop_frame, {255,255,255,255}, warm_room);
             if (local >= 280) renderer_->draw(r, room_pencils_, camera, prop_frame, {255,255,255,255}, warm_room);
             renderer_->draw(r, room_lamp_, camera, prop_frame, {255,255,255,255}, warm_room);
             renderer_->draw(r, room_tissues_, camera, prop_frame, {255,255,255,255}, warm_room);
-            if (local < 280) renderer_->draw(r,room_logo_,camera,static_cast<float>(local),
-                                             {255,255,255,255},warm_room);
             const Model3D& boss = local < 560 ? boss_pose1_ : (local < 860 ? boss_pose2_ : boss_pose3_);
             const float boss_frame = static_cast<float>(local < 560 ? local : (local < 860 ? local-560 : local-860));
-            renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
-            if (local >= 280) {
+            const auto draw_pulled_fighter = [&] {
                 if (local < 380) {
                     const float pickup_frame=static_cast<float>(local-280);
-                    const auto held=renderer_->placed_at_joint(mario_pickup_,pickup_frame,boss,boss_frame,1);
+                    // Runtime joint 5 (item-heavy) maps to descriptor node 3;
+                    // XRotN/YRotN are implicit fighter joints 2 and 3.
+                    const auto held=renderer_->placed_at_joint(mario_pickup_,pickup_frame,boss,boss_frame,3);
                     renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},warm_room);
                 } else {
                     auto falling=mario_fall_;
-                    const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,1);
+                    const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,3);
                     if (release.root_transform) {
                         falling.position={(*release.root_transform)[3],(*release.root_transform)[7],
                                           (*release.root_transform)[11]};
                     }
                     renderer_->draw(r,falling,camera,static_cast<float>(local-380),{255,255,255,255},warm_room);
                 }
-            }
+            };
+            // Display-link 6 is rendered by the main room camera. The
+            // pulled fighter moves to the isolated fighter camera at tic 500.
+            if (local >= 280 && local < 500) draw_pulled_fighter();
             if (local >= 695) renderer_->draw(r,link_fall_,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
+
+            // The original uses three independently depth-cleared camera
+            // passes (main link 6, HAL logo link 29, fighter links 9/27).
+            // Sharing one depth buffer made the coplanar logo flicker and
+            // allowed the desk to erase Master Hand and the fighters.
+            renderer_->flush(r);
+            if (local < 280) {
+                renderer_->draw(r,room_logo_,camera,static_cast<float>(local),
+                                {255,255,255,255},warm_room);
+                renderer_->flush(r);
+            }
+            if (local < 280) renderer_->draw(r,room_boss_shadow_,camera,static_cast<float>(local),
+                                             {90,80,78,150},warm_room);
+            renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
+            if (local >= 500) draw_pulled_fighter();
             if (local >= 500) renderer_->draw(r,room_spotlight_,camera,static_cast<float>(local-500),
                                               {255,244,210,105},warm_room);
             if (local >= 860) renderer_->draw(r,room_snap_,camera,static_cast<float>(local-860),
                                               {255,255,255,255},warm_room);
+            renderer_->flush(r);
         } else {
             wallpaper(r, "MVOpeningRoomWallpaper.png");
             renderer_->draw(r, room_desk_ground_, camera, static_cast<float>(std::max(local - 1060, 0)),
@@ -410,7 +437,12 @@ private:
                 const float closeup_frame=static_cast<float>(local-1140);
                 renderer_->draw(r,room_closeup_ground_,camera,closeup_frame,{255,255,255,255},warm_room);
                 renderer_->draw(r,room_closeup_air_,camera,closeup_frame,{255,255,255,210},warm_room);
-                renderer_->draw(r,mario_revival_,camera,closeup_frame,{255,255,255,255},warm_room);
+                auto revival=mario_revival_;
+                const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,3);
+                if (release.root_transform)
+                    revival.position={(*release.root_transform)[3],(*release.root_transform)[7],
+                                      (*release.root_transform)[11]};
+                renderer_->draw(r,revival,camera,closeup_frame,{255,255,255,255},warm_room);
             }
         }
     }

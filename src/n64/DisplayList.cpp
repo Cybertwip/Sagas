@@ -30,6 +30,8 @@ struct DisplayListDecoder::State {
     std::uint32_t geometry_mode{0x00020000U};
     bool lighting{true};
     Color primitive{255,255,255,255};
+    std::optional<Color> light1;
+    std::optional<Color> light2;
     std::span<const Material> materials;
 };
 
@@ -96,6 +98,14 @@ std::vector<std::vector<Material>> DisplayListDecoder::materials(Address table, 
                                 static_cast<std::uint8_t>(byte({sub->file,sub->offset+0x52})),
                                 static_cast<std::uint8_t>(byte({sub->file,sub->offset+0x53}))};
             material.set_primitive=(flags&(0x0200U|0x0010U|0x0008U))!=0;
+            const auto packed_color=[&](std::uint32_t offset) {
+                return Color{static_cast<std::uint8_t>(byte({sub->file,sub->offset+offset})),
+                             static_cast<std::uint8_t>(byte({sub->file,sub->offset+offset+1})),
+                             static_cast<std::uint8_t>(byte({sub->file,sub->offset+offset+2})),
+                             static_cast<std::uint8_t>(byte({sub->file,sub->offset+offset+3}))};
+            };
+            if (flags&0x1000U) material.light1=packed_color(0x60);
+            if (flags&0x2000U) material.light2=packed_color(0x64);
             result[node].push_back(material);
         }
     }
@@ -123,6 +133,7 @@ Mesh DisplayListDecoder::decode_links(Address links, std::span<const Material> m
         result.display_lists += part.display_lists;
         result.rejected_triangles += part.rejected_triangles;
         result.unsupported_commands += part.unsupported_commands;
+        result.material_commands += part.material_commands;
     }
     throw std::runtime_error("unterminated N64 display-list links");
 }
@@ -138,6 +149,7 @@ Mesh DisplayListDecoder::decode_pairs(Address pairs, std::span<const Material> m
         result.display_lists += part.display_lists;
         result.rejected_triangles += part.rejected_triangles;
         result.unsupported_commands += part.unsupported_commands;
+        result.material_commands += part.material_commands;
     }
     return result;
 }
@@ -319,7 +331,9 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                         // vertex opacity (the vertex stores a normal, not
                         // RGBA). Opaque lit surfaces must still write color
                         // and depth; scene translucency is supplied by tint.
-                        out.vertex.color = {state.primitive.r, state.primitive.g, state.primitive.b,255};
+                        out.vertex.color = state.primitive;
+                        out.vertex.light1=state.light1;
+                        out.vertex.light2=state.light2;
                     } else {
                         out.vertex.color = Color{static_cast<std::uint8_t>(packed >> 24),
                             static_cast<std::uint8_t>(packed >> 16), static_cast<std::uint8_t>(packed >> 8),
@@ -384,10 +398,13 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                             }
                             if (material.palette) state.palette=material.palette;
                             if (material.set_primitive) state.primitive=material.primitive;
+                            if (material.light1) state.light1=material.light1;
+                            if (material.light2) state.light2=material.light2;
                             auto& tile=state.tiles[state.render_tile];
                             tile.uls=material.tile_uls; tile.ult=material.tile_ult;
                             tile.lrs=material.tile_lrs; tile.lrt=material.tile_lrt;
                             tile.window_set=true;
+                            ++mesh.material_commands;
                             break;
                         }
                     }

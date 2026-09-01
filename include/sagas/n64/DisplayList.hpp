@@ -12,6 +12,8 @@ struct Material {
     unsigned tile_uls{}, tile_ult{}, tile_lrs{}, tile_lrt{};
     Color primitive{255,255,255,255};
     bool set_primitive{};
+    std::optional<Color> light1;
+    std::optional<Color> light2;
 };
 
 struct Vertex {
@@ -20,6 +22,8 @@ struct Vertex {
     Vec3 normal{};
     bool lit{};
     Color color{255, 255, 255, 255};
+    std::optional<Color> light1;
+    std::optional<Color> light2;
     std::shared_ptr<const RasterImage> texture;
     std::uint8_t texture_mode_s{}, texture_mode_t{};
     std::uint8_t texture_mask_s{}, texture_mask_t{};
@@ -28,7 +32,7 @@ struct Vertex {
 
 struct Mesh {
     std::vector<Vertex> vertices;
-    std::size_t commands{}, display_lists{}, rejected_triangles{}, unsupported_commands{};
+    std::size_t commands{}, display_lists{}, rejected_triangles{}, unsupported_commands{}, material_commands{};
 };
 
 // Interpreter: translates immutable F3DEX2 command streams to triangles.

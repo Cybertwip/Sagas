@@ -46,19 +46,22 @@ int main() {
     assert(fighter_pose.tracks[7] > 0.01f && fighter_pose.tracks[7] < 10.0f);
     const auto mario_model = scene_loader.fighter_model("llMarioModelJointTreeDObjDesc", sagas::GeometryLayout::Direct);
     const auto boss_model = scene_loader.model("llBossModelJointTreeDObjDesc", {}, sagas::GeometryLayout::JointPairs);
-    std::size_t mario_material_textures{};
-    for (const auto& part:mario_model.meshes) for (const auto& vertex:part.vertices)
-        if (vertex.texture) ++mario_material_textures;
-    std::cout << "material-backed Mario vertices: " << mario_material_textures << '\n';
     auto boss_animated=boss_model;
-    boss_animated.animation=animation_decoder.table({458,0},boss_animated.nodes.size());
+    const auto boss_scripts=animation_decoder.table({458,0},boss_animated.nodes.size()+1);
+    boss_animated.fighter_root.scale={1,1,1};
+    boss_animated.fighter_root_animation=boss_scripts.front();
+    boss_animated.fighter_wrapper=sagas::Model3D::FighterWrapper::TransN;
+    boss_animated.animation.assign(boss_scripts.begin()+1,boss_scripts.end());
     boss_animated.fighter_animation=true;
     auto mario_animated=mario_model;
-    mario_animated.animation=fighter_scripts;
+    mario_animated.fighter_root.scale={1,1,1};
+    mario_animated.fighter_root_animation=fighter_scripts.front();
+    mario_animated.fighter_wrapper=sagas::Model3D::FighterWrapper::TransN;
+    mario_animated.animation.assign(fighter_scripts.begin()+1,fighter_scripts.end());
     mario_animated.fighter_animation=true;
     sagas::Scene3DRenderer renderer(archive);
     for (float frame : {20.0f,70.0f,100.0f}) {
-        const auto placed=renderer.placed_at_joint(mario_animated,frame,boss_animated,frame+280.0f,3);
+        const auto placed=renderer.placed_at_joint(mario_animated,frame,boss_animated,frame+280.0f,1);
         assert(placed.root_transform);
         for (const float value : *placed.root_transform) assert(std::isfinite(value));
     }

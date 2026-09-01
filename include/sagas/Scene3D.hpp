@@ -18,11 +18,13 @@ struct Camera3D {
 enum class GeometryLayout { Direct, DisplayListLinks, JointPairs };
 
 struct Model3D {
+    enum class FighterWrapper { None, TransN, XRotN };
     std::vector<n64::Node> nodes;
     std::vector<n64::Mesh> meshes;
     std::vector<std::optional<n64::Address>> animation;
     n64::Node fighter_root{};
     std::optional<n64::Address> fighter_root_animation;
+    FighterWrapper fighter_wrapper{FighterWrapper::None};
     bool fighter_animation{};
     Vec3 position{};
     Vec3 rotation{};
@@ -53,7 +55,8 @@ public:
     explicit Scene3DRenderer(n64::RelocArchive& archive) : animation_(archive) {}
     void begin();
     void draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
-              float frame, Color tint = {255,255,255,255}, LightingRig lights = {});
+              float frame, Color tint = {255,255,255,255}, LightingRig lights = {},
+              bool soft_edges = false);
     [[nodiscard]] Model3D placed_at_joint(const Model3D& model, float model_frame,
                                           const Model3D& carrier, float carrier_frame,
                                           std::size_t carrier_joint);
@@ -65,6 +68,8 @@ private:
         Color color{255,255,255,255};
         Vec2 uv{};
         float depth{};
+        Vec3 normal{};
+        Vec3 view_direction{};
     };
     struct ProjectedTriangle {
         std::array<ProjectedVertex,3> points;
@@ -72,6 +77,10 @@ private:
         std::uint8_t texture_mode_s{}, texture_mode_t{};
         std::uint8_t texture_mask_s{}, texture_mask_t{};
         std::uint16_t texture_window_s{}, texture_window_t{};
+        LightingRig lights{};
+        std::optional<Color> material_light1;
+        std::optional<Color> material_light2;
+        bool lit{}, soft_edges{};
     };
     n64::AnimationDecoder animation_;
     std::vector<ProjectedTriangle> triangles_;

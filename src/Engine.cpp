@@ -222,21 +222,28 @@ public:
         if (const auto animation = archive_->symbol("llMVOpeningRoomTransitionOverlayAnimJoint"))
             room_transition_overlay_.animation[0] = animation;
         n64::AnimationDecoder animation(*archive_);
-        const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file, GeometryLayout layout = GeometryLayout::Direct) {
+        const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file,
+                                          Model3D::FighterWrapper wrapper,
+                                          GeometryLayout layout = GeometryLayout::Direct) {
             auto model = loader_->fighter_model(descriptor,layout);
             const auto scripts=animation.table({file,0},model.nodes.size()+1);
             model.fighter_root.scale={1,1,1};
             model.fighter_root_animation=scripts.front();
+            model.fighter_wrapper=wrapper;
             model.animation.assign(scripts.begin()+1,scripts.end());
             model.fighter_animation = true;
             return model;
         };
         const auto transition_fighter = [&](const Model3D& previous, float previous_frame,
-                                            std::uint32_t next_file) {
+                                            std::uint32_t next_file, Model3D::FighterWrapper next_wrapper) {
             auto model=previous;
-            if (previous.fighter_root_animation)
+            if (previous.fighter_wrapper==next_wrapper && previous.fighter_root_animation)
                 n64::AnimationDecoder::apply(model.fighter_root,animation.sample16(
                     *previous.fighter_root_animation,previous_frame,animation.pose(previous.fighter_root)));
+            else {
+                model.fighter_root={};
+                model.fighter_root.scale={1,1,1};
+            }
             for (std::size_t i=0;i<model.nodes.size();++i) {
                 if (i<previous.animation.size() && previous.animation[i])
                     n64::AnimationDecoder::apply(model.nodes[i],animation.sample16(
@@ -244,16 +251,20 @@ public:
             }
             const auto scripts=animation.table({next_file,0},model.nodes.size()+1);
             model.fighter_root_animation=scripts.front();
+            model.fighter_wrapper=next_wrapper;
             model.animation.assign(scripts.begin()+1,scripts.end());
             return model;
         };
-        boss_pose1_ = animated_fighter("llBossModelJointTreeDObjDesc", 458, GeometryLayout::JointPairs);
-        boss_pose2_ = transition_fighter(boss_pose1_,560.0f,459);
-        boss_pose3_ = transition_fighter(boss_pose2_,300.0f,460);
-        mario_pickup_ = animated_fighter("llMarioModelJointTreeDObjDesc", 362, GeometryLayout::Direct);
-        mario_fall_ = transition_fighter(mario_pickup_,100.0f,363);
-        mario_revival_ = transition_fighter(mario_fall_,760.0f,364);
-        link_fall_ = animated_fighter("llLinkModelJointTreeDObjDesc", 409, GeometryLayout::Direct);
+        boss_pose1_ = animated_fighter("llBossModelJointTreeDObjDesc",458,
+                                       Model3D::FighterWrapper::TransN,GeometryLayout::JointPairs);
+        boss_pose2_ = transition_fighter(boss_pose1_,560.0f,459,Model3D::FighterWrapper::TransN);
+        boss_pose3_ = transition_fighter(boss_pose2_,300.0f,460,Model3D::FighterWrapper::TransN);
+        mario_pickup_ = animated_fighter("llMarioModelJointTreeDObjDesc",362,
+                                         Model3D::FighterWrapper::TransN,GeometryLayout::Direct);
+        mario_fall_ = transition_fighter(mario_pickup_,100.0f,363,Model3D::FighterWrapper::XRotN);
+        mario_revival_ = transition_fighter(mario_fall_,760.0f,364,Model3D::FighterWrapper::XRotN);
+        link_fall_ = animated_fighter("llLinkModelJointTreeDObjDesc",409,
+                                      Model3D::FighterWrapper::XRotN,GeometryLayout::Direct);
         link_fall_.position = {872.32495f,4038.8640f,-4734.6001f};
         yoster_nest_ = loader_->model("llMVOpeningYosterNestDObjDesc");
         yoster_ground_ = loader_->model("llMVOpeningYosterGroundDObjDesc", "llMVOpeningYosterGroundAnimJoint");
@@ -385,11 +396,14 @@ private:
         warm_room.ambient = {184,170,158,255};
         warm_room.ambient_intensity = 0.64f;
         warm_room.key = {{-0.28f,0.78f,0.56f},{255,236,204,255},0.56f};
+        warm_room.reflection={255,226,194,255};
+        warm_room.reflection_intensity=0.22f;
+        warm_room.shininess=8.0f;
         if (local < 1040) {
             renderer_->draw(r, room_outside_, camera, camera_frame, {210,226,255,255}, warm_room);
             renderer_->draw(r, room_haze_, camera, camera_frame, {220,225,235,150}, warm_room);
             renderer_->draw(r, room_background_, camera, static_cast<float>(local), {255,255,255,255}, warm_room);
-            if (local < 450) renderer_->draw(r, room_sunlight_, camera, camera_frame, {255,240,190,150}, warm_room);
+            if (local < 450) renderer_->draw(r, room_sunlight_, camera, camera_frame, {255,240,190,150}, warm_room, true);
             renderer_->draw(r, room_desk_, camera, camera_frame, {255,255,255,255}, warm_room);
             const float prop_frame = static_cast<float>(std::max(local - 560, 0));
             renderer_->draw(r, room_books_, camera, prop_frame, {255,255,255,255}, warm_room);
@@ -415,30 +429,29 @@ private:
                     renderer_->draw(r,falling,camera,static_cast<float>(local-380),{255,255,255,255},warm_room);
                 }
             };
-            // Display-link 6 is rendered by the main room camera. The
-            // pulled fighter moves to the isolated fighter camera at tic 500.
+            // All room geometry targets the same original Z image.  Keep
+            // static props, animated fighters, shadows, and the HAL logo in
+            // one software pass so every primitive participates in the same
+            // depth test as the camera moves.
             if (local >= 280 && local < 500) draw_pulled_fighter();
             if (local >= 695) renderer_->draw(r,link_fall_,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
-
-            // The original uses three independently depth-cleared camera
-            // passes (main link 6, HAL logo link 29, fighter links 9/27).
-            // Sharing one depth buffer made the coplanar logo flicker and
-            // allowed the desk to erase Master Hand and the fighters.
-            renderer_->flush(r);
-            if (local < 280) {
-                renderer_->draw(r,room_logo_,camera,static_cast<float>(local),
-                                {255,255,255,255},warm_room);
-                renderer_->flush(r);
-            }
             if (local < 280) renderer_->draw(r,room_boss_shadow_,camera,static_cast<float>(local),
-                                             {90,80,78,150},warm_room);
+                                             {90,80,78,150},warm_room,true);
             renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
             if (local >= 500) draw_pulled_fighter();
             if (local >= 500) renderer_->draw(r,room_spotlight_,camera,static_cast<float>(local-500),
-                                              {255,244,210,105},warm_room);
+                                              {255,244,210,105},warm_room,true);
             if (local >= 860) renderer_->draw(r,room_snap_,camera,static_cast<float>(local-860),
                                               {255,255,255,255},warm_room);
-            renderer_->flush(r);
+            // Link 29 has its own camera/Z pass in the original.  Isolating
+            // only this translucent logo keeps its animated surface from
+            // being rejected by the desk while fighters and static meshes
+            // continue to share scene depth.
+            if (local < 280) {
+                renderer_->flush(r);
+                renderer_->draw(r,room_logo_,camera,static_cast<float>(local),
+                                {255,255,255,255},warm_room);
+            }
         } else {
             wallpaper(r, "MVOpeningRoomWallpaper.png");
             renderer_->draw(r, room_desk_ground_, camera, static_cast<float>(std::max(local - 1060, 0)),

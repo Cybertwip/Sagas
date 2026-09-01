@@ -194,17 +194,17 @@ Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame
     Model3D placed=model;
     const auto carrier_matrices=world_matrices(animation_,carrier,carrier_frame);
     if (carrier_joint>=carrier_matrices.size() || model.nodes.empty()) return placed;
-    auto first_child=model.nodes.front();
-    if (!model.animation.empty() && model.animation.front())
-        n64::AnimationDecoder::apply(first_child,model.fighter_animation
-            ? animation_.sample16(*model.animation.front(),model_frame,animation_.pose(first_child))
-            : animation_.sample(*model.animation.front(),model_frame,animation_.pose(first_child)));
+    auto first_child=model.fighter_root;
+    if (model.fighter_root_animation)
+        n64::AnimationDecoder::apply(first_child,animation_.sample16(
+            *model.fighter_root_animation,model_frame,animation_.pose(first_child)));
     const Matrix attachment=multiply(carrier_matrices[carrier_joint],
                                      translation({-first_child.translate[0],-first_child.translate[1],
                                                   -first_child.translate[2]}));
-    // The original attachment helper copies the holding joint's world
-    // position and orientation into the fighter root, but deliberately does
-    // not inherit Master Hand's animated scale.
+    // The original helper subtracts TopN's first child (TransN), then copies
+    // the holding joint's world position/orientation into TopN.  The common
+    // model descriptor starts below that wrapper and must not be used as the
+    // attachment offset.
     Matrix root;
     for (int column=0;column<3;++column) {
         Vec3 axis{carrier_matrices[carrier_joint].m[column],
@@ -223,7 +223,7 @@ Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame
 }
 
 void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
-                           float frame, Color tint, LightingRig lights) {
+                           float frame, Color tint, LightingRig lights, bool soft_edges) {
     const bool immediate = !batching_;
     const Vec3 forward=normalize(sub(camera.at,camera.eye));
     const Vec3 right=normalize(cross(forward,camera.up));
@@ -236,7 +236,7 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
         const Matrix& world=matrices[node_index];
         const auto& mesh=model.meshes[node_index];
         for (std::size_t i=0;i+2<mesh.vertices.size();i+=3) {
-            struct CameraVertex { Vec3 relative; Color color; Vec2 uv; };
+            struct CameraVertex { Vec3 relative; Color color; Vec2 uv; Vec3 normal; Vec3 view_direction; };
             std::vector<CameraVertex> polygon;
             polygon.reserve(5);
             for (int j=0;j<3;++j) {
@@ -244,9 +244,9 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 const Vec3 point=transform(world,{source.x,source.y,source.z});
                 const Vec3 relative=sub(point,camera.eye);
                 Color color=modulate(source.color,tint);
-                if (source.lit) color=LightingSystem::shade(color,transform_direction(world,source.normal),
-                                                           normalize(sub(camera.eye,point)),lights);
-                polygon.push_back({relative,color,{source.u,source.v}});
+                polygon.push_back({relative,color,{source.u,source.v},
+                                   normalize(transform_direction(world,source.normal)),
+                                   normalize(sub(camera.eye,point))});
             }
             const auto clip = [&](float plane, bool keep_greater) {
                 std::vector<CameraVertex> output;
@@ -262,7 +262,13 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                          channel(a.color.g+(b.color.g-a.color.g)*t),
                          channel(a.color.b+(b.color.b-a.color.b)*t),
                          channel(a.color.a+(b.color.a-a.color.a)*t)},
-                        {a.uv.x+(b.uv.x-a.uv.x)*t,a.uv.y+(b.uv.y-a.uv.y)*t}};
+                        {a.uv.x+(b.uv.x-a.uv.x)*t,a.uv.y+(b.uv.y-a.uv.y)*t},
+                        {a.normal.x+(b.normal.x-a.normal.x)*t,
+                         a.normal.y+(b.normal.y-a.normal.y)*t,
+                         a.normal.z+(b.normal.z-a.normal.z)*t},
+                        {a.view_direction.x+(b.view_direction.x-a.view_direction.x)*t,
+                         a.view_direction.y+(b.view_direction.y-a.view_direction.y)*t,
+                         a.view_direction.z+(b.view_direction.z-a.view_direction.z)*t}};
                 };
                 CameraVertex previous=polygon.back();
                 float previous_depth=distance(previous);
@@ -291,12 +297,14 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                     const auto& source=clipped[j];
                     const float depth=dot(source.relative,forward);
                     triangle[j]={{160+dot(source.relative,right)*focal*focal_x/depth,
-                                  120-dot(source.relative,up)*focal*focal_y/depth},source.color,source.uv,depth};
+                                  120-dot(source.relative,up)*focal*focal_y/depth},source.color,source.uv,depth,
+                                 source.normal,source.view_direction};
                 }
                 const auto& sampler=mesh.vertices[i];
                 triangles_.push_back({triangle,sampler.texture,sampler.texture_mode_s,sampler.texture_mode_t,
                                       sampler.texture_mask_s,sampler.texture_mask_t,
-                                      sampler.texture_window_s,sampler.texture_window_t});
+                                      sampler.texture_window_s,sampler.texture_window_t,lights,
+                                      sampler.light1,sampler.light2,sampler.lit,soft_edges});
             }
         }
     }
@@ -378,12 +386,30 @@ void Scene3DRenderer::flush(RenderEngine& render) {
                 texture_color={triangle.texture->rgba[texel],triangle.texture->rgba[texel+1],
                                triangle.texture->rgba[texel+2],triangle.texture->rgba[texel+3]};
             }
-            const Color vertex_color{
+            Color vertex_color{
                 channel(w0*a.color.r+w1*b.color.r+w2*c.color.r),
                 channel(w0*a.color.g+w1*b.color.g+w2*c.color.g),
                 channel(w0*a.color.b+w1*b.color.b+w2*c.color.b),
                 channel(w0*a.color.a+w1*b.color.a+w2*c.color.a)};
-            const Color source=modulate(texture_color,vertex_color);
+            if (triangle.lit) {
+                const auto interpolate_vec3=[&](Vec3 av,Vec3 bv,Vec3 cv) {
+                    return normalize({(w0*av.x/a.depth+w1*bv.x/b.depth+w2*cv.x/c.depth)/inverse_depth,
+                                      (w0*av.y/a.depth+w1*bv.y/b.depth+w2*cv.y/c.depth)/inverse_depth,
+                                      (w0*av.z/a.depth+w1*bv.z/b.depth+w2*cv.z/c.depth)/inverse_depth});
+                };
+                auto pixel_lights=triangle.lights;
+                if (triangle.material_light1) pixel_lights.key.color=*triangle.material_light1;
+                if (triangle.material_light2) pixel_lights.ambient=*triangle.material_light2;
+                vertex_color=LightingSystem::shade(vertex_color,
+                    interpolate_vec3(a.normal,b.normal,c.normal),
+                    interpolate_vec3(a.view_direction,b.view_direction,c.view_direction),pixel_lights);
+            }
+            Color source=modulate(texture_color,vertex_color);
+            if (triangle.soft_edges) {
+                const float coverage=std::clamp(std::min({w0,w1,w2})*24.0f,0.0f,1.0f);
+                const float feather=coverage*coverage*(3.0f-2.0f*coverage);
+                source.a=channel(source.a*feather);
+            }
             if (source.a==0) continue;
             const auto output=pixel*4;
             if (source.a==255) {

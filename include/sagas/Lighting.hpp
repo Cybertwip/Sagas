@@ -14,6 +14,9 @@ struct LightingRig {
     Color ambient{176, 180, 192, 255};
     float ambient_intensity{0.62f};
     DirectionalLight key{};
+    Color reflection{205, 218, 236, 255};
+    float reflection_intensity{0.18f};
+    float shininess{9.0f};
 };
 
 class LightingSystem final {

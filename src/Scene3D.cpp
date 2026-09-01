@@ -114,12 +114,15 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
     const Vec3 right=normalize(cross(forward,camera.up));
     const Vec3 up=cross(right,forward);
     const float focal=1.0f/std::tan(camera.fov_y*0.008726646259971648f);
+    const Matrix model_matrix=multiply(multiply(translation({model.position.x,model.position.y,model.position.z}),
+                                                rotation({model.rotation.x,model.rotation.y,model.rotation.z})),
+                                       scale({model.scale.x,model.scale.y,model.scale.z}));
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
         auto node=model.nodes[node_index];
         if (node_index < model.animation.size() && model.animation[node_index])
             n64::AnimationDecoder::apply(node, animation_.sample(*model.animation[node_index],frame,animation_.pose(node)));
         const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
-        Matrix world=local;
+        Matrix world=multiply(model_matrix,local);
         if (node.depth>0 && node.depth<=18) world=multiply(parents[node.depth-1],local);
         if (node.depth>=0 && node.depth<18) parents[node.depth]=world;
         const auto& mesh=model.meshes[node_index];

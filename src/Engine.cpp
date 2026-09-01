@@ -197,6 +197,21 @@ public:
         if (const auto animation = archive_->symbol("llMVCommonRoomTissuesAnimJoint"))
             room_tissues_.animation[0] = animation;
         room_desk_ground_ = loader_->model("llMVCommonRoomDeskGroundDObjDesc", {}, GeometryLayout::DisplayListLinks);
+        room_logo_ = loader_->model("llMVCommonRoomLogoDObjDesc", {}, GeometryLayout::DisplayListLinks);
+        n64::AnimationDecoder animation(*archive_);
+        const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file) {
+            auto model = loader_->model(descriptor, {}, GeometryLayout::Direct);
+            model.animation = animation.table({file,0},model.nodes.size());
+            return model;
+        };
+        boss_pose1_ = animated_fighter("llBossModelJointTreeDObjDesc",458);
+        boss_pose2_ = animated_fighter("llBossModelJointTreeDObjDesc",459);
+        boss_pose3_ = animated_fighter("llBossModelJointTreeDObjDesc",460);
+        mario_pickup_ = animated_fighter("llMarioModelJointTreeDObjDesc",362);
+        mario_fall_ = animated_fighter("llMarioModelJointTreeDObjDesc",363);
+        mario_revival_ = animated_fighter("llMarioModelJointTreeDObjDesc",364);
+        link_fall_ = animated_fighter("llLinkModelJointTreeDObjDesc",409);
+        link_fall_.position = {872.32495f,4038.8640f,-4734.6001f};
         yoster_nest_ = loader_->model("llMVOpeningYosterNestDObjDesc");
         yoster_ground_ = loader_->model("llMVOpeningYosterGroundDObjDesc", "llMVOpeningYosterGroundAnimJoint");
         cliff_hills_ = loader_->model("llMVOpeningCliffHillsDObjDesc", {}, GeometryLayout::Direct);
@@ -321,9 +336,9 @@ private:
         }
 
         LightingRig warm_room;
-        warm_room.ambient = {128,112,104,255};
-        warm_room.ambient_intensity = 0.48f;
-        warm_room.key = {{-0.28f,0.78f,0.56f},{255,236,204,255},0.92f};
+        warm_room.ambient = {184,170,158,255};
+        warm_room.ambient_intensity = 0.64f;
+        warm_room.key = {{-0.28f,0.78f,0.56f},{255,236,204,255},0.56f};
         if (local < 1040) {
             renderer_->draw(r, room_outside_, camera, camera_frame, {210,226,255,255}, warm_room);
             renderer_->draw(r, room_haze_, camera, camera_frame, {220,225,235,150}, warm_room);
@@ -335,10 +350,22 @@ private:
             if (local >= 280) renderer_->draw(r, room_pencils_, camera, prop_frame, {255,255,255,255}, warm_room);
             renderer_->draw(r, room_lamp_, camera, prop_frame, {255,255,255,255}, warm_room);
             renderer_->draw(r, room_tissues_, camera, prop_frame, {255,255,255,255}, warm_room);
+            if (local < 280) renderer_->draw(r,room_logo_,camera,static_cast<float>(local),
+                                             {255,255,255,255},warm_room);
+            const Model3D& boss = local < 560 ? boss_pose1_ : (local < 860 ? boss_pose2_ : boss_pose3_);
+            const float boss_frame = static_cast<float>(local < 560 ? local : (local < 860 ? local-560 : local-860));
+            renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
+            if (local >= 280) {
+                if (local < 380) renderer_->draw(r,mario_pickup_,camera,static_cast<float>(local-280),{255,255,255,255},warm_room);
+                else renderer_->draw(r,mario_fall_,camera,static_cast<float>(local-380),{255,255,255,255},warm_room);
+            }
+            if (local >= 695) renderer_->draw(r,link_fall_,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
         } else {
             wallpaper(r, "MVOpeningRoomWallpaper.png");
             renderer_->draw(r, room_desk_ground_, camera, static_cast<float>(std::max(local - 1060, 0)),
                             {255,255,255,255}, warm_room);
+            if (local >= 1140) renderer_->draw(r,mario_revival_,camera,static_cast<float>(local-1140),
+                                               {255,255,255,255},warm_room);
         }
     }
     static void portraits(RenderEngine& r, int local) {
@@ -386,7 +413,9 @@ private:
     Model3D yamabuki_legs_, yamabuki_shadow_, yamabuki_ball_;
     Model3D sector_great_fox_, standoff_ground_, standoff_lightning_;
     Model3D room_background_, room_sunlight_, room_desk_, room_outside_, room_haze_;
-    Model3D room_books_, room_pencils_, room_lamp_, room_tissues_, room_desk_ground_;
+    Model3D room_books_, room_pencils_, room_lamp_, room_tissues_, room_desk_ground_, room_logo_;
+    Model3D boss_pose1_, boss_pose2_, boss_pose3_;
+    Model3D mario_pickup_, mario_fall_, mario_revival_, link_fall_;
 };
 
 class TitleScene final : public Scene {

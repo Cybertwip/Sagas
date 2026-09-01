@@ -19,6 +19,7 @@ struct DisplayListDecoder::State {
     std::unordered_map<unsigned, Image> loads;
     std::optional<Address> palette;
     unsigned render_tile{};
+    float texture_scale_s{1}, texture_scale_t{1};
     bool lighting{true};
     Color primitive{255,255,255,255};
 };
@@ -68,11 +69,28 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
     const auto& tile = state.tiles[state.render_tile];
     const float width = image ? static_cast<float>(image->width) : 1.0f;
     const float height = image ? static_cast<float>(image->height) : 1.0f;
+    const auto coordinate = [](float value, float extent, unsigned mode, unsigned mask) {
+        if ((mode & 2U) != 0) return std::clamp(value / extent,0.0f,1.0f);
+        const float period = mask ? static_cast<float>(1U << mask) : extent;
+        float wrapped = std::fmod(value,period);
+        if (wrapped < 0) wrapped += period;
+        if ((mode & 1U) != 0) {
+            const auto section = static_cast<int>(std::floor(value / period));
+            if (section & 1) wrapped = period-wrapped;
+        }
+        return wrapped/extent;
+    };
     for (const unsigned index : {a,b,c}) {
         auto vertex = state.cache[index].vertex;
         vertex.texture = image;
-        vertex.u = (vertex.u - tile.uls * 0.25f) / width;
-        vertex.v = (vertex.v - tile.ult * 0.25f) / height;
+        float u=(vertex.u*state.texture_scale_s - tile.uls*0.25f);
+        float v=(vertex.v*state.texture_scale_t - tile.ult*0.25f);
+        if (tile.shifts) u *= tile.shifts <= 10 ? 1.0f/static_cast<float>(1U<<tile.shifts)
+                                                : static_cast<float>(1U<<(16-tile.shifts));
+        if (tile.shiftt) v *= tile.shiftt <= 10 ? 1.0f/static_cast<float>(1U<<tile.shiftt)
+                                                : static_cast<float>(1U<<(16-tile.shiftt));
+        vertex.u = coordinate(u,width,tile.cms,tile.masks);
+        vertex.v = coordinate(v,height,tile.cmt,tile.maskt);
         mesh.vertices.push_back(std::move(vertex));
     }
 }
@@ -194,7 +212,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
             case 0x05:
                 triangle(mesh, state, (w0 >> 17) & 0x7fU, (w0 >> 9) & 0x7fU, (w0 >> 1) & 0x7fU);
                 break;
-            case 0x06: case 0xb1:
+            case 0x06: case 0x07: case 0xb1:
                 triangle(mesh, state, (w0 >> 17) & 0x7fU, (w0 >> 9) & 0x7fU, (w0 >> 1) & 0x7fU);
                 triangle(mesh, state, (w1 >> 17) & 0x7fU, (w1 >> 9) & 0x7fU, (w1 >> 1) & 0x7fU);
                 break;
@@ -203,6 +221,8 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                 break;
             case 0xd7:
                 state.render_tile = (w0 >> 8) & 7U;
+                state.texture_scale_s = static_cast<float>((w1>>16)&0xffffU)/65536.0f;
+                state.texture_scale_t = static_cast<float>(w1&0xffffU)/65536.0f;
                 break;
             case 0xde: {
                 const auto target = archive_.resolve({address.file, address.offset + 4});

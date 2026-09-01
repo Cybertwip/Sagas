@@ -61,9 +61,10 @@ private:
     std::vector<Keyframe> keys_;
 };
 
-enum class Action : std::uint8_t { Accept, Cancel, Skip, Quit };
+enum class Action : std::uint8_t { Accept, Cancel, Skip, Up, Down, Left, Right, Quit };
 struct InputState {
     bool accept_pressed{}, cancel_pressed{}, skip_pressed{}, quit{};
+    bool up_pressed{}, down_pressed{}, left_pressed{}, right_pressed{};
     [[nodiscard]] bool pressed(Action action) const noexcept;
 };
 

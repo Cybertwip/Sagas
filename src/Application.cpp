@@ -52,10 +52,18 @@ InputState Application::poll_input() {
             input.accept_pressed |= event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE || event.key.key == SDLK_A;
             input.cancel_pressed |= event.key.key == SDLK_ESCAPE || event.key.key == SDLK_B;
             input.skip_pressed |= event.key.key == SDLK_S;
+            input.up_pressed |= event.key.key == SDLK_UP;
+            input.down_pressed |= event.key.key == SDLK_DOWN;
+            input.left_pressed |= event.key.key == SDLK_LEFT;
+            input.right_pressed |= event.key.key == SDLK_RIGHT;
         }
         if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
             input.accept_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH || event.gbutton.button == SDL_GAMEPAD_BUTTON_START;
             input.cancel_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST;
+            input.up_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_UP;
+            input.down_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_DOWN;
+            input.left_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_LEFT;
+            input.right_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
         }
     }
     return input;

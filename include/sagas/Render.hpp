@@ -38,6 +38,8 @@ public:
     void begin(Color clear);
     void sprite(std::string_view logical, Vec2 center, Vec2 scale = {1, 1},
                 Color tint = {255, 255, 255, 255});
+    void sprite_at(std::string_view logical, Vec2 top_left, Vec2 scale = {1, 1},
+                   Color tint = {255, 255, 255, 255});
     void fill(float x, float y, float w, float h, Color color);
     void triangles(std::span<const TriangleVertex> vertices,
                    const std::shared_ptr<const RasterImage>& image = {});

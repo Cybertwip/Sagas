@@ -54,6 +54,10 @@ bool InputState::pressed(Action action) const noexcept {
         case Action::Accept: return accept_pressed;
         case Action::Cancel: return cancel_pressed;
         case Action::Skip: return skip_pressed;
+        case Action::Up: return up_pressed;
+        case Action::Down: return down_pressed;
+        case Action::Left: return left_pressed;
+        case Action::Right: return right_pressed;
         case Action::Quit: return quit;
     }
     return false;

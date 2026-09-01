@@ -437,6 +437,12 @@ void RenderEngine::sprite(std::string_view logical,Vec2 center,Vec2 scale,Color 
     draw_2d(vertices,source.handle);
 }
 
+void RenderEngine::sprite_at(std::string_view logical,Vec2 top_left,Vec2 scale,Color tint) {
+    const auto& source=texture(logical);
+    sprite(logical,{top_left.x+source.width*scale.x*0.5f,
+                    top_left.y+source.height*scale.y*0.5f},scale,tint);
+}
+
 void RenderEngine::fill(float x,float y,float w,float h,Color color) {
     const std::array<TriangleVertex,6> vertices{{
         {{x,y},color,{}},{{x+w,y},color,{}},{{x+w,y+h},color,{}},

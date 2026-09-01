@@ -13,6 +13,7 @@ set(SAGAS_ASSET_ROOT "${CMAKE_CURRENT_BINARY_DIR}/assets" CACHE PATH
 
 find_package(SDL3 CONFIG REQUIRED)
 find_package(PNG REQUIRED)
+find_package(OpenGL REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 add_executable(sagas_asset_unpack tools/unpack_assets.cpp)
@@ -75,7 +76,7 @@ add_library(sagas_engine
     src/Scene.cpp
     src/Scene3D.cpp)
 target_include_directories(sagas_engine PUBLIC include)
-target_link_libraries(sagas_engine PUBLIC SDL3::SDL3 PNG::PNG)
+target_link_libraries(sagas_engine PUBLIC SDL3::SDL3 PNG::PNG OpenGL::GL)
 target_compile_definitions(sagas_engine PUBLIC
     SAGAS_DEFAULT_ASSET_ROOT="${SAGAS_ASSET_ROOT}")
 target_compile_options(sagas_engine PRIVATE -Wall -Wextra -Wpedantic)

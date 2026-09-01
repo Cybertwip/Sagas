@@ -15,22 +15,30 @@ namespace {
 
 Application::Application(ApplicationOptions options) : options_(std::move(options)) {
     if (options_.headless) {
-        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
         SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
-        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
     }
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) fail("SDL initialization failed");
-    const auto flags = options_.headless ? SDL_WINDOW_HIDDEN : SDL_WINDOW_RESIZABLE;
-    if (!SDL_CreateWindowAndRenderer("Sagas | Smash Remix", 960, 720, flags, &window_, &renderer_)) fail("window creation failed");
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS,SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24);
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,8);
+    SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE,1);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS,1);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES,4);
+    const auto flags = SDL_WINDOW_OPENGL | (options_.headless ? SDL_WINDOW_HIDDEN : SDL_WINDOW_RESIZABLE);
+    window_=SDL_CreateWindow("Sagas | Smash Remix",960,720,flags);
+    if (!window_) fail("OpenGL window creation failed");
     assets_ = std::make_unique<AssetRepository>(options_.asset_root);
-    render_ = std::make_unique<RenderEngine>(window_, renderer_, *assets_);
+    render_ = std::make_unique<RenderEngine>(window_, *assets_);
     audio_ = std::make_unique<AudioEngine>(*assets_);
     services_ = std::make_unique<Services>(Services{*assets_, *render_, *audio_, physics_});
     scenes_ = std::make_unique<SceneMachine>(options_.start_at_title ? make_title_scene() : make_startup_scene(), *services_);
 }
 Application::~Application() {
     scenes_.reset(); services_.reset(); audio_.reset(); render_.reset(); assets_.reset();
-    if (renderer_) SDL_DestroyRenderer(renderer_);
     if (window_) SDL_DestroyWindow(window_);
     SDL_Quit();
 }

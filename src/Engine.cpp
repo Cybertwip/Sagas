@@ -415,7 +415,7 @@ private:
             renderer_->draw(r, room_outside_, camera, camera_frame, {210,226,255,255}, warm_room);
             renderer_->draw(r, room_haze_, camera, camera_frame, {220,225,235,150}, warm_room);
             renderer_->draw(r, room_background_, camera, static_cast<float>(local), {255,255,255,255}, warm_room);
-            if (local < 450) renderer_->draw(r, room_sunlight_, camera, camera_frame, {255,240,190,150}, warm_room, true);
+            if (local < 450) renderer_->draw(r, room_sunlight_, camera, camera_frame, {255,240,190,150}, warm_room);
             renderer_->draw(r, room_desk_, camera, camera_frame, {255,255,255,255}, warm_room);
             const float prop_frame = static_cast<float>(std::max(local - 560, 0));
             renderer_->draw(r, room_books_, camera, prop_frame, {255,255,255,255}, warm_room);
@@ -448,11 +448,11 @@ private:
             if (local >= 280 && local < 500) draw_pulled_fighter();
             if (local >= 695) renderer_->draw(r,link_fall_,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
             if (local < 280) renderer_->draw(r,room_boss_shadow_,camera,static_cast<float>(local),
-                                             {90,80,78,150},warm_room,true);
+                                             {90,80,78,150},warm_room);
             renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
             if (local >= 500) draw_pulled_fighter();
             if (local >= 500) renderer_->draw(r,room_spotlight_,camera,static_cast<float>(local-500),
-                                              {255,244,210,105},warm_room,true);
+                                              {255,244,210,105},warm_room);
             if (local >= 860) renderer_->draw(r,room_snap_,camera,static_cast<float>(local-860),
                                               {255,255,255,255},warm_room);
             // Link 29 has its own camera/Z pass in the original.  Isolating

@@ -4,7 +4,6 @@
 
 #include <chrono>
 
-struct SDL_Renderer;
 struct SDL_Window;
 
 namespace sagas {
@@ -28,7 +27,6 @@ private:
     InputState poll_input();
     ApplicationOptions options_;
     SDL_Window* window_{};
-    SDL_Renderer* renderer_{};
     std::unique_ptr<AssetRepository> assets_;
     std::unique_ptr<RenderEngine> render_;
     std::unique_ptr<AudioEngine> audio_;

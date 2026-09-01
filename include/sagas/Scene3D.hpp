@@ -60,8 +60,7 @@ public:
     explicit Scene3DRenderer(n64::RelocArchive& archive) : animation_(archive) {}
     void begin();
     void draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
-              float frame, Color tint = {255,255,255,255}, LightingRig lights = {},
-              bool soft_edges = false);
+              float frame, Color tint = {255,255,255,255}, LightingRig lights = {});
     [[nodiscard]] Model3D placed_at_joint(const Model3D& model, float model_frame,
                                           const Model3D& carrier, float carrier_frame,
                                           std::size_t carrier_joint);
@@ -85,7 +84,7 @@ private:
         LightingRig lights{};
         std::optional<Color> material_light1;
         std::optional<Color> material_light2;
-        bool lit{}, soft_edges{};
+        bool lit{};
     };
     n64::AnimationDecoder animation_;
     std::vector<ProjectedTriangle> triangles_;

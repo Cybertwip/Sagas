@@ -39,7 +39,7 @@ Color LightingSystem::shade(Color surface, Vec3 normal, Vec3 view_direction, con
     const auto one = [&](std::uint8_t base, std::uint8_t ambient, std::uint8_t direct,
                          std::uint8_t reflection) {
         const float illumination = ambient * rig.ambient_intensity + direct * diffuse;
-        return channel(base * illumination / 255.0f + reflection*reflected);
+        return channel((base * illumination) / 255.0f + reflection*reflected);
     };
     return {one(surface.r, rig.ambient.r, rig.key.color.r,rig.reflection.r),
             one(surface.g, rig.ambient.g, rig.key.color.g,rig.reflection.g),

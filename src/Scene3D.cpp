@@ -241,7 +241,7 @@ Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame
 }
 
 void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
-                           float frame, Color tint, LightingRig lights, bool soft_edges) {
+                           float frame, Color tint, LightingRig lights) {
     const bool immediate = !batching_;
     const Vec3 forward=normalize(sub(camera.at,camera.eye));
     const Vec3 right=normalize(cross(forward,camera.up));
@@ -337,7 +337,7 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 triangles_.push_back({triangle,sampler.texture,sampler.texture_mode_s,sampler.texture_mode_t,
                                       sampler.texture_mask_s,sampler.texture_mask_t,
                                       sampler.texture_window_s,sampler.texture_window_t,lights,
-                                      sampler.light1,sampler.light2,sampler.lit||model.receive_lighting,soft_edges});
+                                      sampler.light1,sampler.light2,sampler.lit||model.receive_lighting});
             }
         }
         };
@@ -460,11 +460,6 @@ void Scene3DRenderer::flush(RenderEngine& render) {
                     interpolate_vec3(a.view_direction,b.view_direction,c.view_direction),pixel_lights);
             }
             Color source=modulate(texture_color,vertex_color);
-            if (triangle.soft_edges) {
-                const float coverage=std::clamp(std::min({w0,w1,w2})*24.0f,0.0f,1.0f);
-                const float feather=coverage*coverage*(3.0f-2.0f*coverage);
-                source.a=channel(source.a*feather);
-            }
             if (source.a==0) continue;
             const auto output=pixel*4;
             if (source.a==255) {

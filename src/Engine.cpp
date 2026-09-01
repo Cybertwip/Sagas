@@ -202,6 +202,7 @@ public:
         const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file, GeometryLayout layout = GeometryLayout::Direct) {
             auto model = loader_->model(descriptor, {}, layout);
             model.animation = animation.table({file,0},model.nodes.size());
+            model.fighter_animation = true;
             return model;
         };
         boss_pose1_ = animated_fighter("llBossModelJointTreeDObjDesc", 458, GeometryLayout::JointPairs);

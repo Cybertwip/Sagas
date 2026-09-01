@@ -10,13 +10,19 @@ namespace sagas::n64 {
 struct DisplayListDecoder::State {
     struct Cached { Vertex vertex{}; bool valid{}; };
     struct Image { std::optional<Address> address; unsigned format{}, size{}, width{1}; } image;
+    struct Load {
+        Image image;
+        unsigned uls{}, ult{}, lrs{}, lrt{};
+        unsigned size{};
+        bool block{};
+    };
     struct Tile {
         unsigned format{}, size{}, line{}, tmem{}, palette{}, cms{}, cmt{}, masks{}, maskt{}, shifts{}, shiftt{};
         unsigned uls{}, ult{}, lrs{}, lrt{};
     };
     std::array<Cached, 32> cache{};
     std::array<Tile, 8> tiles{};
-    std::unordered_map<unsigned, Image> loads;
+    std::unordered_map<unsigned, Load> loads;
     std::optional<Address> palette;
     unsigned render_tile{};
     float texture_scale_s{1}, texture_scale_t{1};
@@ -113,14 +119,47 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
 std::shared_ptr<const RasterImage> DisplayListDecoder::texture(State& state) {
     const auto& tile = state.tiles[state.render_tile];
     const auto loaded = state.loads.find(tile.tmem);
-    const auto image = loaded != state.loads.end() ? loaded->second : state.image;
+    const auto image = loaded != state.loads.end() ? loaded->second.image : state.image;
     if (!image.address) return {};
-    const unsigned width = tile.lrs >= tile.uls ? ((tile.lrs - tile.uls) >> 2) + 1 : image.width;
-    const unsigned height = tile.lrt >= tile.ult ? ((tile.lrt - tile.ult) >> 2) + 1 : 1;
+    const unsigned bits = 4U << tile.size;
+    unsigned width{};
+    unsigned height{};
+    unsigned source_x{};
+    unsigned source_y{};
+    unsigned source_row_bytes{};
+    if (loaded != state.loads.end() && loaded->second.block) {
+        // LoadBlock's lrs describes the amount copied to TMEM, while the
+        // render tile's line describes its physical row stride.  TileSize
+        // is a sampling/clamp window and can intentionally be much larger
+        // than the source image, so it must not be used as image dimensions.
+        const unsigned row_bytes = tile.line * 8U;
+        const unsigned load_bits = 4U << loaded->second.size;
+        const std::uint64_t load_units = loaded->second.lrs >= loaded->second.uls
+            ? static_cast<std::uint64_t>(loaded->second.lrs - loaded->second.uls) + 1U : 0U;
+        const std::uint64_t total_bits = load_units * load_bits;
+        if (row_bytes != 0 && bits != 0) {
+            width = row_bytes * 8U / bits;
+            height = static_cast<unsigned>((total_bits + row_bytes * 8U - 1U) / (row_bytes * 8U));
+            source_row_bytes = row_bytes;
+        }
+    } else if (loaded != state.loads.end()) {
+        const auto& load = loaded->second;
+        width = load.lrs >= load.uls ? ((load.lrs - load.uls) >> 2) + 1U : 0U;
+        height = load.lrt >= load.ult ? ((load.lrt - load.ult) >> 2) + 1U : 0U;
+        source_x = load.uls >> 2;
+        source_y = load.ult >> 2;
+        source_row_bytes = (image.width * bits + 7U) / 8U;
+    }
+    if (width == 0 || height == 0) {
+        width = tile.lrs >= tile.uls ? ((tile.lrs - tile.uls) >> 2) + 1U : image.width;
+        height = tile.lrt >= tile.ult ? ((tile.lrt - tile.ult) >> 2) + 1U : 1U;
+    }
     if (width == 0 || height == 0 || width > 1024 || height > 1024) return {};
+    if (source_row_bytes == 0) source_row_bytes = (width * bits + 7U) / 8U;
     std::ostringstream key;
     key << image.address->file << ':' << image.address->offset << ':' << tile.format << ':' << tile.size
-        << ':' << width << ':' << height << ':' << tile.line << ':' << tile.palette << ':';
+        << ':' << width << ':' << height << ':' << source_x << ':' << source_y << ':'
+        << source_row_bytes << ':' << tile.palette << ':';
     if (state.palette) key << state.palette->file << ':' << state.palette->offset;
     if (const auto found = textures_.find(key.str()); found != textures_.end()) return found->second;
 
@@ -130,46 +169,45 @@ std::shared_ptr<const RasterImage> DisplayListDecoder::texture(State& state) {
     output->rgba.resize(static_cast<std::size_t>(width) * height * 4);
     const auto source = archive_.bytes(image.address->file);
     const auto palette = state.palette ? archive_.bytes(state.palette->file) : std::span<const std::byte>{};
-    const unsigned bits = 4U << tile.size;
-    const unsigned row_bytes = tile.line ? tile.line * 8 : (width * bits + 7) / 8;
     auto byte = [](std::span<const std::byte> data, std::size_t at) -> unsigned {
         return at < data.size() ? std::to_integer<unsigned>(data[at]) : 0;
     };
     for (unsigned y = 0; y < height; ++y) for (unsigned x = 0; x < width; ++x) {
-        const std::size_t row = image.address->offset + static_cast<std::size_t>(y) * row_bytes;
+        const std::size_t row = image.address->offset + static_cast<std::size_t>(source_y + y) * source_row_bytes;
+        const unsigned source_pixel = source_x + x;
         Color color{255,0,255,255};
         unsigned intensity{}, alpha{255};
         if (tile.format == 0 && tile.size == 2) {
-            color = rgba16(static_cast<std::uint16_t>((byte(source,row+x*2)<<8)|byte(source,row+x*2+1)));
+            color = rgba16(static_cast<std::uint16_t>((byte(source,row+source_pixel*2)<<8)|byte(source,row+source_pixel*2+1)));
         } else if (tile.format == 0 && tile.size == 3) {
-            color = {static_cast<std::uint8_t>(byte(source,row+x*4)), static_cast<std::uint8_t>(byte(source,row+x*4+1)),
-                     static_cast<std::uint8_t>(byte(source,row+x*4+2)), static_cast<std::uint8_t>(byte(source,row+x*4+3))};
+            color = {static_cast<std::uint8_t>(byte(source,row+source_pixel*4)), static_cast<std::uint8_t>(byte(source,row+source_pixel*4+1)),
+                     static_cast<std::uint8_t>(byte(source,row+source_pixel*4+2)), static_cast<std::uint8_t>(byte(source,row+source_pixel*4+3))};
         } else if (tile.format == 2 && state.palette) {
             unsigned index{};
             if (tile.size == 0) {
-                const unsigned packed = byte(source,row+x/2);
-                index = ((x & 1) ? (packed & 15) : (packed >> 4)) + tile.palette * 16;
-            } else index = byte(source,row+x);
+                const unsigned packed = byte(source,row+source_pixel/2);
+                index = ((source_pixel & 1) ? (packed & 15) : (packed >> 4)) + tile.palette * 16;
+            } else index = byte(source,row+source_pixel);
             const std::size_t at = state.palette->offset + index * 2;
             color = rgba16(static_cast<std::uint16_t>((byte(palette,at)<<8)|byte(palette,at+1)));
         } else if (tile.format == 3) {
             if (tile.size == 0) {
-                const unsigned packed = byte(source,row+x/2);
-                const unsigned value = (x & 1) ? (packed & 15) : (packed >> 4);
+                const unsigned packed = byte(source,row+source_pixel/2);
+                const unsigned value = (source_pixel & 1) ? (packed & 15) : (packed >> 4);
                 intensity = ((value >> 1) & 7) * 255 / 7; alpha = (value & 1) ? 255 : 0;
             } else if (tile.size == 1) {
-                const unsigned value = byte(source,row+x);
+                const unsigned value = byte(source,row+source_pixel);
                 intensity = (value >> 4) * 17; alpha = (value & 15) * 17;
             } else {
-                intensity = byte(source,row+x*2); alpha = byte(source,row+x*2+1);
+                intensity = byte(source,row+source_pixel*2); alpha = byte(source,row+source_pixel*2+1);
             }
             color = {static_cast<std::uint8_t>(intensity),static_cast<std::uint8_t>(intensity),
                      static_cast<std::uint8_t>(intensity),static_cast<std::uint8_t>(alpha)};
         } else if (tile.format == 4) {
             if (tile.size == 0) {
-                const unsigned packed = byte(source,row+x/2);
-                intensity = ((x & 1) ? (packed & 15) : (packed >> 4)) * 17;
-            } else intensity = byte(source,row+x);
+                const unsigned packed = byte(source,row+source_pixel/2);
+                intensity = ((source_pixel & 1) ? (packed & 15) : (packed >> 4)) * 17;
+            } else intensity = byte(source,row+source_pixel);
             color = {static_cast<std::uint8_t>(intensity),static_cast<std::uint8_t>(intensity),
                      static_cast<std::uint8_t>(intensity),255};
         }
@@ -190,7 +228,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
         const auto opcode = w0 >> 24;
         switch (opcode) {
             case 0x00: case 0xe1: case 0xe3: case 0xe6: case 0xe7: case 0xe8: case 0xe9:
-            case 0xf1: case 0xf4: case 0xfc:
+            case 0xf1: case 0xfc:
                 break;
             case 0x01: {
                 const unsigned count = (w0 >> 12) & 0xffU;
@@ -225,11 +263,24 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                 break;
             }
             case 0x05:
-                triangle(mesh, state, (w0 >> 17) & 0x7fU, (w0 >> 9) & 0x7fU, (w0 >> 1) & 0x7fU);
+                // F3DEX2 stores byte offsets (index * 2).  Shifting from
+                // bits 17/9/1 decodes both the field and that factor of two.
+                triangle(mesh, state, (w0 >> 17) & 0x7fU, (w0 >> 9) & 0x7fU,
+                         (w0 >> 1) & 0x7fU);
                 break;
-            case 0x06: case 0x07: case 0xb1:
-                triangle(mesh, state, (w0 >> 17) & 0x7fU, (w0 >> 9) & 0x7fU, (w0 >> 1) & 0x7fU);
-                triangle(mesh, state, (w1 >> 17) & 0x7fU, (w1 >> 9) & 0x7fU, (w1 >> 1) & 0x7fU);
+            case 0x06: case 0x07:
+                triangle(mesh, state, (w0 >> 17) & 0x7fU, (w0 >> 9) & 0x7fU,
+                         (w0 >> 1) & 0x7fU);
+                triangle(mesh, state, (w1 >> 17) & 0x7fU, (w1 >> 9) & 0x7fU,
+                         (w1 >> 1) & 0x7fU);
+                break;
+            case 0xb1:
+                // Legacy F3DEX TRI2 packs byte-sized indices multiplied by
+                // ten rather than the F3DEX2 half-index representation.
+                triangle(mesh, state, ((w0 >> 16) & 0xffU) / 10U, ((w0 >> 8) & 0xffU) / 10U,
+                         (w0 & 0xffU) / 10U);
+                triangle(mesh, state, ((w1 >> 16) & 0xffU) / 10U, ((w1 >> 8) & 0xffU) / 10U,
+                         (w1 & 0xffU) / 10U);
                 break;
             case 0xd9:
                 state.lighting = (((w0 & 0x00ffffffU) | w1) & 0x00020000U) != 0;
@@ -262,7 +313,14 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
             }
             case 0xf3: {
                 const auto& tile = state.tiles[(w1 >> 24) & 7U];
-                state.loads[tile.tmem] = state.image;
+                state.loads[tile.tmem] = {state.image, (w0 >> 12) & 0xfffU, w0 & 0xfffU,
+                                          (w1 >> 12) & 0xfffU, 0, tile.size, true};
+                break;
+            }
+            case 0xf4: {
+                const auto& tile = state.tiles[(w1 >> 24) & 7U];
+                state.loads[tile.tmem] = {state.image, (w0 >> 12) & 0xfffU, w0 & 0xfffU,
+                                          (w1 >> 12) & 0xfffU, w1 & 0xfffU, tile.size, false};
                 break;
             }
             case 0xf5: {

@@ -129,7 +129,9 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
         auto node=model.nodes[node_index];
         if (node_index < model.animation.size() && model.animation[node_index])
-            n64::AnimationDecoder::apply(node, animation_.sample(*model.animation[node_index],frame,animation_.pose(node)));
+            n64::AnimationDecoder::apply(node, model.fighter_animation
+                ? animation_.sample16(*model.animation[node_index],frame,animation_.pose(node))
+                : animation_.sample(*model.animation[node_index],frame,animation_.pose(node)));
         const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
         Matrix world=multiply(model_matrix,local);
         if (node.depth>0 && node.depth<=18) world=multiply(parents[node.depth-1],local);

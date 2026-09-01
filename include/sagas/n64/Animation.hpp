@@ -15,6 +15,7 @@ public:
     explicit AnimationDecoder(RelocArchive& archive) : archive_(archive) {}
     [[nodiscard]] std::vector<std::optional<Address>> table(Address address, std::size_t count);
     [[nodiscard]] JointPose sample(Address script, float frame, JointPose initial = {});
+    [[nodiscard]] JointPose sample16(Address script, float frame, JointPose initial = {});
     static JointPose pose(const Node& node);
     static void apply(Node& node, const JointPose& pose);
 private:

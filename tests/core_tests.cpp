@@ -38,6 +38,12 @@ int main() {
     for (const auto value : at_middle.tracks) assert(std::isfinite(value));
     assert(at_start.tracks != at_middle.tracks);
     sagas::Scene3DLoader scene_loader(archive);
+    const auto fighter_scripts = animation_decoder.table({362, 0}, 25);
+    assert(fighter_scripts[1]);
+    const auto fighter_pose = animation_decoder.sample16(*fighter_scripts[1], 50);
+    for (const auto value : fighter_pose.tracks) assert(std::isfinite(value));
+    assert(std::abs(fighter_pose.tracks[0]) < 10.0f);
+    assert(fighter_pose.tracks[7] > 0.01f && fighter_pose.tracks[7] < 10.0f);
     struct ModelCase { const char* descriptor; const char* animation; sagas::GeometryLayout layout; };
     const ModelCase opening_models[]{
         {"llMVOpeningYosterNestDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},

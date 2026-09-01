@@ -19,6 +19,7 @@ struct Model3D {
     std::vector<n64::Node> nodes;
     std::vector<n64::Mesh> meshes;
     std::vector<std::optional<n64::Address>> animation;
+    bool fighter_animation{};
     Vec3 position{};
     Vec3 rotation{};
     Vec3 scale{1,1,1};

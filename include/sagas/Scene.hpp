@@ -5,7 +5,14 @@
 
 namespace sagas {
 
-struct Services { AssetRepository& assets; RenderEngine& render; AudioEngine& audio; PhysicsWorld& physics; };
+class SceneResourceManager;
+struct Services {
+    AssetRepository& assets;
+    RenderEngine& render;
+    AudioEngine& audio;
+    PhysicsWorld& physics;
+    SceneResourceManager& resources;
+};
 
 class Scene {
 public:

@@ -1,6 +1,7 @@
 #include <sagas/Engine.hpp>
 #include <sagas/N64.hpp>
 #include <sagas/Scene3D.hpp>
+#include <sagas/SceneResources.hpp>
 
 #include <SDL3/SDL.h>
 #include <png.h>
@@ -151,11 +152,19 @@ MusicPackage load_music_package(std::span<const std::byte> bytes) {
 
 class StartupScene final : public Scene {
 public:
-    void update(Services&, const InputState& input, float) override {
+    void enter(Services& services) override {
+        services.resources.load_manifest("scenes/opening.sgscene");
+        services.resources.prefetch("room.base");
+        services.audio.preload_music("audio/opening.sgm", 0.72f);
+    }
+    void update(Services& services, const InputState& input, float) override {
         ++frame_;
         if (frame_ >= 8 && (input.accept_pressed || input.cancel_pressed || input.skip_pressed)) {
             skip_ = done_ = true;
-        } else if (frame_ >= 53) done_ = true;
+        } else if (frame_ >= 53 && services.resources.ready("room.base") &&
+                   services.audio.music_ready("audio/opening.sgm")) {
+            done_ = true;
+        }
     }
     void draw(Services& services) override {
         services.render.begin({0, 0, 0, 255});
@@ -181,115 +190,52 @@ private:
 class OpeningScene final : public Scene {
 public:
     void enter(Services& services) override {
+        resources_ = &services.resources;
+        resources_->load_manifest("scenes/opening.sgscene");
+        resources_->activate("room.base");
+        loader_ = &resources_->loader();
+        renderer_ = std::make_unique<Scene3DRenderer>(resources_->archive());
         services.audio.play_music("audio/opening.sgm", 0.72f);
-        archive_ = std::make_unique<n64::RelocArchive>(services.assets);
-        loader_ = std::make_unique<Scene3DLoader>(*archive_);
-        renderer_ = std::make_unique<Scene3DRenderer>(*archive_);
-        room_background_ = loader_->model("llMVCommonRoomBackgroundDObjDesc", {}, GeometryLayout::DisplayListLinks,
-                                          "llMVCommonRoomBackgroundMObjSub",
-                                          "llMVCommonRoomBackgroundMatAnimJoint");
-        room_background_.material_animation_start=1080.0f;
-        room_sunlight_ = loader_->display_list("llMVCommonRoomSunlightDisplayList", GeometryLayout::DisplayListLinks);
-        room_sunlight_.receive_lighting=false;
-        room_desk_ = loader_->model("llMVCommonRoomDeskDObjDesc", {}, GeometryLayout::Direct);
-        room_outside_ = loader_->display_list("llMVCommonRoomOutsideDisplayList", GeometryLayout::DisplayListLinks);
-        room_haze_ = loader_->display_list("llMVCommonRoomHazeDisplayList", GeometryLayout::DisplayListLinks);
-        room_haze_.receive_lighting=false;
-        room_books_ = loader_->model("llMVCommonRoomBooksDObjDesc", "llMVCommonRoomBooksAnimJoint", GeometryLayout::Direct);
-        room_pencils_ = loader_->model("llMVCommonRoomPencilsDObjDesc", "llMVCommonRoomPencilsAnimJoint", GeometryLayout::Direct);
-        room_lamp_ = loader_->model("llMVCommonRoomLampDObjDesc", "llMVCommonRoomLampAnimJoint", GeometryLayout::Direct);
-        room_tissues_ = loader_->display_list("llMVCommonRoomTissuesDisplayList");
-        if (const auto animation = archive_->symbol("llMVCommonRoomTissuesAnimJoint"))
-            room_tissues_.animation[0] = animation;
-        room_desk_ground_ = loader_->model("llMVCommonRoomDeskGroundDObjDesc", {}, GeometryLayout::DisplayListLinks,
-                                           "llMVCommonRoomDeskGroundMObjSub",
-                                           "llMVCommonRoomDeskGroundMatAnimJoint");
-        room_logo_ = loader_->model("llMVCommonRoomLogoDObjDesc", {}, GeometryLayout::DisplayListLinks,
-                                    "llMVCommonRoomLogoMObjSub","llMVCommonRoomLogoMatAnimJoint");
-        room_logo_.receive_lighting=false;
-        room_snap_ = loader_->model("llMVCommonRoomSnapDObjDesc", "llMVCommonRoomSnapAnimJoint");
-        room_closeup_air_ = loader_->model("llMVCommonRoomCloseUpEffectAirDObjDesc",
-                                           "llMVCommonRoomCloseUpEffectAirAnimJoint",
-                                           GeometryLayout::DisplayListLinks,
-                                           "llMVCommonRoomCloseUpEffectAirMObjSub",
-                                           "llMVCommonRoomCloseUpEffectAirMatAnimJoint");
-        room_closeup_ground_ = loader_->model("llMVCommonRoomCloseUpEffectGroundDObjDesc",
-                                              "llMVCommonRoomCloseUpEffectGroundAnimJoint",
-                                              GeometryLayout::DisplayListLinks,
-                                              "llMVCommonRoomCloseUpEffectGroundMObjSub",
-                                              "llMVCommonRoomCloseUpEffectGroundMatAnimJoint");
-        room_boss_shadow_ = loader_->display_list("llMVCommonRoomBossShadowDisplayList");
-        room_boss_shadow_.receive_lighting=false;
-        if (const auto animation = archive_->symbol("llMVCommonRoomBossShadowAnimJoint"))
-            room_boss_shadow_.animation[0] = animation;
-        room_spotlight_ = loader_->display_list("llMVCommonRoomSpotlightDisplayList",GeometryLayout::Direct,
-                                                "llMVCommonRoomSpotlightMObjSub",
-                                                "llMVCommonRoomSpotlightMatAnimJoint");
-        room_spotlight_.receive_lighting=false;
-        room_transition_outline_ = loader_->display_list("llMVOpeningRoomTransitionOutlineDisplayList");
-        room_transition_overlay_ = loader_->display_list("llMVOpeningRoomTransitionOverlayDisplayList");
-        if (const auto animation = archive_->symbol("llMVOpeningRoomTransitionOutlineAnimJoint"))
-            room_transition_outline_.animation[0] = animation;
-        if (const auto animation = archive_->symbol("llMVOpeningRoomTransitionOverlayAnimJoint"))
-            room_transition_overlay_.animation[0] = animation;
-        n64::AnimationDecoder animation(*archive_);
-        const auto animated_fighter = [&](std::string_view descriptor, std::uint32_t file,
-                                          Model3D::FighterWrapper wrapper,
-                                          GeometryLayout layout = GeometryLayout::Direct) {
-            auto model = loader_->fighter_model(descriptor,layout);
-            const auto scripts=animation.table({file,0},model.nodes.size()+1);
-            model.fighter_root.scale={1,1,1};
-            model.fighter_root_animation=scripts.front();
-            model.fighter_wrapper=wrapper;
-            model.animation.assign(scripts.begin()+1,scripts.end());
-            model.fighter_animation = true;
-            return model;
-        };
-        const auto transition_fighter = [&](const Model3D& previous, float previous_frame,
-                                            std::uint32_t next_file, Model3D::FighterWrapper next_wrapper) {
-            auto model=previous;
-            if (previous.fighter_wrapper==next_wrapper && previous.fighter_root_animation)
-                n64::AnimationDecoder::apply(model.fighter_root,animation.sample16(
-                    *previous.fighter_root_animation,previous_frame,animation.pose(previous.fighter_root)));
-            else {
-                model.fighter_root={};
-                model.fighter_root.scale={1,1,1};
-            }
-            for (std::size_t i=0;i<model.nodes.size();++i) {
-                if (i<previous.animation.size() && previous.animation[i])
-                    n64::AnimationDecoder::apply(model.nodes[i],animation.sample16(
-                        *previous.animation[i],previous_frame,animation.pose(previous.nodes[i])));
-            }
-            const auto scripts=animation.table({next_file,0},model.nodes.size()+1);
-            model.fighter_root_animation=scripts.front();
-            model.fighter_wrapper=next_wrapper;
-            model.animation.assign(scripts.begin()+1,scripts.end());
-            return model;
-        };
-        boss_pose1_ = animated_fighter("llBossModelJointTreeDObjDesc",458,
-                                       Model3D::FighterWrapper::TransN,GeometryLayout::JointPairs);
-        boss_pose2_ = transition_fighter(boss_pose1_,560.0f,459,Model3D::FighterWrapper::TransN);
-        boss_pose3_ = transition_fighter(boss_pose2_,300.0f,460,Model3D::FighterWrapper::TransN);
-        mario_pickup_ = animated_fighter("llMarioModelJointTreeDObjDesc",362,
-                                         Model3D::FighterWrapper::TransN,GeometryLayout::Direct);
-        mario_fall_ = transition_fighter(mario_pickup_,100.0f,363,Model3D::FighterWrapper::XRotN);
-        mario_revival_ = transition_fighter(mario_fall_,760.0f,364,Model3D::FighterWrapper::XRotN);
-        link_fall_ = animated_fighter("llLinkModelJointTreeDObjDesc",409,
-                                      Model3D::FighterWrapper::XRotN,GeometryLayout::Direct);
-        link_fall_.position = {872.32495f,4038.8640f,-4734.6001f};
-        yoster_nest_ = loader_->model("llMVOpeningYosterNestDObjDesc");
-        yoster_ground_ = loader_->model("llMVOpeningYosterGroundDObjDesc", "llMVOpeningYosterGroundAnimJoint");
-        cliff_hills_ = loader_->model("llMVOpeningCliffHillsDObjDesc", {}, GeometryLayout::Direct);
-        cliff_ocarina_ = loader_->model("llMVOpeningCliffOcarinaDObjDesc", "llMVOpeningCliffOcarinaAnimJoint", GeometryLayout::Direct);
-        yamabuki_legs_ = loader_->model("llMVOpeningYamabukiLegsDObjDesc", "llMVOpeningYamabukiLegsAnimJoint", GeometryLayout::Direct);
-        yamabuki_shadow_ = loader_->model("llMVOpeningYamabukiLegsShadowDObjDesc", "llMVOpeningYamabukiLegsShadowAnimJoint");
-        yamabuki_ball_ = loader_->model("llMVOpeningYamabukiMBallDObjDesc", "llMVOpeningYamabukiMBallAnimJoint");
-        sector_great_fox_ = loader_->model("llMVOpeningSectorGreatFoxDObjDesc", "llMVOpeningSectorGreatFoxAnimJoint");
-        standoff_ground_ = loader_->display_list("llMVOpeningStandoffGroundDisplayList");
-        standoff_lightning_ = loader_->model("llMVOpeningStandoffLightningDObjDesc", "llMVOpeningStandoffLightningAnimJoint");
+        resources_->prefetch("room.action");
     }
-    void update(Services&, const InputState& input, float) override {
+    void update(Services& services, const InputState& input, float) override {
         ++tic_;
+        // Look-ahead loading is aligned with quiet portions of the source
+        // timeline, leaving the render loop free of relocation/model stalls.
+        if (tic_ == 250) services.resources.activate("room.action");
+        if (tic_ == 900) services.resources.prefetch("room.transition");
+        if (tic_ == 1030) {
+            services.resources.activate("room.transition");
+            services.resources.prefetch("room.closeup");
+        }
+        if (tic_ == 1120) services.resources.activate("room.closeup");
+        if (tic_ == 1320) {
+            services.resources.release("room.base");
+            services.resources.release("room.action");
+            services.resources.release("room.transition");
+            services.resources.release("room.closeup");
+        }
+        if (tic_ == 2000) services.resources.prefetch("cliff");
+        if (tic_ == 2160) {
+            services.resources.activate("cliff");
+            services.resources.prefetch("yamabuki");
+        }
+        if (tic_ == 2320) {
+            services.resources.activate("yamabuki");
+            services.resources.prefetch("yoster");
+        }
+        if (tic_ == 2330) services.resources.release("cliff");
+        if (tic_ == 2490) services.resources.release("yamabuki");
+        if (tic_ == 2800) services.resources.activate("yoster");
+        if (tic_ == 2840) services.resources.prefetch("sector");
+        if (tic_ == 2960) {
+            services.resources.activate("sector");
+            services.resources.prefetch("standoff");
+        }
+        if (tic_ == 2970) services.resources.release("yoster");
+        if (tic_ == 3120) services.resources.activate("standoff");
+        if (tic_ == 3130) services.resources.release("sector");
+        if (tic_ == 3450) services.resources.release("standoff");
         if (tic_ >= 10 && (input.accept_pressed || input.cancel_pressed || input.skip_pressed)) done_ = true;
         if (tic_ >= total_duration) done_ = true;
     }
@@ -313,29 +259,30 @@ public:
             case Segment::Cliff: {
                 wallpaper(r, "MVOpeningStandoffWallpaper.png", {2,2});
                 const auto camera = loader_->camera("llMVOpeningCliffCamAnimJoint", local);
-                renderer_->draw(r, cliff_hills_, camera, local);
-                renderer_->draw(r, cliff_ocarina_, camera, local);
+                renderer_->draw(r, model("cliff.hills"), camera, local);
+                renderer_->draw(r, model("cliff.ocarina"), camera, local);
                 break;
             }
             case Segment::Yamabuki: {
                 wallpaper(r, "MVOpeningYamabuki/Wallpaper.png");
                 const auto camera = loader_->camera("llMVOpeningYamabukiCamAnimJoint", local);
-                renderer_->draw(r, yamabuki_shadow_, camera, local, {45,45,55,120});
-                renderer_->draw(r, yamabuki_legs_, camera, local);
-                renderer_->draw(r, yamabuki_ball_, camera, local);
+                renderer_->draw(r, model("yamabuki.shadow"), camera, local, {45,45,55,120});
+                renderer_->draw(r, model("yamabuki.legs"), camera, local);
+                renderer_->draw(r, model("yamabuki.ball"), camera, local);
                 break;
             }
             case Segment::Jungle: fighter(r, local, "MVOpeningPortraitsSet2/Donkey.png", {22, 67, 32, 255}); break;
             case Segment::Yoster: {
                 wallpaper(r, "StageYoshi.png");
                 const auto camera = loader_->camera("llMVOpeningYosterCamAnimJoint", local);
-                renderer_->draw(r, yoster_nest_, camera, local);
-                renderer_->draw(r, yoster_ground_, camera, local);
+                renderer_->draw(r, model("yoster.nest"), camera, local);
+                renderer_->draw(r, model("yoster.ground"), camera, local);
                 break;
             }
             case Segment::Sector: {
                 wallpaper(r, "MVOpeningSectorWallpaper.png");
-                renderer_->draw(r, sector_great_fox_, loader_->camera("llMVOpeningSectorCamAnimJoint", local), local);
+                renderer_->draw(r, model("sector.great_fox"),
+                                loader_->camera("llMVOpeningSectorCamAnimJoint", local), local);
                 renderer_->flush(r);
                 r.sprite("textures/MVOpeningSector/Cockpit.png", {160,120});
                 break;
@@ -343,8 +290,8 @@ public:
             case Segment::Standoff: {
                 wallpaper(r, "MVOpeningStandoffWallpaper.png", {2,2});
                 const auto camera = loader_->camera("llMVOpeningStandoffCamAnimJoint", local);
-                renderer_->draw(r, standoff_ground_, camera, local);
-                renderer_->draw(r, standoff_lightning_, camera, local);
+                renderer_->draw(r, model("standoff.ground"), camera, local);
+                renderer_->draw(r, model("standoff.lightning"), camera, local);
                 break;
             }
             case Segment::Clash: clash(r, local); break;
@@ -411,28 +358,33 @@ private:
         warm_room.reflection_intensity=0.22f;
         warm_room.shininess=8.0f;
         if (local < 1040) {
-            renderer_->draw(r, room_outside_, camera, camera_frame, {210,226,255,255}, warm_room);
-            renderer_->draw(r, room_haze_, camera, camera_frame, {220,225,235,150}, warm_room);
-            renderer_->draw(r, room_background_, camera, static_cast<float>(local), {255,255,255,255}, warm_room);
-            if (local < 450) renderer_->draw(r, room_sunlight_, camera, camera_frame, {255,240,190,150}, warm_room);
-            renderer_->draw(r, room_desk_, camera, camera_frame, {255,255,255,255}, warm_room);
+            renderer_->draw(r, model("room.outside"), camera, camera_frame, {210,226,255,255}, warm_room);
+            renderer_->draw(r, model("room.haze"), camera, camera_frame, {220,225,235,150}, warm_room);
+            renderer_->draw(r, model("room.background"), camera, static_cast<float>(local),
+                            {255,255,255,255}, warm_room);
+            if (local < 450) renderer_->draw(r, model("room.sunlight"), camera, camera_frame,
+                                             {255,240,190,150}, warm_room);
+            renderer_->draw(r, model("room.desk"), camera, camera_frame, {255,255,255,255}, warm_room);
             const float prop_frame = static_cast<float>(std::max(local - 560, 0));
-            renderer_->draw(r, room_books_, camera, prop_frame, {255,255,255,255}, warm_room);
-            if (local >= 280) renderer_->draw(r, room_pencils_, camera, prop_frame, {255,255,255,255}, warm_room);
-            renderer_->draw(r, room_lamp_, camera, prop_frame, {255,255,255,255}, warm_room);
-            renderer_->draw(r, room_tissues_, camera, prop_frame, {255,255,255,255}, warm_room);
-            const Model3D& boss = local < 560 ? boss_pose1_ : (local < 860 ? boss_pose2_ : boss_pose3_);
+            renderer_->draw(r, model("room.books"), camera, prop_frame, {255,255,255,255}, warm_room);
+            if (local >= 280) renderer_->draw(r, model("room.pencils"), camera, prop_frame,
+                                              {255,255,255,255}, warm_room);
+            renderer_->draw(r, model("room.lamp"), camera, prop_frame, {255,255,255,255}, warm_room);
+            renderer_->draw(r, model("room.tissues"), camera, prop_frame, {255,255,255,255}, warm_room);
+            const Model3D& boss = local < 560 ? model("boss.pose1") :
+                                  (local < 860 ? model("boss.pose2") : model("boss.pose3"));
             const float boss_frame = static_cast<float>(local < 560 ? local : (local < 860 ? local-560 : local-860));
             const auto draw_pulled_fighter = [&] {
                 if (local < 380) {
                     const float pickup_frame=static_cast<float>(local-280);
                     // Runtime joint 5 (item-heavy) is descriptor node 1;
                     // the four special fighter joints precede this tree.
-                    const auto held=renderer_->placed_at_joint(mario_pickup_,pickup_frame,boss,boss_frame,1);
+                    const auto held=renderer_->placed_at_joint(model("mario.pickup"),pickup_frame,boss,boss_frame,1);
                     renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},warm_room);
                 } else {
-                    auto falling=mario_fall_;
-                    const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,1);
+                    auto falling=model("mario.fall");
+                    const auto release=renderer_->placed_at_joint(model("mario.pickup"),100.0f,
+                                                                   model("boss.pose1"),380.0f,1);
                     if (release.root_transform) {
                         falling.position={(*release.root_transform)[3],(*release.root_transform)[7],
                                           (*release.root_transform)[11]};
@@ -443,41 +395,40 @@ private:
             // Static props and animated fighters share the native GPU depth
             // buffer, regardless of whether their source mesh was skinned.
             if (local >= 280 && local < 500) draw_pulled_fighter();
-            if (local >= 695) renderer_->draw(r,link_fall_,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
-            if (local < 280) renderer_->draw(r,room_boss_shadow_,camera,static_cast<float>(local),
+            if (local >= 695) renderer_->draw(r,model("link.fall"),camera,static_cast<float>(local-695),
+                                              {255,255,255,255},warm_room);
+            if (local < 280) renderer_->draw(r,model("room.boss_shadow"),camera,static_cast<float>(local),
                                              {90,80,78,150},warm_room);
             renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
             if (local >= 500) draw_pulled_fighter();
-            if (local >= 500) renderer_->draw(r,room_spotlight_,camera,static_cast<float>(local-500),
+            if (local >= 500) renderer_->draw(r,model("room.spotlight"),camera,static_cast<float>(local-500),
                                               {255,244,210,105},warm_room);
-            if (local >= 860) renderer_->draw(r,room_snap_,camera,static_cast<float>(local-860),
+            if (local >= 860) renderer_->draw(r,model("room.snap"),camera,static_cast<float>(local-860),
                                               {255,255,255,255},warm_room);
-            // Link 29 has its own camera/Z pass in the original.  Isolating
-            // only this translucent logo keeps its animated surface from
-            // being rejected by the desk while fighters and static meshes
-            // continue to share scene depth.
-            if (local < 280) {
-                renderer_->flush(r);
-                r.clear_depth();
-                renderer_->draw(r,room_logo_,camera,static_cast<float>(local),
-                                {255,255,255,255},warm_room);
-            }
+            if (local < 280) renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
+                                             {255,255,255,255},warm_room);
         } else {
             wallpaper(r, "MVOpeningRoomWallpaper.png");
-            renderer_->draw(r, room_desk_ground_, camera, static_cast<float>(std::max(local - 1060, 0)),
+            renderer_->draw(r, model("room.desk_ground"), camera,
+                            static_cast<float>(std::max(local - 1060, 0)),
                             {255,255,255,255}, warm_room);
             if (local < 1140) {
                 Camera3D transition_camera{{0,0,1000},{0,0,0},{0,1,0},39.56115341f,128,16384};
-                renderer_->draw(r,room_transition_outline_,transition_camera,static_cast<float>(local-1040),
+                renderer_->draw(r,model("room.transition_outline"),transition_camera,
+                                static_cast<float>(local-1040),
                                 {255,255,255,255},warm_room);
-                renderer_->draw(r,room_transition_overlay_,transition_camera,static_cast<float>(local-1040),
+                renderer_->draw(r,model("room.transition_overlay"),transition_camera,
+                                static_cast<float>(local-1040),
                                 {255,255,255,190},warm_room);
             } else {
                 const float closeup_frame=static_cast<float>(local-1140);
-                renderer_->draw(r,room_closeup_ground_,camera,closeup_frame,{255,255,255,255},warm_room);
-                renderer_->draw(r,room_closeup_air_,camera,closeup_frame,{255,255,255,210},warm_room);
-                auto revival=mario_revival_;
-                const auto release=renderer_->placed_at_joint(mario_pickup_,100.0f,boss_pose1_,380.0f,1);
+                renderer_->draw(r,model("room.closeup_ground"),camera,closeup_frame,
+                                {255,255,255,255},warm_room);
+                renderer_->draw(r,model("room.closeup_air"),camera,closeup_frame,
+                                {255,255,255,210},warm_room);
+                auto revival=model("mario.revival");
+                const auto release=renderer_->placed_at_joint(model("mario.pickup"),100.0f,
+                                                               model("boss.pose1"),380.0f,1);
                 if (release.root_transform)
                     revival.position={(*release.root_transform)[3],(*release.root_transform)[7],
                                       (*release.root_transform)[11]};
@@ -521,20 +472,14 @@ private:
                      {160, 37.5f + static_cast<float>(i)*55});
         if (local < 8) r.fill(0,0,320,240,{255,255,255,static_cast<std::uint8_t>((8-local)*28)});
     }
+    [[nodiscard]] const Model3D& model(std::string_view key) const {
+        return resources_->model(key);
+    }
     int tic_{};
     bool done_{};
-    std::unique_ptr<n64::RelocArchive> archive_;
-    std::unique_ptr<Scene3DLoader> loader_;
+    SceneResourceManager* resources_{};
+    Scene3DLoader* loader_{};
     std::unique_ptr<Scene3DRenderer> renderer_;
-    Model3D yoster_nest_, yoster_ground_, cliff_hills_, cliff_ocarina_;
-    Model3D yamabuki_legs_, yamabuki_shadow_, yamabuki_ball_;
-    Model3D sector_great_fox_, standoff_ground_, standoff_lightning_;
-    Model3D room_background_, room_sunlight_, room_desk_, room_outside_, room_haze_;
-    Model3D room_books_, room_pencils_, room_lamp_, room_tissues_, room_desk_ground_, room_logo_;
-    Model3D room_snap_, room_closeup_air_, room_closeup_ground_, room_boss_shadow_, room_spotlight_;
-    Model3D room_transition_outline_, room_transition_overlay_;
-    Model3D boss_pose1_, boss_pose2_, boss_pose3_;
-    Model3D mario_pickup_, mario_fall_, mario_revival_, link_fall_;
 };
 
 class TitleScene final : public Scene {

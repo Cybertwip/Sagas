@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sagas/Scene.hpp>
+#include <sagas/SceneResources.hpp>
 
 #include <chrono>
 
@@ -30,6 +31,7 @@ private:
     std::unique_ptr<AssetRepository> assets_;
     std::unique_ptr<RenderEngine> render_;
     std::unique_ptr<AudioEngine> audio_;
+    std::unique_ptr<SceneResourceManager> resources_;
     PhysicsWorld physics_;
     std::unique_ptr<Services> services_;
     std::unique_ptr<SceneMachine> scenes_;

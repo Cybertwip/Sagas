@@ -34,11 +34,12 @@ Application::Application(ApplicationOptions options) : options_(std::move(option
     assets_ = std::make_unique<AssetRepository>(options_.asset_root);
     render_ = std::make_unique<RenderEngine>(window_, *assets_);
     audio_ = std::make_unique<AudioEngine>(*assets_);
-    services_ = std::make_unique<Services>(Services{*assets_, *render_, *audio_, physics_});
+    resources_ = std::make_unique<SceneResourceManager>(*assets_);
+    services_ = std::make_unique<Services>(Services{*assets_, *render_, *audio_, physics_, *resources_});
     scenes_ = std::make_unique<SceneMachine>(options_.start_at_title ? make_title_scene() : make_startup_scene(), *services_);
 }
 Application::~Application() {
-    scenes_.reset(); services_.reset(); audio_.reset(); render_.reset(); assets_.reset();
+    scenes_.reset(); services_.reset(); resources_.reset(); audio_.reset(); render_.reset(); assets_.reset();
     if (window_) SDL_DestroyWindow(window_);
     SDL_Quit();
 }

@@ -62,6 +62,19 @@ add_custom_command(
     VERBATIM)
 add_custom_target(sagas_music_assets ALL DEPENDS "${SAGAS_OPENING_MUSIC}")
 
+set(SAGAS_OPENING_SCENE "${SAGAS_ASSET_ROOT}/scenes/opening.sgscene")
+add_custom_command(
+    OUTPUT "${SAGAS_OPENING_SCENE}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/pack_scene.py"
+            --input "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/opening.scene.tsv"
+            --output "${SAGAS_OPENING_SCENE}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/pack_scene.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/opening.scene.tsv"
+            "${SAGAS_ASSET_STAMP}"
+    COMMENT "Baking opening scene resource manifest"
+    VERBATIM)
+add_custom_target(sagas_scene_assets ALL DEPENDS "${SAGAS_OPENING_SCENE}")
+
 add_library(sagas_engine
     src/Application.cpp
     src/Audio.cpp
@@ -74,7 +87,8 @@ add_library(sagas_engine
     src/n64/SceneGraph.cpp
     src/Render.cpp
     src/Scene.cpp
-    src/Scene3D.cpp)
+    src/Scene3D.cpp
+    src/SceneResources.cpp)
 target_include_directories(sagas_engine PUBLIC include)
 target_link_libraries(sagas_engine PUBLIC SDL3::SDL3 PNG::PNG OpenGL::GL)
 target_compile_definitions(sagas_engine PUBLIC
@@ -84,7 +98,9 @@ target_compile_options(sagas_engine PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(sagas app/main.cpp)
 target_link_libraries(sagas PRIVATE sagas_engine)
 add_dependencies(sagas_music_assets sagas_assets)
+add_dependencies(sagas_scene_assets sagas_assets)
 add_dependencies(sagas sagas_music_assets)
+add_dependencies(sagas sagas_scene_assets)
 add_dependencies(sagas sagas_asset_unpack)
 
 

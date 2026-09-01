@@ -128,7 +128,10 @@ MusicPackage load_music(std::span<const std::byte> bytes) {
 } // namespace
 
 AudioEngine::AudioEngine(AssetRepository& assets) : assets_(assets) {}
-AudioEngine::~AudioEngine() { if (stream_) SDL_DestroyAudioStream(stream_); }
+AudioEngine::~AudioEngine() {
+    if (music_job_.valid()) music_job_.wait();
+    if (stream_) SDL_DestroyAudioStream(stream_);
+}
 void AudioEngine::stop() { if (stream_) SDL_ClearAudioStream(stream_); }
 void AudioEngine::queue(std::span<const std::int16_t> samples, int rate, int channels) {
     if (stream_) SDL_DestroyAudioStream(stream_);
@@ -142,7 +145,7 @@ void AudioEngine::play(std::string_view logical, float gain) {
     auto pcm = load_aiff(*assets_.blob(logical), gain);
     queue(pcm.samples, pcm.rate);
 }
-void AudioEngine::play_music(std::string_view logical, float gain) {
+AudioEngine::PreparedAudio AudioEngine::synthesize_music(std::string logical, float gain) {
     const auto package = load_music(*assets_.blob(logical));
     struct Channel { int program{}, volume{127}, pan{64}, bend{8192}, bend_range{200}; bool sustain{}; };
     struct Voice {
@@ -245,7 +248,34 @@ void AudioEngine::play_music(std::string_view logical, float gain) {
         output.push_back(static_cast<std::int16_t>(std::clamp(left, -32768.0, 32767.0)));
         output.push_back(static_cast<std::int16_t>(std::clamp(right, -32768.0, 32767.0)));
     }
-    queue(output, 32000, 2);
+    return {std::move(output), 32000, 2};
+}
+
+void AudioEngine::preload_music(std::string_view logical, float gain) {
+    const std::string name(logical);
+    if (music_job_.valid() && music_job_name_ == name && music_job_gain_ == gain) return;
+    if (music_job_.valid()) (void)music_job_.get();
+    music_job_name_ = name;
+    music_job_gain_ = gain;
+    music_job_ = std::async(std::launch::async, [this, name, gain] {
+        return synthesize_music(name, gain);
+    });
+}
+
+bool AudioEngine::music_ready(std::string_view logical) const {
+    return music_job_.valid() && music_job_name_ == logical &&
+           music_job_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+}
+
+void AudioEngine::play_music(std::string_view logical, float gain) {
+    PreparedAudio prepared;
+    if (music_job_.valid() && music_job_name_ == logical && music_job_gain_ == gain) {
+        prepared = music_job_.get();
+        music_job_name_.clear();
+    } else {
+        prepared = synthesize_music(std::string(logical), gain);
+    }
+    queue(prepared.samples, prepared.rate, prepared.channels);
 }
 
 } // namespace sagas

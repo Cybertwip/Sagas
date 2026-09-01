@@ -59,6 +59,7 @@ int main() {
         const auto model = scene_loader.model(item.descriptor, item.animation, item.layout);
         std::size_t triangles{};
         for (const auto& part : model.meshes) triangles += part.vertices.size() / 3;
+        std::cout << "  nodes: " << model.nodes.size() << " meshes: " << model.meshes.size() << " triangles: " << triangles << '\n';
         assert(triangles > 0);
     }
     std::cout << "Sagas core tests passed\n";

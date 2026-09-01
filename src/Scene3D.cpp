@@ -35,6 +35,11 @@ Vec3 transform(const Matrix& m, Vec3 v) {
             m.m[4]*v.x+m.m[5]*v.y+m.m[6]*v.z+m.m[7],
             m.m[8]*v.x+m.m[9]*v.y+m.m[10]*v.z+m.m[11]};
 }
+Vec3 transform_direction(const Matrix& m, Vec3 v) {
+    return {m.m[0]*v.x+m.m[1]*v.y+m.m[2]*v.z,
+            m.m[4]*v.x+m.m[5]*v.y+m.m[6]*v.z,
+            m.m[8]*v.x+m.m[9]*v.y+m.m[10]*v.z};
+}
 Vec3 sub(Vec3 a, Vec3 b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 float dot(Vec3 a, Vec3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
 Vec3 cross(Vec3 a, Vec3 b) { return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x}; }
@@ -66,32 +71,38 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
     return model;
 }
 
-Model3D Scene3DLoader::display_list(std::string_view symbol) {
+Model3D Scene3DLoader::display_list(std::string_view symbol, GeometryLayout layout) {
     const auto address = archive_.symbol(symbol);
     if (!address) throw std::runtime_error("missing display-list symbol: " + std::string(symbol));
     Model3D model;
     model.nodes.push_back({0,0,{}, {0,0,0},{0,0,0},{1,1,1}, address});
-    model.meshes.push_back(n64::DisplayListDecoder(archive_).decode(*address));
+    n64::DisplayListDecoder decoder(archive_);
+    model.meshes.push_back(layout == GeometryLayout::DisplayListLinks
+        ? decoder.decode_links(*address) : decoder.decode(*address));
     model.animation.resize(1);
     return model;
 }
 
-Camera3D Scene3DLoader::camera(std::string_view animation, float frame) {
+Camera3D Scene3DLoader::camera(std::string_view animation, float frame, Camera3D initial_camera) {
     const auto script = archive_.symbol(animation);
     if (!script) throw std::runtime_error("missing camera animation symbol: " + std::string(animation));
     n64::JointPose initial;
-    initial.tracks = {0,0,1000,0, 0,0,0,0, 0,45};
+    initial.tracks = {initial_camera.eye.x, initial_camera.eye.y, initial_camera.eye.z, 0,
+                      initial_camera.at.x, initial_camera.at.y, initial_camera.at.z,
+                      initial_camera.up.x, initial_camera.up.z, initial_camera.fov_y};
     const auto pose = n64::AnimationDecoder(archive_).sample(*script, frame, initial);
     Camera3D result;
     result.eye={pose.tracks[0],pose.tracks[1],pose.tracks[2]};
     result.at={pose.tracks[4],pose.tracks[5],pose.tracks[6]};
     result.up={pose.tracks[8],1,0};
+    result.near_plane=initial_camera.near_plane;
+    result.far_plane=initial_camera.far_plane;
     if (std::isfinite(pose.tracks[9]) && pose.tracks[9] > 1 && pose.tracks[9] < 179) result.fov_y=pose.tracks[9];
     return result;
 }
 
 void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
-                           float frame, Color tint) {
+                           float frame, Color tint, LightingRig lights) {
     struct Projected { TriangleVertex vertex; float depth; };
     std::vector<std::array<Projected,3>> triangles;
     std::array<Matrix,18> parents{};
@@ -117,8 +128,10 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 const Vec3 relative=sub(point,camera.eye);
                 const float depth=dot(relative,forward);
                 if (depth<camera.near_plane || depth>camera.far_plane) visible=false;
+                Color color=modulate(source.color,tint);
+                if (source.lit) color=LightingSystem::shade(color,transform_direction(world,source.normal),lights);
                 triangle[j]={{{160+dot(relative,right)*focal*150/depth,
-                                120-dot(relative,up)*focal*150/depth},modulate(source.color,tint),{source.u,source.v}},depth};
+                                120-dot(relative,up)*focal*150/depth},color,{source.u,source.v}},depth};
             }
             if (visible) triangles.push_back(triangle);
         }

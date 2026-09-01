@@ -66,6 +66,7 @@ add_library(sagas_engine
     src/Audio.cpp
     src/Core.cpp
     src/Engine.cpp
+    src/Lighting.cpp
     src/n64/Animation.cpp
     src/n64/Archive.cpp
     src/n64/DisplayList.cpp

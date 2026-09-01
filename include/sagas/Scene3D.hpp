@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sagas/N64.hpp>
+#include <sagas/Lighting.hpp>
 #include <sagas/Render.hpp>
 
 namespace sagas {
@@ -26,8 +27,10 @@ public:
     explicit Scene3DLoader(n64::RelocArchive& archive) : archive_(archive) {}
     [[nodiscard]] Model3D model(std::string_view descriptor, std::string_view animation = {},
                                 GeometryLayout layout = GeometryLayout::DisplayListLinks);
-    [[nodiscard]] Model3D display_list(std::string_view symbol);
-    [[nodiscard]] Camera3D camera(std::string_view animation, float frame);
+    [[nodiscard]] Model3D display_list(std::string_view symbol,
+                                      GeometryLayout layout = GeometryLayout::Direct);
+    [[nodiscard]] Camera3D camera(std::string_view animation, float frame,
+                                  Camera3D initial = {});
 private:
     n64::RelocArchive& archive_;
 };
@@ -36,7 +39,7 @@ class Scene3DRenderer final {
 public:
     explicit Scene3DRenderer(n64::RelocArchive& archive) : animation_(archive) {}
     void draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
-              float frame, Color tint = {255,255,255,255});
+              float frame, Color tint = {255,255,255,255}, LightingRig lights = {});
 private:
     n64::AnimationDecoder animation_;
 };

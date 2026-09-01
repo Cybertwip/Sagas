@@ -107,7 +107,8 @@ add_library(sagas_engine
 target_sources(sagas_engine PRIVATE
     src/scenes/StartupScene.cpp
     src/scenes/OpeningScene.cpp
-    src/scenes/TitleScene.cpp)
+    src/scenes/TitleScene.cpp
+    src/scenes/MenuScene.cpp)
 target_include_directories(sagas_engine PUBLIC include)
 target_link_libraries(sagas_engine PUBLIC SDL3::SDL3 PNG::PNG OpenGL::GL)
 target_compile_definitions(sagas_engine PUBLIC

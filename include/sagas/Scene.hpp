@@ -36,5 +36,6 @@ private:
 [[nodiscard]] std::unique_ptr<Scene> make_startup_scene();
 [[nodiscard]] std::unique_ptr<Scene> make_opening_scene();
 [[nodiscard]] std::unique_ptr<Scene> make_title_scene();
+[[nodiscard]] std::unique_ptr<Scene> make_menu_scene();
 
 } // namespace sagas

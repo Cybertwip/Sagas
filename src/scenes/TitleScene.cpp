@@ -15,9 +15,9 @@ public:
         ++tic_;
         if (input.accept_pressed && tic_ >= 170) {
             services.audio.play("audio/B1_sounds1/wave_021.aiff", 0.86f);
-            accepted_ = 12;
+            accepted_ = 3;
         }
-        if (accepted_ > 0) --accepted_;
+        if (accepted_ > 0 && --accepted_ == 0) proceed_ = true;
     }
     void draw(Services& services) override {
         auto& r = services.render;
@@ -27,8 +27,9 @@ public:
                                           {255,209,209,255}, {230,255,230,255}, {255,226,184,255},
                                           {255,210,148,255}}};
         const auto tint = colors[3];
-        r.sprite(fire, {160, 120}, {12.0f, 8.5f}, tint);
-        r.sprite(fire, {160, 120}, {9.5f, 7.0f}, {tint.r, tint.g, tint.b, 210});
+        r.sprite_at(fire, {-32,-16}, {12.0f, 8.5f}, tint);
+        const auto next_fire = "textures/MNTitleFireAnim/Frame" + std::to_string(((tic_ + 17) % 30) + 1) + ".png";
+        r.sprite_at(next_fire, {8,8}, {9.5f, 7.0f}, {tint.r, tint.g, tint.b, 210});
 
         if (tic_ < 220) {
             const float pulse = tic_ < 170 ? 0.45f : std::clamp((tic_ - 170) / 50.0f, 0.0f, 1.0f);
@@ -54,9 +55,11 @@ public:
         }
         r.end();
     }
+    std::unique_ptr<Scene> next() override { return proceed_ ? make_menu_scene() : nullptr; }
 private:
     int tic_{169};
     int accepted_{};
+    bool proceed_{};
 };
 
 } // namespace

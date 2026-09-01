@@ -78,40 +78,46 @@ Pcm load_aiff(std::span<const std::byte> bytes, float gain) {
 }
 
 Pcm render_fgm(AssetRepository& assets, std::uint32_t voice_id, float gain) {
-    constexpr float ticks_per_second = 60.0f;
     constexpr int output_rate = 32000;
     const auto cue = decode_fgm(assets, voice_id);
-    const auto count = static_cast<std::size_t>(std::ceil((cue.end_tick + 1) * output_rate / ticks_per_second));
-    Pcm result{output_rate, std::vector<std::int16_t>(count)};
     std::unordered_map<int, Pcm> waves;
     auto wave_for = [&](int index) -> const Pcm& {
         if (!waves.contains(index)) {
             std::ostringstream logical;
-            logical << "audio/B1_sounds1/wave_" << std::setw(3) << std::setfill('0') << index << ".aiff";
+            // FGM trigger indices address the 44.1 kHz SFX bank.  The same
+            // numeric IDs in B1_sounds1 are music instruments (wave 10 is a
+            // bowed string), which is why the menu previously sounded like
+            // a violin.
+            logical << "audio/B1_sounds2/wave_" << std::setw(3) << std::setfill('0') << index << ".aiff";
             waves.emplace(index, load_aiff(*assets.blob(logical.str()), 1.0f));
         }
         return waves.at(index);
     };
-    for (std::size_t frame = 0; frame < count; ++frame) {
+    std::size_t count{};
+    for (const auto& voice : cue.voices) {
+        const auto& wave = wave_for(voice.wave);
+        const double step = std::pow(2.0, (voice.pitch.empty() ? 0 : voice.pitch.front().cents) / 1200.0) *
+                            wave.rate / output_rate;
+        count = std::max(count, static_cast<std::size_t>(std::ceil(wave.samples.size() / step)));
+    }
+    Pcm result{output_rate, std::vector<std::int16_t>(count)};
+    // REMIX_HOST routes an FGM event through audio_sdl.c instead of running
+    // the N64 voice script: every catalog wave starts once at its catalog
+    // pitch, with 0.75/sqrt(N) voice gain under the 0.55 mixer gain.
+    const double host_gain = cue.voices.empty() ? 0 : gain * 0.55 * 0.75 / std::sqrt(cue.voices.size());
+    for (std::size_t frame = 0; frame < result.samples.size(); ++frame) {
         double mixed{};
         for (const auto& voice : cue.voices) {
-            const double age = static_cast<double>(frame) - voice.start_tick * output_rate / ticks_per_second;
-            const double end = voice.end_tick * output_rate / ticks_per_second;
-            if (age < 0 || frame >= end) continue;
             const auto& wave = wave_for(voice.wave);
-            const float local_tick = static_cast<float>(age * ticks_per_second / output_rate);
-            float envelope = 1;
-            for (const auto& point : voice.envelope) {
-                if (point.tick > local_tick) break;
-                envelope = point.volume;
-            }
-            const double position = age * wave.rate / output_rate * std::pow(2.0, voice.cents / 1200.0);
+            const double step = std::pow(2.0, (voice.pitch.empty() ? 0 : voice.pitch.front().cents) / 1200.0) *
+                                wave.rate / output_rate;
+            const double position = frame * step;
             if (position >= wave.samples.size()) continue;
             const auto first = static_cast<std::size_t>(position);
             const auto second = std::min(first + 1, wave.samples.size() - 1);
             const double fraction = position - first;
             const double sample = wave.samples[first] * (1.0 - fraction) + wave.samples[second] * fraction;
-            mixed += sample * gain * voice.gain * envelope;
+            mixed += sample * host_gain;
         }
         result.samples[frame] = static_cast<std::int16_t>(std::clamp(mixed, -32768.0, 32767.0));
     }
@@ -195,7 +201,7 @@ void AudioEngine::play(std::string_view logical, float gain) {
 void AudioEngine::play(AudioCue cue) {
     const auto voice_id = cue == AudioCue::TitlePressStart ? 157U :
                           cue == AudioCue::MenuSelect ? 158U : 164U;
-    auto pcm = render_fgm(assets_, voice_id, 0.82f);
+    auto pcm = render_fgm(assets_, voice_id, 1.0f);
     queue(effect_stream_, pcm.samples, pcm.rate);
 }
 AudioEngine::PreparedAudio AudioEngine::synthesize_music(std::string logical, float gain) {

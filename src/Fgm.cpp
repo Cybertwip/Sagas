@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 namespace sagas {
@@ -59,7 +60,7 @@ Articulation decode_articulation(Bytes table, int index) {
         switch (instruction & 0xf0) {
             case 0x00: {
                 const int value = u8(code, at);
-                volume = value <= 127 ? value : std::clamp(volume + value - 64, 0, 127);
+                volume = value <= 127 ? value : std::clamp(volume + value - 192, 0, 127);
                 result.envelope.push_back({tick, volume / 127.0f});
                 break;
             }
@@ -67,7 +68,8 @@ Articulation decode_articulation(Bytes table, int index) {
             case 0x20: {
                 int value = (u8(code, at) << 8) | u8(code, at);
                 if (value & 0x8000) value -= 0x10000;
-                result.pitch = std::abs(value) <= 1200 ? value : result.pitch + value - 2400;
+                if (value <= 1200) result.pitch = std::max(value, -1200);
+                else result.pitch = std::clamp(result.pitch + value - 2400, -1200, 1200);
                 break;
             }
             case 0x30: (void)u8(code, at); break;
@@ -92,6 +94,8 @@ void decode_voice(Bytes ucd, Bytes table, std::uint32_t voice_id, int base_tick,
     std::size_t at{};
     std::array<int, 6> durations{};
     const auto first_voice = cue.voices.size();
+    std::optional<std::size_t> active_voice;
+    float active_articulation_pitch{};
     int tick = base_tick, articulation{}, volume = 127, transpose{};
     while (at < code.size()) {
         const auto instruction = u8(code, at);
@@ -100,18 +104,33 @@ void decode_voice(Bytes ucd, Bytes table, std::uint32_t voice_id, int base_tick,
             const int duration_code = instruction & 7;
             const int duration = duration_code == 7 ? varint(code, at) :
                                  duration_code == 0 ? 0 : durations[duration_code - 1];
-            if (pitch_code != 0) {
-                const auto art = decode_articulation(table, articulation);
-                if (art.wave >= 0) cue.voices.push_back({art.wave, tick, 0,
-                    static_cast<float>(pitch_code * 100 - 1300 + transpose + art.pitch),
-                    volume / 255.0f, art.envelope});
+            if (pitch_code == 0) {
+                if (active_voice) cue.voices[*active_voice].end_tick = tick;
+                active_voice.reset();
+            } else {
+                const float note_pitch = static_cast<float>(pitch_code * 100 - 1300 + transpose);
+                if (active_voice) {
+                    auto& voice = cue.voices[*active_voice];
+                    voice.pitch.push_back({tick - voice.start_tick, note_pitch + active_articulation_pitch});
+                } else {
+                    const auto art = decode_articulation(table, articulation);
+                    if (art.wave >= 0) {
+                        cue.voices.push_back({art.wave, tick, 0, volume / 255.0f,
+                                             art.envelope, {{0, note_pitch + art.pitch}}});
+                        active_voice = cue.voices.size() - 1;
+                        active_articulation_pitch = static_cast<float>(art.pitch);
+                    }
+                }
             }
+            transpose = 0;
             tick += duration;
             continue;
         }
         switch (instruction) {
             case 0xd0:
                 cue.end_tick = std::max(cue.end_tick, tick);
+                if (active_voice && cue.voices[*active_voice].end_tick == 0)
+                    cue.voices[*active_voice].end_tick = tick;
                 for (std::size_t i = first_voice; i < cue.voices.size(); ++i)
                     if (cue.voices[i].end_tick == 0) cue.voices[i].end_tick = tick;
                 return;

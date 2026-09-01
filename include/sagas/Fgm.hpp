@@ -9,10 +9,16 @@ struct FgmEnvelopePoint {
     float volume{1};
 };
 
+struct FgmPitchPoint {
+    int tick{};
+    float cents{};
+};
+
 struct FgmVoice {
     int wave{}, start_tick{}, end_tick{};
-    float cents{}, gain{1};
+    float gain{1};
     std::vector<FgmEnvelopePoint> envelope;
+    std::vector<FgmPitchPoint> pitch;
 };
 
 struct FgmCue {

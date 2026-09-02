@@ -26,7 +26,18 @@ public:
         const std::array<Color, 7> colors{{{255,255,255,255}, {255,240,155,255}, {255,255,100,255},
                                           {255,209,209,255}, {230,255,230,255}, {255,226,184,255},
                                           {255,210,148,255}}};
-        const auto tint = colors[3];
+        // Remix changes the fire family periodically and eases into the next
+        // color over its final 80 ticks.  Cycle deterministically here so the
+        // title stays alive without a discontinuous random flash.
+        const auto color_index=static_cast<std::size_t>((tic_/260)%colors.size());
+        const auto next_color=colors[(color_index+1)%colors.size()];
+        const float color_mix=std::clamp((tic_%260-180)/80.0f,0.0f,1.0f);
+        const auto blend_channel=[&](std::uint8_t from,std::uint8_t to) {
+            return static_cast<std::uint8_t>(std::lround(from+(to-from)*color_mix));
+        };
+        const Color tint{blend_channel(colors[color_index].r,next_color.r),
+                         blend_channel(colors[color_index].g,next_color.g),
+                         blend_channel(colors[color_index].b,next_color.b),255};
         r.sprite_at(fire, {-32,-16}, {12.0f, 8.5f}, tint);
         const auto next_fire = "textures/MNTitleFireAnim/Frame" + std::to_string(((tic_ + 17) % 30) + 1) + ".png";
         r.sprite_at(next_fire, {8,8}, {9.5f, 7.0f}, {tint.r, tint.g, tint.b, 210});

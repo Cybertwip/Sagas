@@ -40,6 +40,22 @@ Vec3 transform_direction(const Matrix& m, Vec3 v) {
             m.m[4]*v.x+m.m[5]*v.y+m.m[6]*v.z,
             m.m[8]*v.x+m.m[9]*v.y+m.m[10]*v.z};
 }
+Vec3 transform_normal(const Matrix& m, Vec3 v) {
+    // Normals transform by inverse-transpose.  Using the model matrix
+    // directly is only valid for rigid/uniform transforms and caused the
+    // animated hand/fighter highlights to shear or flip as joints scaled.
+    const float a=m.m[0], b=m.m[1], c=m.m[2];
+    const float d=m.m[4], e=m.m[5], f=m.m[6];
+    const float g=m.m[8], h=m.m[9], i=m.m[10];
+    const float determinant=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);
+    if (std::abs(determinant)<1.0e-8f) return transform_direction(m,v);
+    const float inverse=1.0f/determinant;
+    return {
+        ((e*i-f*h)*v.x+(f*g-d*i)*v.y+(d*h-e*g)*v.z)*inverse,
+        ((c*h-b*i)*v.x+(a*i-c*g)*v.y+(b*g-a*h)*v.z)*inverse,
+        ((b*f-c*e)*v.x+(c*d-a*f)*v.y+(a*e-b*d)*v.z)*inverse
+    };
+}
 Vec3 sub(Vec3 a, Vec3 b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 float dot(Vec3 a, Vec3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
 Vec3 cross(Vec3 a, Vec3 b) { return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x}; }
@@ -280,6 +296,15 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
     // fragment, while preserving its surface-to-light convention.
     const Vec3 key=normalize(lights.key.direction);
     lights.key.direction=normalize({dot(key,right),dot(key,up),dot(key,forward)});
+    const Vec3 environment_up=normalize(lights.environment_up);
+    lights.environment_up=normalize({dot(environment_up,right),dot(environment_up,up),
+                                     dot(environment_up,forward)});
+    if (lights.spot.enabled) {
+        const Vec3 relative=sub(lights.spot.position,camera.eye);
+        lights.spot.position={dot(relative,right),dot(relative,up),dot(relative,forward)};
+        const Vec3 direction=normalize(lights.spot.direction);
+        lights.spot.direction=normalize({dot(direction,right),dot(direction,up),dot(direction,forward)});
+    }
     const auto matrices=world_matrices(animation_,model,frame);
     std::vector<std::uint16_t> runtime_flags(model.nodes.size());
     for (std::size_t node=0;node<model.nodes.size();++node) {
@@ -326,18 +351,14 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
             }
             Vec3 face_normal=normalize(cross(sub(world_points[1],world_points[0]),
                                              sub(world_points[2],world_points[0])));
-            const Vec3 center{(world_points[0].x+world_points[1].x+world_points[2].x)/3.0f,
-                              (world_points[0].y+world_points[1].y+world_points[2].y)/3.0f,
-                              (world_points[0].z+world_points[1].z+world_points[2].z)/3.0f};
-            if (dot(face_normal,sub(camera.eye,center))<0.0f)
-                face_normal={-face_normal.x,-face_normal.y,-face_normal.z};
             std::array<ProjectedVertex,3> triangle{};
             for (int j=0;j<3;++j) {
                 const auto& source=mesh.vertices[i+j];
                 const Vec3 point=world_points[j];
                 const Vec3 relative=sub(point,camera.eye);
-                const Vec3 world_normal=source.lit
-                    ? normalize(transform_direction(mesh_world,source.normal)) : face_normal;
+                const bool valid_source_normal=dot(source.normal,source.normal)>1.0e-6f;
+                const Vec3 world_normal=source.lit&&valid_source_normal
+                    ? normalize(transform_normal(mesh_world,source.normal)) : face_normal;
                 Color surface=source.color;
                 if (source.material_index<material_poses.size()) {
                     const bool animated=node_index<model.material_animation.size()&&
@@ -437,6 +458,21 @@ void Scene3DRenderer::flush(RenderEngine& render) {
             a.lights.key.direction.x==b.lights.key.direction.x &&
             a.lights.key.direction.y==b.lights.key.direction.y &&
             a.lights.key.direction.z==b.lights.key.direction.z &&
+            a.lights.spot.enabled==b.lights.spot.enabled &&
+            a.lights.spot.position.x==b.lights.spot.position.x &&
+            a.lights.spot.position.y==b.lights.spot.position.y &&
+            a.lights.spot.position.z==b.lights.spot.position.z &&
+            a.lights.spot.direction.x==b.lights.spot.direction.x &&
+            a.lights.spot.direction.y==b.lights.spot.direction.y &&
+            a.lights.spot.direction.z==b.lights.spot.direction.z &&
+            same_color(a.lights.spot.color,b.lights.spot.color) &&
+            a.lights.spot.intensity==b.lights.spot.intensity &&
+            a.lights.spot.range==b.lights.spot.range &&
+            a.lights.spot.inner_cone==b.lights.spot.inner_cone &&
+            a.lights.spot.outer_cone==b.lights.spot.outer_cone &&
+            a.lights.environment_up.x==b.lights.environment_up.x &&
+            a.lights.environment_up.y==b.lights.environment_up.y &&
+            a.lights.environment_up.z==b.lights.environment_up.z &&
             a.lights.reflection_intensity==b.lights.reflection_intensity &&
             a.lights.shininess==b.lights.shininess;
     };

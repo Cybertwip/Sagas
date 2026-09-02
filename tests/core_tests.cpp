@@ -53,6 +53,14 @@ int main() {
     for (const auto value : at_middle.tracks) assert(std::isfinite(value));
     assert(at_start.tracks != at_middle.tracks);
     sagas::Scene3DLoader scene_loader(archive);
+    const auto room_background=scene_loader.model(
+        "llMVCommonRoomBackgroundDObjDesc", {}, sagas::GeometryLayout::DisplayListLinks,
+        "llMVCommonRoomBackgroundMObjSub");
+    std::size_t translucent_room_shadows{};
+    for (const auto& part : room_background.meshes) for (const auto& vertex : part.vertices)
+        translucent_room_shadows += vertex.color.r < 8 && vertex.color.g < 8 &&
+                                    vertex.color.b < 8 && vertex.color.a < 255 && vertex.translucent;
+    assert(translucent_room_shadows == 21);
     const auto fighter_scripts = animation_decoder.table({362, 0}, 25);
     assert(fighter_scripts[1]);
     const auto fighter_pose = animation_decoder.sample16(*fighter_scripts[1], 50);

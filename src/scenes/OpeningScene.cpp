@@ -138,10 +138,23 @@ private:
         LightingRig warm_room;
         warm_room.ambient = {184,170,158,255};
         warm_room.ambient_intensity = 0.64f;
-        warm_room.key = {{-0.28f,0.78f,0.56f},{255,236,204,255},0.56f};
+        // mvOpeningRoom configures the global reflector at 45 degrees on
+        // both axes: (sin(45)cos(45), sin(45), cos(45)cos(45)).
+        warm_room.key = {{0.5f,0.70710678f,0.5f},{255,236,204,255},0.62f};
         warm_room.reflection={255,226,194,255};
-        warm_room.reflection_intensity=0.22f;
-        warm_room.shininess=8.0f;
+        warm_room.reflection_intensity=0.30f;
+        warm_room.shininess=14.0f;
+        if (local >= 500 && local < 1040) {
+            const Vec3 spotlight_target=model("room.spotlight").position;
+            warm_room.spot.enabled=true;
+            warm_room.spot.position={spotlight_target.x,spotlight_target.y+1800.0f,spotlight_target.z};
+            warm_room.spot.direction={0,-1,0};
+            warm_room.spot.color={255,231,184,255};
+            warm_room.spot.intensity=2.15f*std::clamp((local-500)/18.0f,0.0f,1.0f);
+            warm_room.spot.range=3600.0f;
+            warm_room.spot.inner_cone=0.94f;
+            warm_room.spot.outer_cone=0.80f;
+        }
         if (local < 1040) {
             renderer_->draw(r, model("room.outside"), camera, camera_frame, {210,226,255,255}, warm_room);
             renderer_->draw(r, model("room.haze"), camera, camera_frame, {220,225,235,150}, warm_room);
@@ -186,8 +199,14 @@ private:
                                              {90,80,78,150},warm_room);
             renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
             if (local >= 500) draw_pulled_fighter();
-            if (local >= 500) renderer_->draw(r,model("room.spotlight"),camera,static_cast<float>(local-500),
-                                              {255,244,210,105},warm_room);
+            if (local >= 500) {
+                // The source positions the visual emitter for Mario after
+                // constructing it; the display-list descriptor itself is at
+                // the origin. The manifest keeps the artwork and actual
+                // light rig in the same place without scene-code asset data.
+                renderer_->draw(r,model("room.spotlight"),camera,static_cast<float>(local-500),
+                                {255,244,210,105},warm_room);
+            }
             if (local >= 860) renderer_->draw(r,model("room.snap"),camera,static_cast<float>(local-860),
                                               {255,255,255,255},warm_room);
             if (local < 280) renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
@@ -197,15 +216,12 @@ private:
             renderer_->draw(r, model("room.desk_ground"), camera,
                             static_cast<float>(std::max(local - 1060, 0)),
                             {255,255,255,255}, warm_room);
-            if (local < 1140) {
-                Camera3D transition_camera{{0,0,1000},{0,0,0},{0,1,0},39.56115341f,128,16384};
-                renderer_->draw(r,model("room.transition_outline"),transition_camera,
-                                static_cast<float>(local-1040),
-                                {255,255,255,255},warm_room);
-                renderer_->draw(r,model("room.transition_overlay"),transition_camera,
-                                static_cast<float>(local-1040),
-                                {255,255,255,190},warm_room);
-            } else {
+            // Remix points both transition display routines at the N64 depth
+            // buffer. They are masks for the captured wallpaper, never black
+            // color geometry. The wallpaper above is already the composited
+            // result, so drawing either mesh here exposes the outline as the
+            // large black "missing floor" polygon.
+            if (local >= 1140) {
                 const float closeup_frame=static_cast<float>(local-1140);
                 renderer_->draw(r,model("room.closeup_ground"),camera,closeup_frame,
                                 {255,255,255,255},warm_room);

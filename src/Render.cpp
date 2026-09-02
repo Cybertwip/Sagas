@@ -106,6 +106,7 @@ uniform vec3 shadowMinimum;
 uniform vec3 shadowMaximum;
 out vec3 normal;
 out vec3 viewDirection;
+out vec3 viewPosition;
 out vec4 vertexColor;
 out vec2 textureUV;
 out vec3 shadowCoordinate;
@@ -117,6 +118,7 @@ void main() {
                      inPosition.y*focal*0.916666667,clipZ,z);
     normal=inNormal;
     viewDirection=normalize(-inPosition);
+    viewPosition=inPosition;
     vertexColor=inColor;
     textureUV=inUV;
     vec3 lightPosition=vec3(dot(inPosition,shadowRight),dot(inPosition,shadowUp),
@@ -140,6 +142,15 @@ uniform float ambientIntensity;
 uniform vec3 keyDirection;
 uniform vec3 keyColor;
 uniform float keyIntensity;
+uniform bool useSpotLight;
+uniform vec3 spotPosition;
+uniform vec3 spotDirection;
+uniform vec3 spotColor;
+uniform float spotIntensity;
+uniform float spotRange;
+uniform float spotInnerCone;
+uniform float spotOuterCone;
+uniform vec3 environmentUp;
 uniform vec3 reflectionColor;
 uniform float reflectionIntensity;
 uniform float shininess;
@@ -147,6 +158,7 @@ uniform vec3 materialDiffuse;
 uniform vec3 materialAmbient;
 in vec3 normal;
 in vec3 viewDirection;
+in vec3 viewPosition;
 in vec4 vertexColor;
 in vec2 textureUV;
 in vec3 shadowCoordinate;
@@ -188,15 +200,33 @@ void main() {
     if (alpha<0.004) discard;
     vec3 color=albedo;
     if (useLighting) {
-        vec3 N=normalize(normal);
         vec3 V=normalize(viewDirection);
-        if (dot(N,V)<0.0) N=-N;
+        vec3 sourceNormal=normalize(normal);
+        // Display-list winding is not a material property and several room
+        // meshes mix winding within one visible surface. gl_FrontFacing made
+        // adjacent box triangles change their lighting as the camera moved.
+        // Orient the interpolated source normal toward the viewer instead.
+        vec3 N=faceforward(sourceNormal,-V,sourceNormal);
         vec3 L=normalize(keyDirection);
         vec3 H=normalize(L+V);
         float visibility=filteredShadow(shadowCoordinate,N,L);
+        vec3 reference=abs(L.y)<0.92 ? vec3(0.0,1.0,0.0) : vec3(1.0,0.0,0.0);
+        vec3 lightTangent=normalize(cross(reference,L));
+        vec3 lightBitangent=normalize(cross(L,lightTangent));
+        // Integrate a small area around the key direction.  The original
+        // vertex lights have a broad response; this keeps low-poly faces
+        // from switching between hard fully-lit and fully-dark bands.
+        float diffuse=0.0;
+        const vec2 areaSamples[5]=vec2[5](vec2(0.0),vec2(0.16,0.0),vec2(-0.16,0.0),
+                                          vec2(0.0,0.16),vec2(0.0,-0.16));
+        for (int sampleIndex=0;sampleIndex<5;++sampleIndex) {
+            vec3 areaL=normalize(L+lightTangent*areaSamples[sampleIndex].x+
+                                  lightBitangent*areaSamples[sampleIndex].y);
+            float wrapped=clamp((dot(N,areaL)+0.35)/1.35,0.0,1.0);
+            diffuse+=wrapped*wrapped*(3.0-2.0*wrapped);
+        }
+        diffuse/=5.0;
         float nDotL=dot(N,L);
-        float wrapped=clamp((nDotL+0.35)/1.35,0.0,1.0);
-        float diffuse=wrapped*wrapped*(3.0-2.0*wrapped);
         float nDotV=max(dot(N,V),0.0);
         float nDotH=max(dot(N,H),0.0);
         float vDotH=max(dot(V,H),0.0);
@@ -211,12 +241,32 @@ void main() {
         vec3 fresnel=vec3(0.04)+(vec3(1.0)-vec3(0.04))*pow(1.0-vDotH,5.0);
         vec3 specular=distribution*geometryV*geometryL*fresnel/max(4.0*nDotV*max(nDotL,0.0),0.01);
         vec3 R=reflect(-V,N);
-        vec3 sky=mix(vec3(0.055,0.065,0.085),reflectionColor,clamp(R.y*0.5+0.5,0.0,1.0));
+        float reflectedHeight=dot(R,normalize(environmentUp))*0.5+0.5;
+        vec3 sky=mix(vec3(0.055,0.065,0.085),reflectionColor,clamp(reflectedHeight,0.0,1.0));
         vec3 rim=vec3(0.04)+(reflectionColor-vec3(0.04))*pow(1.0-nDotV,5.0);
-        vec3 ambient=ambientColor*ambientIntensity*materialAmbient;
+        float hemisphere=dot(N,normalize(environmentUp))*0.5+0.5;
+        vec3 lowerAmbient=ambientColor*vec3(0.58,0.54,0.50);
+        vec3 upperAmbient=mix(ambientColor,reflectionColor,0.24);
+        vec3 ambient=mix(lowerAmbient,upperAmbient,hemisphere)*ambientIntensity*materialAmbient;
         color=albedo*(ambient+keyColor*keyIntensity*diffuse*visibility)
              +keyColor*keyIntensity*specular*visibility
              +sky*rim*reflectionIntensity;
+        if (useSpotLight) {
+            vec3 toSpot=spotPosition-viewPosition;
+            float spotDistance=length(toSpot);
+            vec3 spotL=toSpot/max(spotDistance,0.0001);
+            float coneAngle=dot(normalize(spotDirection),-spotL);
+            float cone=smoothstep(spotOuterCone,spotInnerCone,coneAngle);
+            float normalizedDistance=clamp(spotDistance/max(spotRange,0.0001),0.0,1.0);
+            float attenuation=1.0-normalizedDistance*normalizedDistance;
+            attenuation*=attenuation;
+            float spotWrapped=clamp((dot(N,spotL)+0.28)/1.28,0.0,1.0);
+            float spotDiffuse=spotWrapped*spotWrapped*(3.0-2.0*spotWrapped);
+            vec3 spotH=normalize(spotL+V);
+            float spotSpecular=pow(max(dot(N,spotH),0.0),max(shininess,1.0));
+            vec3 radiance=spotColor*spotIntensity*cone*attenuation;
+            color+=albedo*radiance*spotDiffuse+radiance*spotSpecular*0.24;
+        }
     }
     if (!translucent) alpha=1.0;
     fragmentColor=vec4(max(color,vec3(0.0)),alpha);
@@ -577,6 +627,18 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
                 material.lights.key.direction.z);
     color_uniform(uniform("keyColor"),material.lights.key.color);
     glUniform1f(uniform("keyIntensity"),material.lights.key.intensity);
+    glUniform1i(uniform("useSpotLight"),material.lights.spot.enabled);
+    glUniform3f(uniform("spotPosition"),material.lights.spot.position.x,
+                material.lights.spot.position.y,material.lights.spot.position.z);
+    glUniform3f(uniform("spotDirection"),material.lights.spot.direction.x,
+                material.lights.spot.direction.y,material.lights.spot.direction.z);
+    color_uniform(uniform("spotColor"),material.lights.spot.color);
+    glUniform1f(uniform("spotIntensity"),material.lights.spot.intensity);
+    glUniform1f(uniform("spotRange"),material.lights.spot.range);
+    glUniform1f(uniform("spotInnerCone"),material.lights.spot.inner_cone);
+    glUniform1f(uniform("spotOuterCone"),material.lights.spot.outer_cone);
+    glUniform3f(uniform("environmentUp"),material.lights.environment_up.x,
+                material.lights.environment_up.y,material.lights.environment_up.z);
     color_uniform(uniform("reflectionColor"),material.lights.reflection);
     glUniform1f(uniform("reflectionIntensity"),material.lights.reflection_intensity);
     glUniform1f(uniform("shininess"),material.lights.shininess);

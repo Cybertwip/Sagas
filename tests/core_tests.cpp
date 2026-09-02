@@ -61,6 +61,51 @@ int main() {
         translucent_room_shadows += vertex.color.r < 8 && vertex.color.g < 8 &&
                                     vertex.color.b < 8 && vertex.color.a < 255 && vertex.translucent;
     assert(translucent_room_shadows == 21);
+    const auto dump_model = [](const char* name, const sagas::Model3D& model) {
+        std::size_t vertices{}, lit{}, textured{}, dark{}, translucent{}, low_alpha{};
+        float min_y=1e9f, max_y=-1e9f, nx{}, ny{}, nz{};
+        long color_r{}, color_g{}, color_b{}, color_a{};
+        std::size_t normal_count{};
+        for (std::size_t node=0; node<model.meshes.size(); ++node) {
+            const auto& part=model.meshes[node];
+            if (part.vertices.empty()) continue;
+            std::size_t node_lit{}, node_tex{}, node_dark{}, node_alpha{};
+            int min_a=255, max_a=0;
+            for (const auto& v : part.vertices) {
+                ++vertices;
+                min_y=std::min(min_y,v.y); max_y=std::max(max_y,v.y);
+                color_r+=v.color.r; color_g+=v.color.g; color_b+=v.color.b; color_a+=v.color.a;
+                min_a=std::min(min_a,static_cast<int>(v.color.a));
+                max_a=std::max(max_a,static_cast<int>(v.color.a));
+                if (v.lit) { ++lit; ++node_lit; nx+=v.normal.x; ny+=v.normal.y; nz+=v.normal.z; ++normal_count; }
+                if (v.texture) { ++textured; ++node_tex; }
+                if (v.translucent) ++translucent;
+                if (v.color.a<255) { ++low_alpha; ++node_alpha; }
+                if (v.color.r<16 && v.color.g<16 && v.color.b<16) { ++dark; ++node_dark; }
+            }
+            std::cout << name << " node " << node << " depth=" << model.nodes[node].depth
+                      << " verts=" << part.vertices.size() << " lit=" << node_lit
+                      << " tex=" << node_tex << " dark=" << node_dark
+                      << " a<255=" << node_alpha << " a=[" << min_a << "," << max_a << "]"
+                      << " y=" << model.nodes[node].translate[1] << "\n";
+        }
+        if (normal_count) { nx/=normal_count; ny/=normal_count; nz/=normal_count; }
+        const float inv=vertices?1.0f/static_cast<float>(vertices):0;
+        std::cout << name << " total verts=" << vertices << " lit=" << lit << " tex=" << textured
+                  << " dark=" << dark << " translucent=" << translucent << " a<255=" << low_alpha
+                  << " avgRGBA=(" << color_r*inv << "," << color_g*inv << "," << color_b*inv << "," << color_a*inv << ")"
+                  << " y=[" << min_y << "," << max_y << "] avgN=(" << nx << "," << ny << "," << nz << ")\n";
+    };
+    dump_model("room.background", room_background);
+    dump_model("room.desk", scene_loader.model("llMVCommonRoomDeskDObjDesc", {}, sagas::GeometryLayout::Direct));
+    dump_model("room.snap", scene_loader.model("llMVCommonRoomSnapDObjDesc", "llMVCommonRoomSnapAnimJoint",
+                                              sagas::GeometryLayout::DisplayListLinks));
+    dump_model("room.spotlight", scene_loader.display_list("llMVCommonRoomSpotlightDisplayList",
+                                                          sagas::GeometryLayout::Direct,
+                                                          "llMVCommonRoomSpotlightMObjSub"));
+    dump_model("room.desk_ground", scene_loader.model("llMVCommonRoomDeskGroundDObjDesc", {},
+                                                     sagas::GeometryLayout::DisplayListLinks,
+                                                     "llMVCommonRoomDeskGroundMObjSub"));
     const auto fighter_scripts = animation_decoder.table({362, 0}, 25);
     assert(fighter_scripts[1]);
     const auto fighter_pose = animation_decoder.sample16(*fighter_scripts[1], 50);

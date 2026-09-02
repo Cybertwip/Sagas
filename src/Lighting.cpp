@@ -19,9 +19,39 @@ std::uint8_t channel(float value) {
 
 } // namespace
 
+LightingRig LightingSystem::opening_room() {
+    LightingRig rig;
+    rig.ambient = {184,170,158,255};
+    rig.ambient_intensity = 0.64f;
+    // mvOpeningRoom configures the global reflector at 45 degrees on both
+    // axes: (sin(45)cos(45), sin(45), cos(45)cos(45)).
+    rig.key = {{0.5f,0.70710678f,0.5f},{255,236,204,255},0.62f};
+    rig.environment_up = {0,1,0};
+    rig.reflection = {255,226,194,255};
+    rig.reflection_intensity = 0.30f;
+    rig.shininess = 14.0f;
+    return rig;
+}
+
+void LightingSystem::aim_opening_spotlight(LightingRig& rig, Vec3 emitter, float fade) {
+    const float intensity = std::clamp(fade, 0.0f, 1.0f);
+    rig.spot.enabled = intensity > 0.0f;
+    // The halo display list sits on the floor and extends upward.  Place
+    // the actual rig at the top of that volume so the cone lights the
+    // pulled fighter and desk instead of remaining mesh-only artwork.
+    rig.spot.position = {emitter.x, emitter.y + 1800.0f, emitter.z};
+    rig.spot.direction = {0, -1, 0};
+    rig.spot.color = {255,231,184,255};
+    rig.spot.intensity = 2.15f * intensity;
+    rig.spot.range = 3600.0f;
+    rig.spot.inner_cone = 0.94f;
+    rig.spot.outer_cone = 0.80f;
+}
+
 Color LightingSystem::shade(Color surface, Vec3 normal, Vec3 view_direction, const LightingRig& rig) {
     normal = normalize(normal);
     const Vec3 light = normalize(rig.key.direction);
+    if (dot(normal, light) < 0.0f) normal = {-normal.x, -normal.y, -normal.z};
     view_direction = normalize(view_direction);
     // The N64 fighter/scene setup uses a strong ambient term and broad
     // vertex-light falloff.  A wrapped diffuse lobe avoids the black/white

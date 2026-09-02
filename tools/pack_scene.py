@@ -38,6 +38,8 @@ def main() -> None:
         bundles.setdefault(row["bundle"], []).append(row)
         if row["kind"] not in KINDS or row["layout"] not in LAYOUTS or row["wrapper"] not in WRAPPERS:
             raise SystemExit(f"invalid enum in resource {row['key']}")
+        if row["lighting"] not in ("lit", "unlit", "spot"):
+            raise SystemExit(f"invalid lighting mode in resource {row['key']}")
 
     strings = bytearray(b"\0")
     offsets: dict[str, int] = {"": 0, "-": 0}
@@ -57,7 +59,11 @@ def main() -> None:
         bundle_records.extend(struct.pack("<III", string_offset(bundle), first, len(resources)))
         first += len(resources)
         for row in resources:
-            flags = 1 if row["lighting"] == "unlit" else 0
+            flags = 0
+            if row["lighting"] in ("unlit", "spot"):
+                flags |= 1
+            if row["lighting"] == "spot":
+                flags |= 2
             resource_records.extend(struct.pack(
                 "<IIIIIIBBBB Iff fff",
                 string_offset(row["key"]), string_offset(row["descriptor"]),

@@ -38,6 +38,8 @@ class LightingSystem final {
 public:
     [[nodiscard]] static Color shade(Color surface, Vec3 normal, Vec3 view_direction,
                                      const LightingRig& rig);
+    [[nodiscard]] static LightingRig opening_room();
+    static void aim_opening_spotlight(LightingRig& rig, Vec3 emitter, float fade);
 };
 
 } // namespace sagas

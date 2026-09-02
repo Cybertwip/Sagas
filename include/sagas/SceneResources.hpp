@@ -56,6 +56,7 @@ private:
         GeometryLayout layout{};
         Model3D::FighterWrapper wrapper{};
         bool unlit{};
+        bool emit_spotlight{};
         std::uint32_t animation_file{};
         float transition_frame{}, material_start{};
         Vec3 position{};

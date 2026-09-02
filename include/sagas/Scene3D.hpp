@@ -32,6 +32,7 @@ struct Model3D {
     FighterWrapper fighter_wrapper{FighterWrapper::None};
     bool fighter_animation{};
     bool receive_lighting{true};
+    bool emit_spotlight{};
     float material_animation_start{};
     Vec3 position{};
     Vec3 rotation{};

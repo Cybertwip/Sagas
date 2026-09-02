@@ -16,7 +16,7 @@ room.action	boss.pose3	transition	-	-	direct	-	-	460	transn	boss.pose2	300	0	lit
 room.action	mario.pickup	fighter	llMarioModelJointTreeDObjDesc	-	direct	-	-	362	transn	-	0	0	lit	0	0	0
 room.action	mario.fall	transition	-	-	direct	-	-	363	xrotn	mario.pickup	100	0	lit	0	0	0
 room.action	link.fall	fighter	llLinkModelJointTreeDObjDesc	-	direct	-	-	409	xrotn	-	0	0	lit	872.32495	4038.8640	-4734.6001
-room.action	room.spotlight	display	llMVCommonRoomSpotlightDisplayList	-	direct	llMVCommonRoomSpotlightMObjSub	llMVCommonRoomSpotlightMatAnimJoint	0	none	-	0	0	unlit	-1149.30	2247.12	-3681.99
+room.action	room.spotlight	display	llMVCommonRoomSpotlightDisplayList	-	direct	llMVCommonRoomSpotlightMObjSub	llMVCommonRoomSpotlightMatAnimJoint	0	none	-	0	0	spot	-1149.30	2247.12	-3681.99
 room.action	room.snap	model	llMVCommonRoomSnapDObjDesc	llMVCommonRoomSnapAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0
 room.transition	room.desk_ground	model	llMVCommonRoomDeskGroundDObjDesc	-	links	llMVCommonRoomDeskGroundMObjSub	llMVCommonRoomDeskGroundMatAnimJoint	0	none	-	0	0	lit	0	0	0
 room.transition	room.transition_outline	display	llMVOpeningRoomTransitionOutlineDisplayList	llMVOpeningRoomTransitionOutlineAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0

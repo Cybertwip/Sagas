@@ -135,25 +135,12 @@ private:
             camera = loader_->camera("llMVOpeningRoomScene4CamAnimJoint", camera_frame, camera);
         }
 
-        LightingRig warm_room;
-        warm_room.ambient = {184,170,158,255};
-        warm_room.ambient_intensity = 0.64f;
-        // mvOpeningRoom configures the global reflector at 45 degrees on
-        // both axes: (sin(45)cos(45), sin(45), cos(45)cos(45)).
-        warm_room.key = {{0.5f,0.70710678f,0.5f},{255,236,204,255},0.62f};
-        warm_room.reflection={255,226,194,255};
-        warm_room.reflection_intensity=0.30f;
-        warm_room.shininess=14.0f;
+        LightingRig warm_room = LightingSystem::opening_room();
         if (local >= 500 && local < 1040) {
-            const Vec3 spotlight_target=model("room.spotlight").position;
-            warm_room.spot.enabled=true;
-            warm_room.spot.position={spotlight_target.x,spotlight_target.y+1800.0f,spotlight_target.z};
-            warm_room.spot.direction={0,-1,0};
-            warm_room.spot.color={255,231,184,255};
-            warm_room.spot.intensity=2.15f*std::clamp((local-500)/18.0f,0.0f,1.0f);
-            warm_room.spot.range=3600.0f;
-            warm_room.spot.inner_cone=0.94f;
-            warm_room.spot.outer_cone=0.80f;
+            const auto& halo = model("room.spotlight");
+            if (halo.emit_spotlight)
+                LightingSystem::aim_opening_spotlight(
+                    warm_room, halo.position, std::clamp((local-500)/18.0f,0.0f,1.0f));
         }
         if (local < 1040) {
             renderer_->draw(r, model("room.outside"), camera, camera_frame, {210,226,255,255}, warm_room);
@@ -200,10 +187,9 @@ private:
             renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
             if (local >= 500) draw_pulled_fighter();
             if (local >= 500) {
-                // The source positions the visual emitter for Mario after
-                // constructing it; the display-list descriptor itself is at
-                // the origin. The manifest keeps the artwork and actual
-                // light rig in the same place without scene-code asset data.
+                // The halo mesh is the emitter artwork.  The same manifest
+                // entry is a spot light-rig object; its contribution is
+                // already in warm_room.spot.
                 renderer_->draw(r,model("room.spotlight"),camera,static_cast<float>(local-500),
                                 {255,244,210,105},warm_room);
             }

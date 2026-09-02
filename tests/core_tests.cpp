@@ -1,6 +1,7 @@
 #include <sagas/Engine.hpp>
 #include <sagas/N64.hpp>
 #include <sagas/Scene3D.hpp>
+#include <sagas/SceneResources.hpp>
 
 #include <cassert>
 #include <cmath>
@@ -57,55 +58,34 @@ int main() {
         "llMVCommonRoomBackgroundDObjDesc", {}, sagas::GeometryLayout::DisplayListLinks,
         "llMVCommonRoomBackgroundMObjSub");
     std::size_t translucent_room_shadows{};
-    for (const auto& part : room_background.meshes) for (const auto& vertex : part.vertices)
-        translucent_room_shadows += vertex.color.r < 8 && vertex.color.g < 8 &&
-                                    vertex.color.b < 8 && vertex.color.a < 255 && vertex.translucent;
-    assert(translucent_room_shadows == 21);
-    const auto dump_model = [](const char* name, const sagas::Model3D& model) {
-        std::size_t vertices{}, lit{}, textured{}, dark{}, translucent{}, low_alpha{};
-        float min_y=1e9f, max_y=-1e9f, nx{}, ny{}, nz{};
-        long color_r{}, color_g{}, color_b{}, color_a{};
-        std::size_t normal_count{};
-        for (std::size_t node=0; node<model.meshes.size(); ++node) {
-            const auto& part=model.meshes[node];
-            if (part.vertices.empty()) continue;
-            std::size_t node_lit{}, node_tex{}, node_dark{}, node_alpha{};
-            int min_a=255, max_a=0;
-            for (const auto& v : part.vertices) {
-                ++vertices;
-                min_y=std::min(min_y,v.y); max_y=std::max(max_y,v.y);
-                color_r+=v.color.r; color_g+=v.color.g; color_b+=v.color.b; color_a+=v.color.a;
-                min_a=std::min(min_a,static_cast<int>(v.color.a));
-                max_a=std::max(max_a,static_cast<int>(v.color.a));
-                if (v.lit) { ++lit; ++node_lit; nx+=v.normal.x; ny+=v.normal.y; nz+=v.normal.z; ++normal_count; }
-                if (v.texture) { ++textured; ++node_tex; }
-                if (v.translucent) ++translucent;
-                if (v.color.a<255) { ++low_alpha; ++node_alpha; }
-                if (v.color.r<16 && v.color.g<16 && v.color.b<16) { ++dark; ++node_dark; }
-            }
-            std::cout << name << " node " << node << " depth=" << model.nodes[node].depth
-                      << " verts=" << part.vertices.size() << " lit=" << node_lit
-                      << " tex=" << node_tex << " dark=" << node_dark
-                      << " a<255=" << node_alpha << " a=[" << min_a << "," << max_a << "]"
-                      << " y=" << model.nodes[node].translate[1] << "\n";
+    std::size_t opaque_unlit_textured{};
+    for (const auto& part : room_background.meshes) for (const auto& vertex : part.vertices) {
+        const bool contact_shadow = vertex.color.r < 8 && vertex.color.g < 8 &&
+                                    vertex.color.b < 8 && vertex.translucent;
+        translucent_room_shadows += contact_shadow;
+        if (!vertex.lit && vertex.texture && !contact_shadow) {
+            assert(vertex.color.a == 255);
+            ++opaque_unlit_textured;
         }
-        if (normal_count) { nx/=normal_count; ny/=normal_count; nz/=normal_count; }
-        const float inv=vertices?1.0f/static_cast<float>(vertices):0;
-        std::cout << name << " total verts=" << vertices << " lit=" << lit << " tex=" << textured
-                  << " dark=" << dark << " translucent=" << translucent << " a<255=" << low_alpha
-                  << " avgRGBA=(" << color_r*inv << "," << color_g*inv << "," << color_b*inv << "," << color_a*inv << ")"
-                  << " y=[" << min_y << "," << max_y << "] avgN=(" << nx << "," << ny << "," << nz << ")\n";
-    };
-    dump_model("room.background", room_background);
-    dump_model("room.desk", scene_loader.model("llMVCommonRoomDeskDObjDesc", {}, sagas::GeometryLayout::Direct));
-    dump_model("room.snap", scene_loader.model("llMVCommonRoomSnapDObjDesc", "llMVCommonRoomSnapAnimJoint",
-                                              sagas::GeometryLayout::DisplayListLinks));
-    dump_model("room.spotlight", scene_loader.display_list("llMVCommonRoomSpotlightDisplayList",
-                                                          sagas::GeometryLayout::Direct,
-                                                          "llMVCommonRoomSpotlightMObjSub"));
-    dump_model("room.desk_ground", scene_loader.model("llMVCommonRoomDeskGroundDObjDesc", {},
-                                                     sagas::GeometryLayout::DisplayListLinks,
-                                                     "llMVCommonRoomDeskGroundMObjSub"));
+    }
+    assert(translucent_room_shadows == 21);
+    assert(opaque_unlit_textured > 200);
+    const auto spotlight = scene_loader.display_list("llMVCommonRoomSpotlightDisplayList",
+                                                    sagas::GeometryLayout::Direct,
+                                                    "llMVCommonRoomSpotlightMObjSub");
+    assert(!spotlight.meshes.empty());
+    for (const auto& vertex : spotlight.meshes.front().vertices) {
+        assert(vertex.texture);
+        assert(vertex.color.a == 255);
+    }
+    sagas::SceneResourceManager resources(assets);
+    resources.load_manifest("scenes/opening.sgscene");
+    resources.activate("room.base");
+    resources.activate("room.action");
+    const auto& halo = resources.model("room.spotlight");
+    assert(halo.emit_spotlight);
+    assert(!halo.receive_lighting);
+    assert(std::abs(halo.position.x + 1149.30f) < 0.1f);
     const auto fighter_scripts = animation_decoder.table({362, 0}, 25);
     assert(fighter_scripts[1]);
     const auto fighter_pose = animation_decoder.sample16(*fighter_scripts[1], 50);
@@ -201,6 +181,15 @@ int main() {
                                                        {0,0,1},test_lights);
     const auto back_lit=sagas::LightingSystem::shade({180,180,180,255},{0.35f,-0.72f,-0.60f},
                                                       {0,0,1},test_lights);
-    assert(front_lit.r>back_lit.r && front_lit.g>back_lit.g);
+    const auto side_lit=sagas::LightingSystem::shade({180,180,180,255},{0.72f,0.35f,0},
+                                                     {0,0,1},test_lights);
+    // Two-sided lighting toward the key light: opposite winding of the same
+    // face must not flicker darker as the camera moves.
+    assert(front_lit.r==back_lit.r && front_lit.g==back_lit.g && front_lit.b==back_lit.b);
+    assert(front_lit.r>side_lit.r);
+    auto room_rig=sagas::LightingSystem::opening_room();
+    sagas::LightingSystem::aim_opening_spotlight(room_rig,{ -1149.30f, 2247.12f, -3681.99f },1.0f);
+    assert(room_rig.spot.enabled);
+    assert(room_rig.spot.position.y>room_rig.spot.position.x);
     std::cout << "Sagas core tests passed\n";
 }

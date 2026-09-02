@@ -211,12 +211,15 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
             tile.window_set && tile.lrt>=tile.ult ? ((tile.lrt-tile.ult)>>2)+1U
                                                   : (image ? image->height : 1U));
         if (state.material_index) vertex.material_index=*state.material_index;
-        // Unlit N64 vertices carry RGBA rather than normals.  Several room
-        // contact-shadow display lists leave the blender state in an outer
-        // list but encode their actual coverage per vertex.  Preserve that
-        // coverage instead of turning every partial-alpha shadow into an
-        // opaque black depth-writing polygon.
-        vertex.translucent=state.translucent || (!vertex.lit && vertex.color.a < 255);
+        // Unlit N64 vertices store RGBA, but most room combiners sample
+        // coverage from the texel or primitive, not SHADE alpha.  Treating
+        // every a<255 vertex as translucent discarded the floor (a=0 with
+        // a live texture).  Only near-black contact shadows use vertex
+        // alpha as coverage, and XLU surfaces with a=0 keep texel alpha.
+        const bool contact_shadow=!vertex.lit && vertex.color.a<255 &&
+            vertex.color.r<8 && vertex.color.g<8 && vertex.color.b<8;
+        vertex.translucent=state.translucent || contact_shadow;
+        if (!vertex.lit && vertex.color.a==0 && !contact_shadow) vertex.color.a=255;
         mesh.vertices.push_back(std::move(vertex));
     }
 }

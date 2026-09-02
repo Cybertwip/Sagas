@@ -121,7 +121,9 @@ void SceneResourceManager::load_manifest(std::string_view logical) {
             descriptor.kind = static_cast<Kind>(kind_value);
             descriptor.layout = layout(std::to_integer<std::uint8_t>(data[item + 25]));
             descriptor.wrapper = wrapper(std::to_integer<std::uint8_t>(data[item + 26]));
-            descriptor.unlit = (std::to_integer<std::uint8_t>(data[item + 27]) & 1U) != 0;
+            const auto flags = std::to_integer<std::uint8_t>(data[item + 27]);
+            descriptor.unlit = (flags & 1U) != 0;
+            descriptor.emit_spotlight = (flags & 2U) != 0;
             descriptor.animation_file = u32(data, item + 28);
             descriptor.transition_frame = f32(data, item + 32);
             descriptor.material_start = f32(data, item + 36);
@@ -216,6 +218,7 @@ Model3D SceneResourceManager::build_model(
         model.fighter_animation = true;
     }
     model.receive_lighting = !descriptor.unlit;
+    model.emit_spotlight = descriptor.emit_spotlight;
     model.material_animation_start = descriptor.material_start;
     model.position = descriptor.position;
     return model;

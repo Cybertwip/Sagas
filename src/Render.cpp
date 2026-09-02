@@ -202,12 +202,12 @@ void main() {
     if (useLighting) {
         vec3 V=normalize(viewDirection);
         vec3 sourceNormal=normalize(normal);
-        // Display-list winding is not a material property and several room
-        // meshes mix winding within one visible surface. gl_FrontFacing made
-        // adjacent box triangles change their lighting as the camera moved.
-        // Orient the interpolated source normal toward the viewer instead.
-        vec3 N=faceforward(sourceNormal,-V,sourceNormal);
         vec3 L=normalize(keyDirection);
+        // Room display lists mix winding on the same visual face.  Orienting
+        // toward the camera made the crate's shade follow the view and
+        // flicker.  Two-sided lighting toward the key light is stable and
+        // still shades the box relative to the room rig.
+        vec3 N=faceforward(sourceNormal,-L,sourceNormal);
         vec3 H=normalize(L+V);
         float visibility=filteredShadow(shadowCoordinate,N,L);
         vec3 reference=abs(L.y)<0.92 ? vec3(0.0,1.0,0.0) : vec3(1.0,0.0,0.0);

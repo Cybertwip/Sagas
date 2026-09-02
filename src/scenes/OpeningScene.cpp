@@ -251,7 +251,8 @@ private:
         if (descriptor && loader_) {
             try {
                 auto model = loader_->fighter_model(descriptor, layout);
-                Camera3D camera{{0,180,620},{0,80,0},{0,1,0},28.0f,16,16384};
+                model.scale = {0.35f, 0.35f, 0.35f};
+                Camera3D camera{{0, 60, 220},{0, 30, 0},{0,1,0},28.0f,8,4096};
                 renderer_->draw(r, model, camera, static_cast<float>(local),
                                 {255,255,255,255}, LightingSystem::opening_room());
             } catch (const std::exception&) {

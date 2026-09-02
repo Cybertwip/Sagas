@@ -119,10 +119,13 @@ public:
                         std::string(fighter_portrait_file(bodies_[i].kind)),
                         {x + 4, 190}, {0.45f, 0.45f});
             const int percent = static_cast<int>(bodies_[i].damage);
-            const auto digit = "textures/IFCommonPlayerDamage/" + std::to_string(percent / 10 % 10) + ".png";
             r.sprite_at("textures/IFCommonPlayerTags/" + std::string(i == 0 ? "1P.png" : "CP.png"),
                         {x + 48, 192});
-            if (services.assets.exists(digit)) r.sprite_at(digit, {x + 48, 206});
+            r.sprite_at("textures/IFCommonPlayerDamage/Digit" + std::to_string(percent / 10 % 10) + ".png",
+                        {x + 44, 206});
+            r.sprite_at("textures/IFCommonPlayerDamage/Digit" + std::to_string(percent % 10) + ".png",
+                        {x + 56, 206});
+            r.sprite_at("textures/IFCommonPlayerDamage/SymbolPercent.png", {x + 70, 210});
         }
         r.end();
     }

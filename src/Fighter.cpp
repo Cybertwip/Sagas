@@ -111,10 +111,11 @@ void FighterPhysics::tick(FighterBody& body, float ground_y) noexcept {
     if (body.tap_stick_y < 255) ++body.tap_stick_y;
     if (body.stick_y <= -44 && body.vel_air.y < 0.0f && !body.grounded) body.fastfall = true;
 
+    if (body.grounded && body.status == FighterStatus::KneeBend) {
+        if (++body.jump_frames >= 3) jump(body);
+    }
     if (body.grounded) {
-        if (body.status == FighterStatus::KneeBend) {
-            if (++body.jump_frames >= 3) jump(body);
-        } else if (body.status == FighterStatus::Land) {
+        if (body.status == FighterStatus::Land) {
             if (--body.land_frames <= 0) body.status = FighterStatus::Wait;
             apply_ground_friction(body);
         } else if (std::abs(body.stick_x) >= kStickMin) {

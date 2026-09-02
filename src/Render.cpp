@@ -210,8 +210,12 @@ void main() {
         vec3 N=faceforward(sourceNormal,-L,sourceNormal);
         vec3 H=normalize(L+V);
         // N64 lights are Gouraud + a strong ambient term, not a binary
-        // shadow map. Keep a soft floor so unlit sides stay readable.
-        float visibility=mix(0.58,1.0,filteredShadow(shadowCoordinate,N,L));
+        // shadow map. Keep a soft floor so unlit sides stay readable, and
+        // mask the orthographic map with a disc so the desk does not get a
+        // hard square.
+        float radial=length(shadowCoordinate.xy-vec2(0.5))*2.0;
+        float disc=1.0-smoothstep(0.62,1.05,radial);
+        float visibility=mix(0.62,1.0,filteredShadow(shadowCoordinate,N,L)*disc);
         vec3 reference=abs(L.y)<0.92 ? vec3(0.0,1.0,0.0) : vec3(1.0,0.0,0.0);
         vec3 lightTangent=normalize(cross(reference,L));
         vec3 lightBitangent=normalize(cross(L,lightTangent));
@@ -599,7 +603,11 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDisable(GL_CULL_FACE);
-    if (material.translucent) {
+    if (material.additive) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA,GL_ONE);
+        glDepthMask(GL_FALSE);
+    } else if (material.translucent) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);

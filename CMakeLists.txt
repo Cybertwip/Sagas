@@ -72,7 +72,45 @@ add_custom_command(
             "${SAGAS_ASSET_STAMP}"
     COMMENT "Baking opening music for zero-stall playback"
     VERBATIM)
-add_custom_target(sagas_music_assets ALL DEPENDS "${SAGAS_OPENING_PCM}")
+set(SAGAS_CSS_CSEQ "${CMAKE_CURRENT_BINARY_DIR}/generated/seq_10_BattleSelect.cseq")
+set(SAGAS_CSS_MUSIC "${SAGAS_ASSET_ROOT}/audio/battle_select.sgm")
+set(SAGAS_CSS_PCM "${SAGAS_ASSET_ROOT}/audio/battle_select.sgpcm")
+add_custom_command(
+    OUTPUT "${SAGAS_CSS_CSEQ}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND "${Python3_EXECUTABLE}"
+            "${SAGAS_REMIX_ROOT}/game/tools/assemble_cseq.py"
+            "${SAGAS_REMIX_ROOT}/game/build/us/src/audio/S1_music/seq_10_BattleSelect.cseq.s"
+            -o "${SAGAS_CSS_CSEQ}"
+    DEPENDS "${SAGAS_REMIX_ROOT}/game/build/us/src/audio/S1_music/seq_10_BattleSelect.cseq.s"
+            "${SAGAS_REMIX_ROOT}/game/tools/assemble_cseq.py"
+    VERBATIM)
+add_custom_command(
+    OUTPUT "${SAGAS_CSS_MUSIC}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/pack_music.py"
+            --generator "${SAGAS_REMIX_ROOT}/tools/generate_zako_music.py"
+            --parser "${SAGAS_REMIX_ROOT}/game/tools/cseq_to_mid.py"
+            --bank "${SAGAS_REMIX_ROOT}/game/build/us/src/audio/B1_sounds1.ctl.json"
+            --sequence "${SAGAS_CSS_CSEQ}"
+            --output "${SAGAS_CSS_MUSIC}"
+    DEPENDS "${SAGAS_CSS_CSEQ}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/pack_music.py"
+            "${SAGAS_REMIX_ROOT}/tools/generate_zako_music.py"
+            "${SAGAS_REMIX_ROOT}/game/tools/cseq_to_mid.py"
+            "${SAGAS_REMIX_ROOT}/game/build/us/src/audio/B1_sounds1.ctl.json"
+            "${SAGAS_ASSET_STAMP}"
+    VERBATIM)
+add_custom_command(
+    OUTPUT "${SAGAS_CSS_PCM}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_music.py"
+            --input "${SAGAS_CSS_MUSIC}"
+            --wave-root "${SAGAS_ASSET_ROOT}/audio/B1_sounds1"
+            --output "${SAGAS_CSS_PCM}"
+            --gain 0.72
+    DEPENDS "${SAGAS_CSS_MUSIC}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_music.py"
+            "${SAGAS_ASSET_STAMP}"
+    COMMENT "Baking character-select music"
+    VERBATIM)
+add_custom_target(sagas_music_assets ALL DEPENDS "${SAGAS_OPENING_PCM}" "${SAGAS_CSS_PCM}")
 
 set(SAGAS_OPENING_SCENE "${SAGAS_ASSET_ROOT}/scenes/opening.sgscene")
 add_custom_command(

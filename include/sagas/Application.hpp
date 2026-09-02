@@ -6,6 +6,7 @@
 #include <chrono>
 
 struct SDL_Window;
+struct SDL_Gamepad;
 
 namespace sagas {
 
@@ -29,6 +30,7 @@ private:
     InputState poll_input();
     ApplicationOptions options_;
     SDL_Window* window_{};
+    SDL_Gamepad* gamepad_{};
     std::unique_ptr<AssetRepository> assets_;
     std::unique_ptr<RenderEngine> render_;
     std::unique_ptr<AudioEngine> audio_;

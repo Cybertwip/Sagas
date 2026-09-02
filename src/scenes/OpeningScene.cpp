@@ -194,16 +194,19 @@ private:
             renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
             if (local >= 500) draw_pulled_fighter();
             if (local >= 500) {
-                // The halo mesh is the emitter artwork.  The same manifest
-                // entry is a spot light-rig object; its contribution is
-                // already in warm_room.spot.
                 renderer_->draw(r,model("room.spotlight"),camera,static_cast<float>(local-500),
-                                {255,244,210,105},warm_room);
+                                {255,248,210,180},warm_room);
             }
             if (local >= 860) renderer_->draw(r,model("room.snap"),camera,static_cast<float>(local-860),
                                               {255,255,255,255},warm_room);
-            if (local < 280) renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
-                                             {255,255,255,255},warm_room);
+            if (local < 280) {
+                // Remix composites the HAL card with its own camera / DL
+                // link so the room cannot z-fight through it.
+                renderer_->flush(r);
+                r.clear_depth();
+                renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
+                                {255,255,255,255},warm_room);
+            }
         } else {
             wallpaper(r, "MVOpeningRoomWallpaper.png");
             renderer_->draw(r, model("room.desk_ground"), camera,

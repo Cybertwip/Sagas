@@ -290,14 +290,20 @@ std::shared_ptr<const RasterImage> DisplayListDecoder::texture(State& state) {
         } else if (tile.format == 0 && tile.size == 3) {
             color = {static_cast<std::uint8_t>(byte(source,row+source_pixel*4)), static_cast<std::uint8_t>(byte(source,row+source_pixel*4+1)),
                      static_cast<std::uint8_t>(byte(source,row+source_pixel*4+2)), static_cast<std::uint8_t>(byte(source,row+source_pixel*4+3))};
-        } else if (tile.format == 2 && state.palette) {
+        } else if (tile.format == 2) {
             unsigned index{};
             if (tile.size == 0) {
                 const unsigned packed = byte(source,row+source_pixel/2);
                 index = ((source_pixel & 1) ? (packed & 15) : (packed >> 4)) + tile.palette * 16;
             } else index = byte(source,row+source_pixel);
-            const std::size_t at = state.palette->offset + index * 2;
-            color = rgba16(static_cast<std::uint16_t>((byte(palette,at)<<8)|byte(palette,at+1)));
+            if (state.palette) {
+                const std::size_t at = state.palette->offset + index * 2;
+                color = rgba16(static_cast<std::uint16_t>((byte(palette,at)<<8)|byte(palette,at+1)));
+            } else {
+                const unsigned level = tile.size == 0 ? index * 17 : index;
+                color = {static_cast<std::uint8_t>(level),static_cast<std::uint8_t>(level),
+                         static_cast<std::uint8_t>(level),255};
+            }
         } else if (tile.format == 3) {
             if (tile.size == 0) {
                 const unsigned packed = byte(source,row+source_pixel/2);

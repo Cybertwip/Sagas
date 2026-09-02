@@ -38,7 +38,8 @@ private:
 [[nodiscard]] std::unique_ptr<Scene> make_opening_scene();
 [[nodiscard]] std::unique_ptr<Scene> make_title_scene();
 [[nodiscard]] std::unique_ptr<Scene> make_menu_scene();
-[[nodiscard]] std::unique_ptr<Scene> make_character_select_scene(int stock = 3, bool team = false);
+[[nodiscard]] std::unique_ptr<Scene> make_character_select_scene(int stock = 3, bool team = false,
+                                                                bool one_player = false);
 [[nodiscard]] std::unique_ptr<Scene> make_battle_scene(FighterKind p1, FighterKind p2, int stock = 3);
 
 } // namespace sagas

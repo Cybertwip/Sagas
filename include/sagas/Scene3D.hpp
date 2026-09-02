@@ -33,6 +33,7 @@ struct Model3D {
     bool fighter_animation{};
     bool receive_lighting{true};
     bool emit_spotlight{};
+    bool additive{};
     float material_animation_start{};
     Vec3 position{};
     Vec3 rotation{};
@@ -88,7 +89,7 @@ private:
         std::optional<Color> material_light1;
         std::optional<Color> material_light2;
         float fov_y{45}, near_plane{16}, far_plane{65536};
-        bool lit{}, translucent{};
+        bool lit{}, translucent{}, additive{};
     };
     n64::AnimationDecoder animation_;
     std::vector<ProjectedTriangle> triangles_;

@@ -86,7 +86,8 @@ std::vector<std::vector<std::optional<n64::Address>>> material_animation_table(
 }
 
 std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model3D& model, float frame) {
-    std::array<Matrix,18> parents{};
+    constexpr int kMaxDepth = 40;
+    std::array<Matrix,kMaxDepth> parents{};
     std::vector<Matrix> result;
     result.reserve(model.nodes.size());
     Matrix model_matrix=model.root_transform ? Matrix{*model.root_transform}
@@ -108,8 +109,8 @@ std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model
                 : animation.sample(*model.animation[node_index],frame,animation.pose(node)));
         const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
         Matrix world=multiply(model_matrix,local);
-        if (node.depth>0 && node.depth<=18) world=multiply(parents[node.depth-1],local);
-        if (node.depth>=0 && node.depth<18) parents[node.depth]=world;
+        if (node.depth>0 && node.depth<=kMaxDepth) world=multiply(parents[node.depth-1],local);
+        if (node.depth>=0 && node.depth<kMaxDepth) parents[node.depth]=world;
         result.push_back(world);
     }
     return result;
@@ -315,7 +316,7 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
             runtime_flags[node]=pose.flags;
         }
     }
-    std::array<std::size_t,18> latest_at_depth{};
+    std::array<std::size_t,40> latest_at_depth{};
     int hidden_depth=-1;
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
         const int node_depth=model.nodes[node_index].depth;
@@ -394,20 +395,21 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                                   sampler.texture_mask_s,sampler.texture_mask_t,
                                   sampler.texture_window_s,sampler.texture_window_t,lights,
                                   material_light1,material_light2,camera.fov_y,camera.near_plane,camera.far_plane,
-                                  sampler.lit||model.receive_lighting,
-                                  sampler.translucent||tint.a<255||animated_translucency});
+                                  sampler.lit&&model.receive_lighting,
+                                  sampler.translucent||tint.a<255||animated_translucency||model.additive,
+                                  model.additive});
         }
         };
         if ((runtime_flags[node_index]&1U)==0&&node_index<model.parent_meshes.size() &&
             !model.parent_meshes[node_index].vertices.empty()) {
             const auto depth=model.nodes[node_index].depth;
-            const Matrix& parent_world=(depth>0 && depth<=18)
+            const Matrix& parent_world=(depth>0 && depth<=40)
                 ? matrices[latest_at_depth[static_cast<std::size_t>(depth-1)]] : world;
             render_mesh(model.parent_meshes[node_index],parent_world);
         }
         if ((runtime_flags[node_index]&1U)==0) render_mesh(model.meshes[node_index],world);
         const auto depth=model.nodes[node_index].depth;
-        if (depth>=0 && depth<18) latest_at_depth[static_cast<std::size_t>(depth)]=node_index;
+        if (depth>=0 && depth<40) latest_at_depth[static_cast<std::size_t>(depth)]=node_index;
     }
     if (immediate) flush(render);
 }
@@ -451,6 +453,7 @@ void Scene3DRenderer::flush(RenderEngine& render) {
         material.texture_window_t=triangle.texture_window_t;
         material.lit=triangle.lit;
         material.translucent=triangle.translucent;
+        material.additive=triangle.additive;
         return material;
     };
     const auto same_color=[](Color a,Color b) {
@@ -462,7 +465,7 @@ void Scene3DRenderer::flush(RenderEngine& render) {
             a.texture_mode_s==b.texture_mode_s && a.texture_mode_t==b.texture_mode_t &&
             a.texture_mask_s==b.texture_mask_s && a.texture_mask_t==b.texture_mask_t &&
             a.texture_window_s==b.texture_window_s && a.texture_window_t==b.texture_window_t &&
-            a.lit==b.lit && a.translucent==b.translucent &&
+            a.lit==b.lit && a.translucent==b.translucent && a.additive==b.additive &&
             same_color(a.material_diffuse,b.material_diffuse) &&
             same_color(a.material_ambient,b.material_ambient) &&
             same_color(a.lights.ambient,b.lights.ambient) &&

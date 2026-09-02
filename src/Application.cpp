@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace sagas {
@@ -42,6 +43,7 @@ Application::Application(ApplicationOptions options) : options_(std::move(option
 }
 Application::~Application() {
     scenes_.reset(); services_.reset(); resources_.reset(); audio_.reset(); render_.reset(); assets_.reset();
+    if (gamepad_) SDL_CloseGamepad(gamepad_);
     if (window_) SDL_DestroyWindow(window_);
     SDL_Quit();
 }
@@ -50,8 +52,16 @@ InputState Application::poll_input() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT) input.quit = true;
+        if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_)
+            gamepad_ = SDL_OpenGamepad(event.gdevice.which);
+        if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad_ &&
+            event.gdevice.which == SDL_GetGamepadID(gamepad_)) {
+            SDL_CloseGamepad(gamepad_);
+            gamepad_ = nullptr;
+        }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-            input.accept_pressed |= event.key.key == SDLK_RETURN || event.key.key == SDLK_SPACE || event.key.key == SDLK_A;
+            input.accept_pressed |= event.key.key == SDLK_SPACE || event.key.key == SDLK_A;
+            input.start_pressed |= event.key.key == SDLK_RETURN;
             input.cancel_pressed |= event.key.key == SDLK_ESCAPE || event.key.key == SDLK_B;
             input.skip_pressed |= event.key.key == SDLK_S;
             input.up_pressed |= event.key.key == SDLK_UP;
@@ -60,7 +70,8 @@ InputState Application::poll_input() {
             input.right_pressed |= event.key.key == SDLK_RIGHT;
         }
         if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
-            input.accept_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH || event.gbutton.button == SDL_GAMEPAD_BUTTON_START;
+            input.accept_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH;
+            input.start_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_START;
             input.cancel_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST;
             input.up_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_UP;
             input.down_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_DOWN;
@@ -68,6 +79,25 @@ InputState Application::poll_input() {
             input.right_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
         }
     }
+    const bool* keys = SDL_GetKeyboardState(nullptr);
+    if (keys) {
+        input.up |= keys[SDL_SCANCODE_UP];
+        input.down |= keys[SDL_SCANCODE_DOWN];
+        input.left |= keys[SDL_SCANCODE_LEFT];
+        input.right |= keys[SDL_SCANCODE_RIGHT];
+    }
+    if (gamepad_) {
+        input.up |= SDL_GetGamepadButton(gamepad_, SDL_GAMEPAD_BUTTON_DPAD_UP);
+        input.down |= SDL_GetGamepadButton(gamepad_, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+        input.left |= SDL_GetGamepadButton(gamepad_, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+        input.right |= SDL_GetGamepadButton(gamepad_, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+        const float axis_x = SDL_GetGamepadAxis(gamepad_, SDL_GAMEPAD_AXIS_LEFTX) / 409.0f;
+        const float axis_y = SDL_GetGamepadAxis(gamepad_, SDL_GAMEPAD_AXIS_LEFTY) / -409.0f;
+        if (std::abs(axis_x) >= 8.0f) input.stick_x = std::clamp(axis_x, -80.0f, 80.0f);
+        if (std::abs(axis_y) >= 8.0f) input.stick_y = std::clamp(axis_y, -80.0f, 80.0f);
+    }
+    if (std::abs(input.stick_x) < 8.0f) input.stick_x = (input.right ? 80.0f : 0.0f) + (input.left ? -80.0f : 0.0f);
+    if (std::abs(input.stick_y) < 8.0f) input.stick_y = (input.up ? 80.0f : 0.0f) + (input.down ? -80.0f : 0.0f);
     return input;
 }
 int Application::run() {

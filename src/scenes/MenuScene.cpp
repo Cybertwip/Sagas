@@ -52,14 +52,16 @@ public:
             if (screen_ == MenuScreen::Main) exit_to_title_ = true;
             else { screen_ = MenuScreen::Main; cursor_ = 0; }
         }
-        if (input.accept_pressed) {
+        if (input.accept_pressed || input.start_pressed) {
             if (screen_ == MenuScreen::Main) {
                 screen_ = static_cast<MenuScreen>(cursor_ + 1);
                 cursor_ = 0;
             } else if (screen_ == MenuScreen::Versus && cursor_ == 0) {
                 go_css_ = true;
+                css_1p_ = false;
             } else if (screen_ == MenuScreen::OnePlayer && cursor_ == 0) {
                 go_css_ = true;
+                css_1p_ = true;
             } else {
                 selected_flash_ = 8;
                 if (screen_ == MenuScreen::Options && cursor_ == 0) stereo_ = !stereo_;
@@ -81,7 +83,7 @@ public:
     }
 
     std::unique_ptr<Scene> next() override {
-        if (go_css_) return make_character_select_scene(stock_, team_battle_);
+        if (go_css_) return make_character_select_scene(stock_, team_battle_, css_1p_);
         return exit_to_title_ ? make_title_scene() : nullptr;
     }
 
@@ -186,7 +188,7 @@ private:
     MenuScreen screen_{MenuScreen::Main};
     int cursor_{}, tic_{}, selected_flash_{};
     int stock_{3};
-    bool stereo_{true}, team_battle_{}, exit_to_title_{}, go_css_{};
+    bool stereo_{true}, team_battle_{}, exit_to_title_{}, go_css_{}, css_1p_{};
 };
 
 } // namespace

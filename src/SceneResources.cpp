@@ -219,6 +219,7 @@ Model3D SceneResourceManager::build_model(
     }
     model.receive_lighting = !descriptor.unlit;
     model.emit_spotlight = descriptor.emit_spotlight;
+    model.additive = descriptor.emit_spotlight;
     model.material_animation_start = descriptor.material_start;
     model.position = descriptor.position;
     return model;

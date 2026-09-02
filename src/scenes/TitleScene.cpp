@@ -13,7 +13,7 @@ public:
     void enter(Services& services) override { services.audio.stop(); }
     void update(Services& services, const InputState& input, float) override {
         ++tic_;
-        if (input.accept_pressed && tic_ >= 170) {
+        if ((input.accept_pressed || input.start_pressed) && tic_ >= 170) {
             services.audio.play(AudioCue::TitlePressStart);
             accepted_ = 3;
         }

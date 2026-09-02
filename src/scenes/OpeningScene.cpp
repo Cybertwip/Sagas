@@ -135,14 +135,22 @@ private:
             camera = loader_->camera("llMVOpeningRoomScene4CamAnimJoint", camera_frame, camera);
         }
 
-        LightingRig warm_room = LightingSystem::opening_room();
+        LightingRig warm_room = LightingSystem::opening_room_at(local);
         if (local >= 500 && local < 1040) {
             const auto& halo = model("room.spotlight");
             if (halo.emit_spotlight)
                 LightingSystem::aim_opening_spotlight(
                     warm_room, halo.position, std::clamp((local-500)/18.0f,0.0f,1.0f));
         }
-        if (local < 1040) {
+        if (local < 280) {
+            renderer_->flush(r);
+            const int overlay = local < 8 ? 255 : std::max(0, 255 - (local - 8) * 20);
+            if (overlay > 0) r.fill(10, 10, 300, 220,
+                                    {0,0,0,static_cast<std::uint8_t>(overlay)});
+            r.clear_depth();
+            renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
+                            {255,255,255,255}, warm_room);
+        } else if (local < 1040) {
             renderer_->draw(r, model("room.outside"), camera, camera_frame, {210,226,255,255}, warm_room);
             renderer_->draw(r, model("room.haze"), camera, camera_frame, {220,225,235,150}, warm_room);
             renderer_->draw(r, model("room.background"), camera, static_cast<float>(local),
@@ -159,28 +167,35 @@ private:
             const Model3D& boss = local < 560 ? model("boss.pose1") :
                                   (local < 860 ? model("boss.pose2") : model("boss.pose3"));
             const float boss_frame = static_cast<float>(local < 560 ? local : (local < 860 ? local-560 : local-860));
-            const auto holding_joint = boss.nodes.size() > 1 ? std::size_t{1} : std::size_t{0};
+            std::size_t holding_joint = 0;
+            std::size_t holding_verts = 0;
+            for (std::size_t n = 0; n < boss.meshes.size(); ++n) {
+                if (boss.meshes[n].vertices.size() > holding_verts) {
+                    holding_verts = boss.meshes[n].vertices.size();
+                    holding_joint = n;
+                }
+            }
             const auto draw_pulled_fighter = [&] {
                 if (local < 380) {
                     const float pickup_frame=static_cast<float>(local-280);
                     const auto held=renderer_->placed_at_joint(model("mario.pickup"),pickup_frame,boss,boss_frame,holding_joint);
-                    if (held.root_transform)
-                        renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},warm_room);
+                    renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},warm_room);
                 } else {
                     auto falling=model("mario.fall");
                     const auto release=renderer_->placed_at_joint(model("mario.pickup"),100.0f,
                                                                    model("boss.pose1"),380.0f,holding_joint);
-                    if (!release.root_transform) return;
-                    falling.position={(*release.root_transform)[3],(*release.root_transform)[7],
-                                      (*release.root_transform)[11]};
+                    Vec3 origin = falling.position;
+                    if (release.root_transform)
+                        origin = {(*release.root_transform)[3],(*release.root_transform)[7],
+                                  (*release.root_transform)[11]};
+                    const float t = std::min((local - 380) / 70.0f, 1.0f);
+                    origin.y -= 900.0f * t * t;
+                    falling.position = origin;
                     renderer_->draw(r,falling,camera,static_cast<float>(local-380),{255,255,255,255},warm_room);
                 }
             };
-            if (local >= 280 && local < 500) draw_pulled_fighter();
-            if (local < 280) renderer_->draw(r,model("room.boss_shadow"),camera,static_cast<float>(local),
-                                             {90,80,78,150},warm_room);
             renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
-            if (local >= 500) draw_pulled_fighter();
+            if (local >= 280) draw_pulled_fighter();
             if (local >= 695) {
                 auto link=model("link.fall");
                 link.position={};
@@ -188,17 +203,6 @@ private:
             }
             if (local >= 860) renderer_->draw(r,model("room.snap"),camera,static_cast<float>(local-860),
                                               {255,255,255,255},warm_room);
-            if (local < 280) {
-                // Remix draws the 2D fade on a lower DL link than the HAL
-                // card, so the card is never covered by the overlay.
-                renderer_->flush(r);
-                const int overlay = local < 8 ? 255 : std::max(0, 255 - (local - 8) * 20);
-                if (overlay > 0) r.fill(10, 10, 300, 220,
-                                        {0,0,0,static_cast<std::uint8_t>(overlay)});
-                r.clear_depth();
-                renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
-                                {255,255,255,255},warm_room);
-            }
         } else {
             wallpaper(r, "MVOpeningRoomWallpaper.png");
             renderer_->draw(r, model("room.desk_ground"), camera,
@@ -250,11 +254,32 @@ private:
         else if (portrait.find("Pikachu") != std::string_view::npos) descriptor = "llPikachuModelJointTreeDObjDesc";
         if (descriptor && loader_) {
             try {
-                auto model = loader_->fighter_model(descriptor, layout);
-                model.scale = {0.35f, 0.35f, 0.35f};
-                Camera3D camera{{0, 60, 220},{0, 30, 0},{0,1,0},28.0f,8,4096};
-                renderer_->draw(r, model, camera, static_cast<float>(local),
-                                {255,255,255,255}, LightingSystem::opening_room());
+                auto model3d = loader_->fighter_model(descriptor, layout);
+                n64::AnimationDecoder decoder(resources_->archive());
+                const std::uint32_t motion = portrait.find("Mario") != std::string_view::npos ? 362U :
+                    (portrait.find("Link") != std::string_view::npos ? 409U : 0U);
+                if (motion) {
+                    auto scripts = decoder.table({motion, 0}, model3d.nodes.size() + 1);
+                    if (!scripts.empty()) {
+                        model3d.fighter_root.scale = {1,1,1};
+                        model3d.fighter_root_animation = scripts.front();
+                        model3d.animation.assign(scripts.begin() + 1, scripts.end());
+                        model3d.fighter_animation = true;
+                    }
+                }
+                float posed_y = 600.0f;
+                float speed = 0;
+                for (int tic = 15; tic <= local && tic < 60; ++tic) {
+                    if (tic == 15) speed = 17;
+                    if (tic == 45) speed = 15;
+                    if (tic > 15 && tic < 45) speed -= 1.0f / 15.0f;
+                    if (tic > 45 && tic < 60) speed -= 1.0f;
+                    posed_y -= speed;
+                }
+                model3d.position = {0, posed_y, 0};
+                Camera3D camera{{300,500,1700},{0,100,0},{0,1,0},18.0f,16,16384};
+                renderer_->draw(r, model3d, camera, static_cast<float>(local),
+                                {255,255,255,255}, LightingSystem::opening_room_at(1040));
             } catch (const std::exception&) {
                 descriptor = nullptr;
             }

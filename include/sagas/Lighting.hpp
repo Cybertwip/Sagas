@@ -39,6 +39,7 @@ public:
     [[nodiscard]] static Color shade(Color surface, Vec3 normal, Vec3 view_direction,
                                      const LightingRig& rig);
     [[nodiscard]] static LightingRig opening_room();
+    [[nodiscard]] static LightingRig opening_room_at(int local);
     static void aim_opening_spotlight(LightingRig& rig, Vec3 emitter, float fade);
 };
 

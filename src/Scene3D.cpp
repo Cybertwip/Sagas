@@ -88,6 +88,7 @@ std::vector<std::vector<std::optional<n64::Address>>> material_animation_table(
 std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model3D& model, float frame) {
     constexpr int kMaxDepth = 40;
     std::array<Matrix,kMaxDepth> parents{};
+    std::array<char,kMaxDepth> have_parent{};
     std::vector<Matrix> result;
     result.reserve(model.nodes.size());
     Matrix model_matrix=model.root_transform ? Matrix{*model.root_transform}
@@ -109,8 +110,19 @@ std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model
                 : animation.sample(*model.animation[node_index],frame,animation.pose(node)));
         const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
         Matrix world=multiply(model_matrix,local);
-        if (node.depth>0 && node.depth<=kMaxDepth) world=multiply(parents[node.depth-1],local);
-        if (node.depth>=0 && node.depth<kMaxDepth) parents[node.depth]=world;
+        // Fighter DObjDesc trees often start at depth 4 (below TopN/TransN).
+        // Parenting those to an unset identity slot threw fingers and held
+        // fighters into world origin — the window in the opening room.
+        if (node.depth>0 && node.depth<=kMaxDepth) {
+            int ancestor=node.depth-1;
+            while (ancestor>0 && !have_parent[static_cast<std::size_t>(ancestor)]) --ancestor;
+            world=multiply(have_parent[static_cast<std::size_t>(ancestor)]
+                           ? parents[static_cast<std::size_t>(ancestor)] : model_matrix, local);
+        }
+        if (node.depth>=0 && node.depth<kMaxDepth) {
+            parents[static_cast<std::size_t>(node.depth)]=world;
+            have_parent[static_cast<std::size_t>(node.depth)]=true;
+        }
         result.push_back(world);
     }
     return result;
@@ -360,7 +372,7 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
             // Skinned fighter joints that lost their parent matrix produce a
             // handful of room-sized triangles with the wrong vertex colors.
             // Those do not belong in the intro camera.
-            if ((model.is_fighter||model.fighter_animation) && std::max({edge0,edge1,edge2})>1200.0f) continue;
+            if ((model.is_fighter||model.fighter_animation) && std::max({edge0,edge1,edge2})>20000.0f) continue;
             Vec3 face_normal=normalize(cross(sub(world_points[1],world_points[0]),
                                              sub(world_points[2],world_points[0])));
             std::array<ProjectedVertex,3> triangle{};

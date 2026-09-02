@@ -20,17 +20,38 @@ std::uint8_t channel(float value) {
 } // namespace
 
 LightingRig LightingSystem::opening_room() {
+    return opening_room_at(1040);
+}
+
+LightingRig LightingSystem::opening_room_at(int local) {
     LightingRig rig;
-    rig.ambient = {176,180,192,255};
-    rig.ambient_intensity = 0.78f;
-    // mvOpeningRoom configures the global reflector at 45 degrees on both
-    // axes: (sin(45)cos(45), sin(45), cos(45)cos(45)).  N64 Lights1 keeps a
-    // 0x20 ambient fill under the 0xFF directional, so the key stays soft.
-    rig.key = {{0.5f,0.70710678f,0.5f},{255,244,224,255},0.42f};
     rig.environment_up = {0,1,0};
-    rig.reflection = {205,218,236,255};
-    rig.reflection_intensity = 0.16f;
-    rig.shininess = 8.0f;
+    rig.key.direction = {0.5f,0.70710678f,0.5f};
+    rig.key.color = {255,244,224,255};
+    // The room stays a night interior until the 3-2-1 snap (tic 860).
+    // Spotlight at 500 is a narrow cone; it is not the house lights.
+    if (local < 500) {
+        rig.ambient = {48,44,52,255};
+        rig.ambient_intensity = 0.22f;
+        rig.key.intensity = 0.04f;
+        rig.reflection = {40,48,64,255};
+        rig.reflection_intensity = 0.04f;
+        rig.shininess = 4.0f;
+    } else if (local < 860) {
+        rig.ambient = {72,64,70,255};
+        rig.ambient_intensity = 0.28f;
+        rig.key.intensity = 0.08f;
+        rig.reflection = {80,70,60,255};
+        rig.reflection_intensity = 0.08f;
+        rig.shininess = 6.0f;
+    } else {
+        rig.ambient = {176,180,192,255};
+        rig.ambient_intensity = 0.78f;
+        rig.key.intensity = 0.42f;
+        rig.reflection = {205,218,236,255};
+        rig.reflection_intensity = 0.16f;
+        rig.shininess = 8.0f;
+    }
     return rig;
 }
 

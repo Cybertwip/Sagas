@@ -56,10 +56,12 @@ public:
             if (screen_ == MenuScreen::Main) {
                 screen_ = static_cast<MenuScreen>(cursor_ + 1);
                 cursor_ = 0;
+            } else if (screen_ == MenuScreen::Versus && cursor_ == 0) {
+                go_css_ = true;
+            } else if (screen_ == MenuScreen::OnePlayer && cursor_ == 0) {
+                go_css_ = true;
             } else {
                 selected_flash_ = 8;
-                // Settings are menu state, so these remain functional even
-                // before battle/character scenes are connected.
                 if (screen_ == MenuScreen::Options && cursor_ == 0) stereo_ = !stereo_;
                 if (screen_ == MenuScreen::Versus && cursor_ == 1) team_battle_ = !team_battle_;
             }
@@ -78,7 +80,10 @@ public:
         r.end();
     }
 
-    std::unique_ptr<Scene> next() override { return exit_to_title_ ? make_title_scene() : nullptr; }
+    std::unique_ptr<Scene> next() override {
+        if (go_css_) return make_character_select_scene(stock_, team_battle_);
+        return exit_to_title_ ? make_title_scene() : nullptr;
+    }
 
 private:
     [[nodiscard]] int item_count() const {
@@ -181,7 +186,7 @@ private:
     MenuScreen screen_{MenuScreen::Main};
     int cursor_{}, tic_{}, selected_flash_{};
     int stock_{3};
-    bool stereo_{true}, team_battle_{}, exit_to_title_{};
+    bool stereo_{true}, team_battle_{}, exit_to_title_{}, go_css_{};
 };
 
 } // namespace

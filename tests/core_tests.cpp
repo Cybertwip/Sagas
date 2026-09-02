@@ -1,4 +1,5 @@
 #include <sagas/Engine.hpp>
+#include <sagas/Fighter.hpp>
 #include <sagas/N64.hpp>
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
@@ -191,5 +192,21 @@ int main() {
     sagas::LightingSystem::aim_opening_spotlight(room_rig,{ -1149.30f, 2247.12f, -3681.99f },1.0f);
     assert(room_rig.spot.enabled);
     assert(room_rig.spot.position.y>room_rig.spot.position.x);
+    sagas::FighterBody mario;
+    mario.kind = sagas::FighterKind::Mario;
+    mario.attr = sagas::fighter_attributes(mario.kind);
+    mario.position = {0, 10, 0};
+    mario.grounded = false;
+    mario.vel_air.y = 0;
+    sagas::FighterPhysics::apply_gravity_clamp_tvel(mario, mario.attr.gravity, mario.attr.tvel_base);
+    assert(mario.vel_air.y < 0 && mario.vel_air.y > -mario.attr.tvel_base);
+    mario.stick_x = 80;
+    mario.grounded = true;
+    mario.position.y = 0;
+    mario.vel_air = {};
+    sagas::FighterPhysics::tick(mario, 0);
+    assert(mario.grounded && mario.vel_ground > 0 && mario.lr == 1);
+    sagas::FighterPhysics::jump(mario);
+    assert(!mario.grounded && mario.vel_air.y > 1.0f);
     std::cout << "Sagas core tests passed\n";
 }

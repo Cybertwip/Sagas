@@ -96,6 +96,7 @@ add_library(sagas_engine
     src/Audio.cpp
     src/Core.cpp
     src/Fgm.cpp
+    src/Fighter.cpp
     src/Lighting.cpp
     src/n64/Animation.cpp
     src/n64/Archive.cpp
@@ -109,7 +110,9 @@ target_sources(sagas_engine PRIVATE
     src/scenes/StartupScene.cpp
     src/scenes/OpeningScene.cpp
     src/scenes/TitleScene.cpp
-    src/scenes/MenuScene.cpp)
+    src/scenes/MenuScene.cpp
+    src/scenes/CharacterSelectScene.cpp
+    src/scenes/BattleScene.cpp)
 target_include_directories(sagas_engine PUBLIC include)
 target_link_libraries(sagas_engine PUBLIC SDL3::SDL3 PNG::PNG OpenGL::GL)
 target_compile_definitions(sagas_engine PUBLIC

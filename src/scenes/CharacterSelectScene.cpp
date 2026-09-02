@@ -117,6 +117,16 @@ private:
     std::array<Slot,4> slots_{};
 };
 
+std::unique_ptr<Scene> CharacterSelectScene::next() {
+    if (back_) return make_menu_scene();
+    if (start_) {
+        const auto p1 = slots_[0].fkind;
+        const auto p2 = slots_[1].selected ? slots_[1].fkind : FighterKind::Fox;
+        return make_battle_scene(p1, p2, stock_);
+    }
+    return {};
+}
+
 } // namespace
 
 std::unique_ptr<Scene> make_character_select_scene(int stock, bool team) {

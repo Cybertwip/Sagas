@@ -463,6 +463,8 @@ void Scene3DRenderer::flush(RenderEngine& render) {
             a.texture_mask_s==b.texture_mask_s && a.texture_mask_t==b.texture_mask_t &&
             a.texture_window_s==b.texture_window_s && a.texture_window_t==b.texture_window_t &&
             a.lit==b.lit && a.translucent==b.translucent &&
+            same_color(a.material_diffuse,b.material_diffuse) &&
+            same_color(a.material_ambient,b.material_ambient) &&
             same_color(a.lights.ambient,b.lights.ambient) &&
             same_color(a.lights.key.color,b.lights.key.color) &&
             same_color(a.lights.reflection,b.lights.reflection) &&

@@ -105,8 +105,9 @@ public:
                 continue;
             }
             auto model = models_[i];
-            model.position = {bodies_[i].position.x * 12.0f, bodies_[i].position.y * 12.0f, 0};
-            model.scale = {bodies_[i].lr >= 0 ? 1.0f : -1.0f, 1, 1};
+            model.position = {bodies_[i].position.x * 4.0f, bodies_[i].position.y * 4.0f, 0};
+            const float facing = bodies_[i].lr >= 0 ? 0.12f : -0.12f;
+            model.scale = {facing, 0.12f, 0.12f};
             renderer_->draw(r, model, camera, static_cast<float>(tic_ % 80),
                             {255,255,255,255}, lights);
         }

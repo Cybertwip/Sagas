@@ -89,13 +89,6 @@ public:
             throw std::runtime_error("unknown opening render strategy: " + segment.renderer);
         }
         renderer_->end(r);
-        if (segment.renderer == "room" && local < 280) {
-            // mvOpeningRoomLogoWallpaperProcDisplay: opaque black over the
-            // HAL card until tic 60, then fade 13/frame.
-            const int overlay = local < 60 ? 255 : std::max(0, 255 - (local - 60) * 13);
-            if (overlay > 0) r.fill(10, 10, 300, 220,
-                                    {0,0,0,static_cast<std::uint8_t>(overlay)});
-        }
         const float edge = std::min({1.0f, local / 10.0f,
                                      (static_cast<int>(segment.duration) - local) / 10.0f});
         if (edge < 1) r.fill(0, 0, 320, 240,
@@ -166,43 +159,42 @@ private:
             const Model3D& boss = local < 560 ? model("boss.pose1") :
                                   (local < 860 ? model("boss.pose2") : model("boss.pose3"));
             const float boss_frame = static_cast<float>(local < 560 ? local : (local < 860 ? local-560 : local-860));
+            const auto holding_joint = boss.nodes.size() > 1 ? std::size_t{1} : std::size_t{0};
             const auto draw_pulled_fighter = [&] {
                 if (local < 380) {
                     const float pickup_frame=static_cast<float>(local-280);
-                    // Runtime joint 5 (item-heavy) is descriptor node 1;
-                    // the four special fighter joints precede this tree.
-                    const auto held=renderer_->placed_at_joint(model("mario.pickup"),pickup_frame,boss,boss_frame,1);
-                    renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},warm_room);
+                    const auto held=renderer_->placed_at_joint(model("mario.pickup"),pickup_frame,boss,boss_frame,holding_joint);
+                    if (held.root_transform)
+                        renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},warm_room);
                 } else {
                     auto falling=model("mario.fall");
                     const auto release=renderer_->placed_at_joint(model("mario.pickup"),100.0f,
-                                                                   model("boss.pose1"),380.0f,1);
-                    if (release.root_transform) {
-                        falling.position={(*release.root_transform)[3],(*release.root_transform)[7],
-                                          (*release.root_transform)[11]};
-                    }
+                                                                   model("boss.pose1"),380.0f,holding_joint);
+                    if (!release.root_transform) return;
+                    falling.position={(*release.root_transform)[3],(*release.root_transform)[7],
+                                      (*release.root_transform)[11]};
                     renderer_->draw(r,falling,camera,static_cast<float>(local-380),{255,255,255,255},warm_room);
                 }
             };
-            // Static props and animated fighters share the native GPU depth
-            // buffer, regardless of whether their source mesh was skinned.
             if (local >= 280 && local < 500) draw_pulled_fighter();
-            if (local >= 695) renderer_->draw(r,model("link.fall"),camera,static_cast<float>(local-695),
-                                              {255,255,255,255},warm_room);
             if (local < 280) renderer_->draw(r,model("room.boss_shadow"),camera,static_cast<float>(local),
                                              {90,80,78,150},warm_room);
             renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
             if (local >= 500) draw_pulled_fighter();
-            if (local >= 500) {
-                renderer_->draw(r,model("room.spotlight"),camera,static_cast<float>(local-500),
-                                {255,248,210,180},warm_room);
+            if (local >= 695) {
+                auto link=model("link.fall");
+                link.position={};
+                renderer_->draw(r,link,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
             }
             if (local >= 860) renderer_->draw(r,model("room.snap"),camera,static_cast<float>(local-860),
                                               {255,255,255,255},warm_room);
             if (local < 280) {
-                // Remix composites the HAL card with its own camera / DL
-                // link so the room cannot z-fight through it.
+                // Remix draws the 2D fade on a lower DL link than the HAL
+                // card, so the card is never covered by the overlay.
                 renderer_->flush(r);
+                const int overlay = local < 8 ? 255 : std::max(0, 255 - (local - 8) * 20);
+                if (overlay > 0) r.fill(10, 10, 300, 220,
+                                        {0,0,0,static_cast<std::uint8_t>(overlay)});
                 r.clear_depth();
                 renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
                                 {255,255,255,255},warm_room);

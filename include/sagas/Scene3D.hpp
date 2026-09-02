@@ -31,6 +31,7 @@ struct Model3D {
     std::optional<n64::Address> fighter_root_animation;
     FighterWrapper fighter_wrapper{FighterWrapper::None};
     bool fighter_animation{};
+    bool is_fighter{};
     bool receive_lighting{true};
     bool emit_spotlight{};
     bool additive{};

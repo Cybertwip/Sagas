@@ -127,12 +127,16 @@ public:
 
         if (slots_[0].selected && !preview_.nodes.empty()) {
             renderer_->begin();
-            Camera3D camera{{0, 80, 280},{0, 40, 0},{0,1,0},30.0f,8,4096};
+            r.clear_depth();
+            r.scissor_game(22, 131, 64, 68);
+            Camera3D camera{{0, 40, 140},{0, 20, 0},{0,1,0},24.0f,8,2048};
             auto model = preview_;
-            model.position = {-70, -30, 0};
+            model.scale = {0.08f, 0.08f, 0.08f};
+            model.position = {};
             renderer_->draw(r, model, camera, static_cast<float>(tic_ % 120),
                             {255,255,255,255}, LightingSystem::opening_room());
             renderer_->end(r);
+            r.reset_scissor();
         }
 
         r.sprite("textures/MNPlayersCommon/CursorHandPoint.png", {cursor_x_ + 12, cursor_y_ + 8});

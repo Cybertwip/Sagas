@@ -192,6 +192,7 @@ Model3D SceneResourceManager::build_model(
         model.fighter_wrapper = descriptor.wrapper;
         model.animation.assign(scripts.begin() + 1, scripts.end());
         model.fighter_animation = true;
+        model.is_fighter = true;
     } else {
         const auto previous = available.find(descriptor.dependency);
         if (previous == available.end())
@@ -216,6 +217,7 @@ Model3D SceneResourceManager::build_model(
         model.fighter_wrapper = descriptor.wrapper;
         model.animation.assign(scripts.begin() + 1, scripts.end());
         model.fighter_animation = true;
+        model.is_fighter = true;
     }
     model.receive_lighting = !descriptor.unlit;
     model.emit_spotlight = descriptor.emit_spotlight;

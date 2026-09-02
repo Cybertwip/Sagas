@@ -187,6 +187,7 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
             model.meshes[i]=decoder.decode_links(*model.nodes[i].display_list,materials[i]);
         else model.meshes[i]=decoder.decode(*model.nodes[i].display_list,materials[i]);
     }
+    model.is_fighter=true;
     return model;
 }
 
@@ -359,7 +360,7 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
             // Skinned fighter joints that lost their parent matrix produce a
             // handful of room-sized triangles with the wrong vertex colors.
             // Those do not belong in the intro camera.
-            if (model.fighter_animation && std::max({edge0,edge1,edge2})>4000.0f) continue;
+            if ((model.is_fighter||model.fighter_animation) && std::max({edge0,edge1,edge2})>1200.0f) continue;
             Vec3 face_normal=normalize(cross(sub(world_points[1],world_points[0]),
                                              sub(world_points[2],world_points[0])));
             std::array<ProjectedVertex,3> triangle{};

@@ -46,6 +46,8 @@ public:
     void prepare_forward_shadows(std::span<const ForwardVertex> vertices, Vec3 light_direction);
     void forward(std::span<const ForwardVertex> vertices, const ForwardMaterial& material);
     void clear_depth();
+    void scissor_game(float x, float y, float w, float h);
+    void reset_scissor();
     void request_capture(std::filesystem::path path);
     void end();
 private:

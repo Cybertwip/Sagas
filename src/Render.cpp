@@ -676,6 +676,21 @@ void RenderEngine::clear_depth() {
     shadows_ready_=false;
 }
 
+void RenderEngine::scissor_game(float x, float y, float w, float h) {
+    const float sx=viewport_width_/320.0f;
+    const float sy=viewport_height_/240.0f;
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(viewport_x_+static_cast<int>(std::lround(x*sx)),
+              viewport_y_+static_cast<int>(std::lround((240.0f-y-h)*sy)),
+              std::max(1,static_cast<int>(std::lround(w*sx))),
+              std::max(1,static_cast<int>(std::lround(h*sy))));
+}
+
+void RenderEngine::reset_scissor() {
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(viewport_x_,viewport_y_,viewport_width_,viewport_height_);
+}
+
 void RenderEngine::request_capture(std::filesystem::path path) { capture_path_=std::move(path); }
 
 void RenderEngine::end() {

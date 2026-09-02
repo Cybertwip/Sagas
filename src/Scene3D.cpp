@@ -349,6 +349,16 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 const auto& source=mesh.vertices[i+j];
                 world_points[j]=transform(mesh_world,{source.x,source.y,source.z});
             }
+            const float edge0=std::sqrt(std::max(1.0e-12f,dot(sub(world_points[1],world_points[0]),
+                                                              sub(world_points[1],world_points[0]))));
+            const float edge1=std::sqrt(std::max(1.0e-12f,dot(sub(world_points[2],world_points[1]),
+                                                              sub(world_points[2],world_points[1]))));
+            const float edge2=std::sqrt(std::max(1.0e-12f,dot(sub(world_points[0],world_points[2]),
+                                                              sub(world_points[0],world_points[2]))));
+            // Skinned fighter joints that lost their parent matrix produce a
+            // handful of room-sized triangles with the wrong vertex colors.
+            // Those do not belong in the intro camera.
+            if (model.fighter_animation && std::max({edge0,edge1,edge2})>4000.0f) continue;
             Vec3 face_normal=normalize(cross(sub(world_points[1],world_points[0]),
                                              sub(world_points[2],world_points[0])));
             std::array<ProjectedVertex,3> triangle{};
@@ -425,8 +435,11 @@ void Scene3DRenderer::flush(RenderEngine& render) {
         ForwardMaterial material;
         material.texture=triangle.texture;
         material.lights=triangle.lights;
-        if (triangle.material_light1) material.lights.key.color=*triangle.material_light1;
-        if (triangle.material_light2) material.lights.ambient=*triangle.material_light2;
+        // MObj light1/light2 are the part's local Lights1 (diffuse/ambient),
+        // not a replacement for the scene rig. Overwriting the key color
+        // with those bytes is what tinted fighter meshes strange colors.
+        if (triangle.material_light1) material.material_diffuse=*triangle.material_light1;
+        if (triangle.material_light2) material.material_ambient=*triangle.material_light2;
         material.fov_y=triangle.fov_y;
         material.near_plane=triangle.near_plane;
         material.far_plane=triangle.far_plane;

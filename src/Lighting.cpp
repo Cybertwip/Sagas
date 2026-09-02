@@ -21,15 +21,16 @@ std::uint8_t channel(float value) {
 
 LightingRig LightingSystem::opening_room() {
     LightingRig rig;
-    rig.ambient = {184,170,158,255};
-    rig.ambient_intensity = 0.64f;
+    rig.ambient = {176,180,192,255};
+    rig.ambient_intensity = 0.78f;
     // mvOpeningRoom configures the global reflector at 45 degrees on both
-    // axes: (sin(45)cos(45), sin(45), cos(45)cos(45)).
-    rig.key = {{0.5f,0.70710678f,0.5f},{255,236,204,255},0.62f};
+    // axes: (sin(45)cos(45), sin(45), cos(45)cos(45)).  N64 Lights1 keeps a
+    // 0x20 ambient fill under the 0xFF directional, so the key stays soft.
+    rig.key = {{0.5f,0.70710678f,0.5f},{255,244,224,255},0.42f};
     rig.environment_up = {0,1,0};
-    rig.reflection = {255,226,194,255};
-    rig.reflection_intensity = 0.30f;
-    rig.shininess = 14.0f;
+    rig.reflection = {205,218,236,255};
+    rig.reflection_intensity = 0.16f;
+    rig.shininess = 8.0f;
     return rig;
 }
 

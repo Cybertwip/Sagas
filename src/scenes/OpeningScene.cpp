@@ -89,6 +89,13 @@ public:
             throw std::runtime_error("unknown opening render strategy: " + segment.renderer);
         }
         renderer_->end(r);
+        if (segment.renderer == "room" && local < 280) {
+            // mvOpeningRoomLogoWallpaperProcDisplay: opaque black over the
+            // HAL card until tic 60, then fade 13/frame.
+            const int overlay = local < 60 ? 255 : std::max(0, 255 - (local - 60) * 13);
+            if (overlay > 0) r.fill(10, 10, 300, 220,
+                                    {0,0,0,static_cast<std::uint8_t>(overlay)});
+        }
         const float edge = std::min({1.0f, local / 10.0f,
                                      (static_cast<int>(segment.duration) - local) / 10.0f});
         if (edge < 1) r.fill(0, 0, 320, 240,
@@ -234,10 +241,32 @@ private:
                      {x, 37.5f + static_cast<float>(i) * 55.0f});
         }
     }
-    static void fighter(RenderEngine& r, int local, std::string_view portrait, Color background) {
+    void fighter(RenderEngine& r, int local, std::string_view portrait, Color background) {
         r.fill(10, 10, 300, 220, background);
-        const float scale = 1.0f + 0.1f * local / 60.0f;
-        r.sprite(std::string("textures/") + std::string(portrait), {160,120}, {scale, 4.0f});
+        const char* descriptor = nullptr;
+        GeometryLayout layout = GeometryLayout::Direct;
+        if (portrait.find("Mario") != std::string_view::npos) descriptor = "llMarioModelJointTreeDObjDesc";
+        else if (portrait.find("Donkey") != std::string_view::npos) descriptor = "llDonkeyModelJointTreeDObjDesc";
+        else if (portrait.find("Link") != std::string_view::npos) descriptor = "llLinkModelJointTreeDObjDesc";
+        else if (portrait.find("Samus") != std::string_view::npos) descriptor = "llSamusModelJointTreeDObjDesc";
+        else if (portrait.find("Yoshi") != std::string_view::npos) descriptor = "llYoshiModelJointTreeDObjDesc";
+        else if (portrait.find("Kirby") != std::string_view::npos) descriptor = "llKirbyModelJointTreeDObjDesc";
+        else if (portrait.find("Fox") != std::string_view::npos) descriptor = "llFoxModelJointTreeDObjDesc";
+        else if (portrait.find("Pikachu") != std::string_view::npos) descriptor = "llPikachuModelJointTreeDObjDesc";
+        if (descriptor && loader_) {
+            try {
+                auto model = loader_->fighter_model(descriptor, layout);
+                Camera3D camera{{0,180,620},{0,80,0},{0,1,0},28.0f,16,16384};
+                renderer_->draw(r, model, camera, static_cast<float>(local),
+                                {255,255,255,255}, LightingSystem::opening_room());
+            } catch (const std::exception&) {
+                descriptor = nullptr;
+            }
+        }
+        if (!descriptor) {
+            const float scale = 1.0f + 0.1f * local / 60.0f;
+            r.sprite(std::string("textures/") + std::string(portrait), {160,120}, {scale, 4.0f});
+        }
         r.fill(10, 10, 300, 45, {0,0,0,120});
         r.fill(10, 185, 300, 45, {0,0,0,120});
     }

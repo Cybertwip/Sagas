@@ -209,7 +209,9 @@ void main() {
         // still shades the box relative to the room rig.
         vec3 N=faceforward(sourceNormal,-L,sourceNormal);
         vec3 H=normalize(L+V);
-        float visibility=filteredShadow(shadowCoordinate,N,L);
+        // N64 lights are Gouraud + a strong ambient term, not a binary
+        // shadow map. Keep a soft floor so unlit sides stay readable.
+        float visibility=mix(0.58,1.0,filteredShadow(shadowCoordinate,N,L));
         vec3 reference=abs(L.y)<0.92 ? vec3(0.0,1.0,0.0) : vec3(1.0,0.0,0.0);
         vec3 lightTangent=normalize(cross(reference,L));
         vec3 lightBitangent=normalize(cross(L,lightTangent));
@@ -230,7 +232,7 @@ void main() {
         float nDotV=max(dot(N,V),0.0);
         float nDotH=max(dot(N,H),0.0);
         float vDotH=max(dot(V,H),0.0);
-        float roughness=clamp(sqrt(2.0/(max(shininess,1.0)+2.0)),0.18,0.72);
+        float roughness=clamp(sqrt(2.0/(max(shininess,1.0)+2.0)),0.28,0.82);
         float a2=roughness*roughness;
         a2*=a2;
         float denominator=nDotH*nDotH*(a2-1.0)+1.0;

@@ -58,6 +58,7 @@ private:
         bool unlit{};
         bool emit_spotlight{};
         std::uint32_t animation_file{};
+        std::array<std::uint32_t,2> setup_parts{0xffffffffU, 0xffffffffU};
         float transition_frame{}, material_start{};
         Vec3 position{};
     };

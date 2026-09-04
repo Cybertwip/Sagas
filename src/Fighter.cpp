@@ -42,6 +42,37 @@ FighterAttributes fighter_attributes(FighterKind kind) {
     return attr;
 }
 
+FighterModelSpec fighter_model_spec(FighterKind kind) noexcept {
+    switch (kind) {
+        case FighterKind::Luigi:
+            return {"llLuigiModelJointTreeDObjDesc", {0xffffff00U, 0U}};
+        case FighterKind::Mario:
+            return {"llMarioModelJointTreeDObjDesc", {0xffffff00U, 0U}};
+        case FighterKind::Donkey:
+            return {"llDonkeyModelJointTreeDObjDesc", {0xffffff80U, 0U}};
+        case FighterKind::Link:
+            return {"llLinkModelJointTreeDObjDesc", {0xfff9fffeU, 0U}};
+        case FighterKind::Samus:
+            return {"llSamusModelJointTreeDObjDesc", {0xfff803ffU, 0U}};
+        case FighterKind::Captain:
+            return {"llCaptainModelJointTreeDObjDesc", {0xffffff80U, 0U}};
+        case FighterKind::Ness:
+            return {"llNessModelJointTreeDObjDesc", {0xffffffc0U, 0U}};
+        case FighterKind::Yoshi:
+            return {"llYoshiModelJointTreeDObjDesc", {0xfbffffe0U, 0U}, true};
+        case FighterKind::Kirby:
+            return {"llKirbyModelJointTreeDObjDesc", {0xef7cffc0U, 0U}};
+        case FighterKind::Fox:
+            return {"llFoxModelJointTreeDObjDesc", {0xffffffc0U, 0U}};
+        case FighterKind::Pikachu:
+            return {"llPikachuModelJointTreeDObjDesc", {0xffffffc0U, 0U}};
+        case FighterKind::Purin:
+            return {"llPurinModelJointTreeDObjDesc", {0xeff9ff80U, 0U}};
+        default:
+            return {"llMarioModelJointTreeDObjDesc", {0xffffff00U, 0U}};
+    }
+}
+
 void FighterPhysics::apply_gravity_clamp_tvel(FighterBody& body, float gravity, float tvel) noexcept {
     // ftPhysicsApplyGravityClampTVel
     body.vel_air.y -= gravity;

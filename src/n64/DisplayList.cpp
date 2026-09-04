@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <sstream>
 #include <stdexcept>
 
@@ -29,10 +30,13 @@ struct DisplayListDecoder::State {
     float texture_scale_s{1}, texture_scale_t{1};
     std::uint32_t geometry_mode{0x00020000U};
     bool lighting{true};
+    bool texture_enabled{};
     Color primitive{255,255,255,255};
     std::optional<Color> light1;
     std::optional<Color> light2;
     std::optional<std::uint16_t> material_index;
+    std::uint16_t transform_node{0xffffU};
+    bool transform_parent{};
     std::uint32_t render_mode{};
     bool translucent{};
     std::span<const Material> materials;
@@ -80,8 +84,10 @@ std::vector<std::vector<Material>> DisplayListDecoder::materials(Address table, 
             if (!sub) break;
             Material material;
             const auto sprites=archive_.resolve({sub->file,sub->offset+4});
+            material.sprites=sprites;
             if (sprites && archive_.u32(*sprites)!=0) material.image=archive_.resolve(*sprites);
             const auto palettes=archive_.resolve({sub->file,sub->offset+0x2c});
+            material.palettes=palettes;
             if (palettes && archive_.u32(*palettes)!=0) material.palette=archive_.resolve(*palettes);
             material.format=byte({sub->file,sub->offset+2});
             material.size=byte({sub->file,sub->offset+3});
@@ -110,6 +116,9 @@ std::vector<std::vector<Material>> DisplayListDecoder::materials(Address table, 
                                 static_cast<std::uint8_t>(byte({sub->file,sub->offset+0x51})),
                                 static_cast<std::uint8_t>(byte({sub->file,sub->offset+0x52})),
                                 static_cast<std::uint8_t>(byte({sub->file,sub->offset+0x53}))};
+            material.flags=flags;
+            material.block_format=byte({sub->file,sub->offset+0x32});
+            material.block_size=byte({sub->file,sub->offset+0x33});
             material.set_primitive=(flags&(0x0200U|0x0010U|0x0008U))!=0;
             const auto packed_color=[&](std::uint32_t offset) {
                 return Color{static_cast<std::uint8_t>(byte({sub->file,sub->offset+offset})),
@@ -125,6 +134,44 @@ std::vector<std::vector<Material>> DisplayListDecoder::materials(Address table, 
     return result;
 }
 
+void DisplayListDecoder::apply_mobj(State& state, const Material& material) {
+    // Mirror gcDrawMObjForDObj in ssb-decomp-re src/sys/objdisplay.c.
+    // 0xDE 0x0E...... is a branch into a heap DL HAL builds per MObj; we
+    // apply the same SetTimg/LoadTLUT/tile effects without emitting Gfx.
+    unsigned flags = material.flags;
+    if (flags == 0) flags = 0x80U | 0x20U | 0x01U; // TEXTURE | tile | ALPHA
+    if ((flags & 0x4U) && material.palette) {
+        state.palette = material.palette;
+        // This is the pending SetTextureImage source consumed by the
+        // following LoadTLUT. It does not replace an existing texture load
+        // in state.loads.
+        state.image = {material.palette, 0, 2, 1};
+    }
+    if (material.set_primitive) state.primitive = material.primitive;
+    if (material.light1) state.light1 = material.light1;
+    if (material.light2) state.light2 = material.light2;
+    if ((flags & (0x01U | 0x02U | 0x10U)) && material.image) {
+        // The current sprite is selected by ALPHA or FRAC. SPLIT without
+        // either selects the secondary block. MOBJ_FLAG_TEXTURE (0x80)
+        // controls gSPTexture scaling only; it does not issue SetTextureImage.
+        const bool current=(flags&(0x01U|0x10U))!=0;
+        const unsigned fmt=current ? material.format : material.block_format;
+        const unsigned siz=current ? material.size : material.block_size;
+        state.image = {material.image, fmt, siz, material.width};
+        state.texture_scale_s = material.texture_scale_s;
+        state.texture_scale_t = material.texture_scale_t;
+    }
+    if (flags & 0x20U) {
+        auto& tile = state.tiles[state.render_tile];
+        tile.uls = material.tile_uls;
+        tile.ult = material.tile_ult;
+        tile.lrs = material.tile_lrs;
+        tile.lrt = material.tile_lrt;
+        tile.window_set = true;
+    }
+    if (flags & 0x80U) state.texture_enabled=true;
+}
+
 Mesh DisplayListDecoder::decode(Address display_list, std::span<const Material> materials) {
     Mesh mesh;
     State state;
@@ -135,18 +182,18 @@ Mesh DisplayListDecoder::decode(Address display_list, std::span<const Material> 
 
 Mesh DisplayListDecoder::decode_links(Address links, std::span<const Material> materials) {
     Mesh result;
-    for (std::size_t i = 0; i < 64; ++i, links.offset += 8) {
-        const auto list_id = archive_.u32(links);
-        if (list_id == 4) return result;
-        const auto address = archive_.resolve({links.file, links.offset + 4});
-        if (!address) continue;
-        auto part = decode(*address,materials);
-        result.vertices.insert(result.vertices.end(), part.vertices.begin(), part.vertices.end());
-        result.commands += part.commands;
-        result.display_lists += part.display_lists;
-        result.rejected_triangles += part.rejected_triangles;
-        result.unsupported_commands += part.unsupported_commands;
-        result.material_commands += part.material_commands;
+    State state;
+    state.materials=materials;
+    this->links(result,state,links);
+    return result;
+}
+
+void DisplayListDecoder::links(Mesh& mesh, State& state, Address address) {
+    for (std::size_t i = 0; i < 64; ++i, address.offset += 8) {
+        const auto list_id = archive_.u32(address);
+        if (list_id == 4) return;
+        const auto target = archive_.resolve({address.file, address.offset + 4});
+        if (target) list(mesh,state,*target,0);
     }
     throw std::runtime_error("unterminated N64 display-list links");
 }
@@ -163,6 +210,48 @@ Mesh DisplayListDecoder::decode_pairs(Address pairs, std::span<const Material> m
         result.rejected_triangles += part.rejected_triangles;
         result.unsupported_commands += part.unsupported_commands;
         result.material_commands += part.material_commands;
+    }
+    return result;
+}
+
+JointMeshes DisplayListDecoder::decode_joint_tree(
+    std::span<const std::optional<Address>> pairs,
+    std::span<const std::vector<Material>> materials) {
+    JointMeshes result;
+    result.before.resize(pairs.size());
+    result.after.resize(pairs.size());
+    State state;
+    for (std::size_t node=0;node<pairs.size();++node) {
+        state.materials=node<materials.size() ? std::span<const Material>(materials[node])
+                                              : std::span<const Material>{};
+        state.material_index.reset();
+        if (!pairs[node]) continue;
+        if (const auto before=archive_.resolve(*pairs[node])) {
+            state.transform_node=static_cast<std::uint16_t>(node);
+            state.transform_parent=true;
+            list(result.before[node],state,*before,0);
+        }
+        if (const auto after=archive_.resolve({pairs[node]->file,pairs[node]->offset+4})) {
+            state.transform_node=static_cast<std::uint16_t>(node);
+            state.transform_parent=false;
+            list(result.after[node],state,*after,0);
+        }
+    }
+    return result;
+}
+
+std::vector<Mesh> DisplayListDecoder::decode_model_tree(
+    std::span<const std::optional<Address>> display_lists,
+    std::span<const std::vector<Material>> materials, bool linked) {
+    std::vector<Mesh> result(display_lists.size());
+    State state;
+    for (std::size_t node=0;node<display_lists.size();++node) {
+        state.materials=node<materials.size() ? std::span<const Material>(materials[node])
+                                              : std::span<const Material>{};
+        state.material_index.reset();
+        if (!display_lists[node]) continue;
+        if (linked) links(result[node],state,*display_lists[node]);
+        else list(result[node],state,*display_lists[node],0);
     }
     return result;
 }
@@ -225,6 +314,7 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
 }
 
 std::shared_ptr<const RasterImage> DisplayListDecoder::texture(State& state) {
+    if (!state.texture_enabled) return {};
     const auto& tile = state.tiles[state.render_tile];
     const auto loaded = state.loads.find(tile.tmem);
     const auto image = loaded != state.loads.end() ? loaded->second.image : state.image;
@@ -370,6 +460,8 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                     out.vertex.z = archive_.s16({vertex.file, vertex.offset + 4});
                     out.vertex.u = archive_.s16({vertex.file, vertex.offset + 8}) / 32.0f;
                     out.vertex.v = archive_.s16({vertex.file, vertex.offset + 10}) / 32.0f;
+                    out.vertex.transform_node=state.transform_node;
+                    out.vertex.transform_parent=state.transform_parent;
                     const auto packed = archive_.u32({vertex.file, vertex.offset + 12});
                     out.vertex.lit = state.lighting;
                     if (state.lighting) {
@@ -390,6 +482,30 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                             static_cast<std::uint8_t>(packed)};
                     }
                     out.valid = true;
+                }
+                break;
+            }
+            case 0x02: { // F3DEX2 ModifyVtx
+                const unsigned where=(w0>>16)&0xffU;
+                const unsigned vertex=(w0&0xffffU)>>1;
+                if (vertex>=state.cache.size() || !state.cache[vertex].valid) {
+                    ++mesh.unsupported_commands;
+                    break;
+                }
+                auto& out=state.cache[vertex].vertex;
+                if (where==0x10U) { // G_MWO_POINT_RGBA / normal bytes
+                    if (out.lit) {
+                        const auto component=[w1](unsigned shift) {
+                            return static_cast<float>(static_cast<std::int8_t>(w1>>shift))/127.0f;
+                        };
+                        out.normal={component(24),component(16),component(8)};
+                    } else {
+                        out.color={static_cast<std::uint8_t>(w1>>24),static_cast<std::uint8_t>(w1>>16),
+                                   static_cast<std::uint8_t>(w1>>8),static_cast<std::uint8_t>(w1)};
+                    }
+                } else if (where==0x14U) { // G_MWO_POINT_ST
+                    out.u=static_cast<std::int16_t>(w1>>16)/32.0f;
+                    out.v=static_cast<std::int16_t>(w1)/32.0f;
                 }
                 break;
             }
@@ -433,28 +549,31 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                 state.render_tile = (w0 >> 8) & 7U;
                 state.texture_scale_s = static_cast<float>((w1>>16)&0xffffU)/65536.0f;
                 state.texture_scale_t = static_cast<float>(w1&0xffffU)/65536.0f;
+                state.texture_enabled=(w0&0xffU)!=0;
                 break;
+            case 0xdb: {
+                // F3DEX2 G_MOVEWORD. Smash Remix gfx_decode applies
+                // gSPLightColor (G_MW_LIGHTCOL = 0x0A) as the part's
+                // Lights1 diffuse/ambient. Master Hand's DLs have no
+                // textures; ignoring these left the opening hand clay-white.
+                if (((w0 >> 16) & 0xffU) == 0x0aU) {
+                    const Color color{static_cast<std::uint8_t>(w1 >> 24),
+                                      static_cast<std::uint8_t>(w1 >> 16),
+                                      static_cast<std::uint8_t>(w1 >> 8), 255};
+                    const unsigned offset = w0 & 0xffffU;
+                    if (offset == 0 || offset == 4) state.light1 = color;
+                    else if (offset == 0x18 || offset == 0x1c) state.light2 = color;
+                }
+                break;
+            }
             case 0xde: {
                 const auto target = archive_.resolve({address.file, address.offset + 4});
                 if (!target) {
                     if ((w1>>24)==0x0eU) {
                         const std::size_t material_index=(w1&0x00ffffffU)/8U;
                         if (material_index<state.materials.size()) {
-                            const auto& material=state.materials[material_index];
-                            if (material.image) {
-                                state.image={material.image,material.format,material.size,material.width};
-                                state.texture_scale_s=material.texture_scale_s;
-                                state.texture_scale_t=material.texture_scale_t;
-                            }
-                            if (material.palette) state.palette=material.palette;
-                            if (material.set_primitive) state.primitive=material.primitive;
-                            if (material.light1) state.light1=material.light1;
-                            if (material.light2) state.light2=material.light2;
+                            apply_mobj(state, state.materials[material_index]);
                             state.material_index=static_cast<std::uint16_t>(material_index);
-                            auto& tile=state.tiles[state.render_tile];
-                            tile.uls=material.tile_uls; tile.ult=material.tile_ult;
-                            tile.lrs=material.tile_lrs; tile.lrt=material.tile_lrt;
-                            tile.window_set=true;
                             ++mesh.material_commands;
                             break;
                         }
@@ -504,7 +623,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                 state.image.format=(w0>>21)&7U; state.image.size=(w0>>19)&3U; state.image.width=(w0&0xfffU)+1;
                 state.image.address=archive_.resolve({address.file,address.offset+4});
                 break;
-            default: ++mesh.unsupported_commands; break;
+            default: std::fprintf(stderr,"unsupported %u:%x %08x %08x\n",address.file,address.offset,w0,w1); ++mesh.unsupported_commands; break;
         }
     }
     throw std::runtime_error("N64 display-list command budget exceeded");

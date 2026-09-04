@@ -25,23 +25,6 @@ constexpr std::array<float,12> kPortraitY{
 
 enum class SlotKind { Human, Cpu, None };
 
-const char* descriptor_for(FighterKind kind) {
-    switch (kind) {
-        case FighterKind::Luigi: return "llLuigiModelJointTreeDObjDesc";
-        case FighterKind::Donkey: return "llDonkeyModelJointTreeDObjDesc";
-        case FighterKind::Link: return "llLinkModelJointTreeDObjDesc";
-        case FighterKind::Samus: return "llSamusModelJointTreeDObjDesc";
-        case FighterKind::Captain: return "llCaptainModelJointTreeDObjDesc";
-        case FighterKind::Ness: return "llNessModelJointTreeDObjDesc";
-        case FighterKind::Yoshi: return "llYoshiModelJointTreeDObjDesc";
-        case FighterKind::Kirby: return "llKirbyModelJointTreeDObjDesc";
-        case FighterKind::Fox: return "llFoxModelJointTreeDObjDesc";
-        case FighterKind::Pikachu: return "llPikachuModelJointTreeDObjDesc";
-        case FighterKind::Purin: return "llPurinModelJointTreeDObjDesc";
-        default: return "llMarioModelJointTreeDObjDesc";
-    }
-}
-
 class CharacterSelectScene final : public Scene {
 public:
     CharacterSelectScene(int stock, bool team, bool one_player)
@@ -165,7 +148,13 @@ private:
     }
     void load_preview(FighterKind kind) {
         if (!loader_) return;
-        try { preview_ = loader_->fighter_model(descriptor_for(kind), GeometryLayout::Direct); }
+        try {
+            const auto spec=fighter_model_spec(kind);
+            preview_ = loader_->fighter_model(spec.descriptor,
+                                              spec.joint_pairs ? GeometryLayout::JointPairs
+                                                               : GeometryLayout::Direct,
+                                              spec.setup_parts);
+        }
         catch (const std::exception&) { preview_ = {}; }
     }
     int stock_{3};

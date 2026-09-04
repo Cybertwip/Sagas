@@ -1,4 +1,5 @@
 #include <sagas/Engine.hpp>
+#include <sagas/Fighter.hpp>
 #include <sagas/N64.hpp>
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
@@ -89,7 +90,7 @@ public:
             throw std::runtime_error("unknown opening render strategy: " + segment.renderer);
         }
         renderer_->end(r);
-        const float edge = std::min({1.0f, local / 10.0f,
+        const float edge = segment.renderer == "room" ? 1.0f : std::min({1.0f, local / 10.0f,
                                      (static_cast<int>(segment.duration) - local) / 10.0f});
         if (edge < 1) r.fill(0, 0, 320, 240,
                              {0,0,0,static_cast<std::uint8_t>((1-edge)*255)});
@@ -109,6 +110,76 @@ private:
     }
     static void wallpaper(RenderEngine& r, std::string_view name, Vec2 scale = {1,1}) {
         r.sprite(std::string("textures/") + std::string(name), {160,120}, scale);
+    }
+    void draw_room_shell(RenderEngine& r, const Camera3D& camera, float camera_frame,
+                         int local, const LightingRig& lights) {
+        renderer_->draw(r,model("room.outside"),camera,camera_frame,{255,255,255,255},lights);
+        // Haze and sunlight are translucent N64 combiner passes.  Preserve
+        // them as subtle atmosphere instead of replacing the window with an
+        // opaque rectangle.
+        renderer_->draw(r,model("room.haze"),camera,camera_frame,{255,255,255,48},lights);
+        renderer_->draw(r,model("room.background"),camera,static_cast<float>(local),
+                        {255,255,255,255},lights);
+        if (local < 450)
+            renderer_->draw(r,model("room.sunlight"),camera,camera_frame,
+                            {255,255,255,40},lights);
+        renderer_->draw(r,model("room.desk"),camera,camera_frame,{255,255,255,255},lights);
+        const float prop_frame=static_cast<float>(std::max(local-560,0));
+        renderer_->draw(r,model("room.books"),camera,prop_frame,{255,255,255,255},lights);
+        renderer_->draw(r,model("room.lamp"),camera,prop_frame,{255,255,255,255},lights);
+        renderer_->draw(r,model("room.tissues"),camera,prop_frame,{255,255,255,255},lights);
+        if (local < 280)
+            renderer_->draw(r,model("room.boss_shadow"),camera,static_cast<float>(local),
+                            {255,255,255,150},lights);
+    }
+    [[nodiscard]] const Model3D& room_boss(int local) const {
+        return local < 560 ? model("boss.pose1")
+             : local < 860 ? model("boss.pose2") : model("boss.pose3");
+    }
+    [[nodiscard]] Model3D dropped_mario() {
+        auto falling=model("mario.fall");
+        // FTAttributes.joint_itemheavy_id is 5 for Master Hand. The common
+        // descriptor starts at joint 4, so its holding joint is node 1.
+        // Status changes run before the next fighter update: retain the
+        // attachment from the last pulled frame (room tic 379).
+        const auto release=renderer_->placed_at_joint(model("mario.pickup"),99.0f,
+                                                       model("boss.pose1"),379.0f,1);
+        if (release.root_transform)
+            falling.position={(*release.root_transform)[3],(*release.root_transform)[7],
+                              (*release.root_transform)[11]};
+        falling.rotation={};
+        return falling;
+    }
+    void draw_room_cast(RenderEngine& r, const Camera3D& camera, int local,
+                        const LightingRig& lights) {
+        const auto& boss=room_boss(local);
+        const float boss_frame=static_cast<float>(local < 560 ? local
+                                      : local < 860 ? local-560 : local-860);
+        constexpr std::size_t held_joint=1;
+        renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},lights);
+        if (local >= 280) {
+            const float prop_frame=static_cast<float>(std::max(local-560,0));
+            renderer_->draw(r,model("room.pencils"),camera,prop_frame,
+                            {255,255,255,255},lights);
+            if (local < 380) {
+                const float pickup_frame=static_cast<float>(local-280);
+                const auto held=renderer_->placed_at_joint(model("mario.pickup"),pickup_frame,
+                                                            boss,boss_frame,held_joint);
+                renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},lights);
+            } else {
+                const auto falling=dropped_mario();
+                renderer_->draw(r,falling,camera,static_cast<float>(local-380),
+                                {255,255,255,255},lights);
+            }
+        }
+        if (local >= 695) {
+            auto link=model("link.fall");
+            renderer_->draw(r,link,camera,static_cast<float>(local-695),
+                            {255,255,255,255},lights);
+        }
+        if (local >= 860)
+            renderer_->draw(r,model("room.snap"),camera,static_cast<float>(local-860),
+                            {255,255,255,255},lights);
     }
     void room(RenderEngine& r, int local) {
         // These are the four original camera programs and scene changes from
@@ -142,67 +213,21 @@ private:
                 LightingSystem::aim_opening_spotlight(
                     warm_room, halo.position, std::clamp((local-500)/18.0f,0.0f,1.0f));
         }
-        if (local < 280) {
-            renderer_->flush(r);
-            const int overlay = local < 8 ? 255 : std::max(0, 255 - (local - 8) * 20);
-            if (overlay > 0) r.fill(10, 10, 300, 220,
-                                    {0,0,0,static_cast<std::uint8_t>(overlay)});
-            r.clear_depth();
-            renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
-                            {255,255,255,255}, warm_room);
-        } else if (local < 1040) {
-            renderer_->draw(r, model("room.outside"), camera, camera_frame, {210,226,255,255}, warm_room);
-            renderer_->draw(r, model("room.haze"), camera, camera_frame, {220,225,235,150}, warm_room);
-            renderer_->draw(r, model("room.background"), camera, static_cast<float>(local),
-                            {255,255,255,255}, warm_room);
-            if (local < 450) renderer_->draw(r, model("room.sunlight"), camera, camera_frame,
-                                             {255,240,190,150}, warm_room);
-            renderer_->draw(r, model("room.desk"), camera, camera_frame, {255,255,255,255}, warm_room);
-            const float prop_frame = static_cast<float>(std::max(local - 560, 0));
-            renderer_->draw(r, model("room.books"), camera, prop_frame, {255,255,255,255}, warm_room);
-            if (local >= 280) renderer_->draw(r, model("room.pencils"), camera, prop_frame,
-                                              {255,255,255,255}, warm_room);
-            renderer_->draw(r, model("room.lamp"), camera, prop_frame, {255,255,255,255}, warm_room);
-            renderer_->draw(r, model("room.tissues"), camera, prop_frame, {255,255,255,255}, warm_room);
-            const Model3D& boss = local < 560 ? model("boss.pose1") :
-                                  (local < 860 ? model("boss.pose2") : model("boss.pose3"));
-            const float boss_frame = static_cast<float>(local < 560 ? local : (local < 860 ? local-560 : local-860));
-            std::size_t holding_joint = 0;
-            std::size_t holding_verts = 0;
-            for (std::size_t n = 0; n < boss.meshes.size(); ++n) {
-                if (boss.meshes[n].vertices.size() > holding_verts) {
-                    holding_verts = boss.meshes[n].vertices.size();
-                    holding_joint = n;
-                }
+        if (local < 1040) {
+            // Remix constructs the complete room and Master Hand before its
+            // logo blackout.  Drawing only the logo here caused the camera
+            // reveal to remain literally black until tic 280.
+            draw_room_shell(r,camera,camera_frame,local,warm_room);
+            draw_room_cast(r,camera,local,warm_room);
+            if (local < 280) {
+                renderer_->flush(r);
+                const int overlay=local < 60 ? 255 : std::max(0,255-(local-59)*13);
+                if (overlay>0)
+                    r.fill(10,10,300,220,{0,0,0,static_cast<std::uint8_t>(overlay)});
+                r.clear_depth();
+                renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
+                                {255,255,255,255},warm_room);
             }
-            const auto draw_pulled_fighter = [&] {
-                if (local < 380) {
-                    const float pickup_frame=static_cast<float>(local-280);
-                    const auto held=renderer_->placed_at_joint(model("mario.pickup"),pickup_frame,boss,boss_frame,holding_joint);
-                    renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},warm_room);
-                } else {
-                    auto falling=model("mario.fall");
-                    const auto release=renderer_->placed_at_joint(model("mario.pickup"),100.0f,
-                                                                   model("boss.pose1"),380.0f,holding_joint);
-                    Vec3 origin = falling.position;
-                    if (release.root_transform)
-                        origin = {(*release.root_transform)[3],(*release.root_transform)[7],
-                                  (*release.root_transform)[11]};
-                    const float t = std::min((local - 380) / 70.0f, 1.0f);
-                    origin.y -= 900.0f * t * t;
-                    falling.position = origin;
-                    renderer_->draw(r,falling,camera,static_cast<float>(local-380),{255,255,255,255},warm_room);
-                }
-            };
-            renderer_->draw(r,boss,camera,boss_frame,{255,255,255,255},warm_room);
-            if (local >= 280) draw_pulled_fighter();
-            if (local >= 695) {
-                auto link=model("link.fall");
-                link.position={};
-                renderer_->draw(r,link,camera,static_cast<float>(local-695),{255,255,255,255},warm_room);
-            }
-            if (local >= 860) renderer_->draw(r,model("room.snap"),camera,static_cast<float>(local-860),
-                                              {255,255,255,255},warm_room);
         } else {
             wallpaper(r, "MVOpeningRoomWallpaper.png");
             renderer_->draw(r, model("room.desk_ground"), camera,
@@ -213,6 +238,10 @@ private:
             // color geometry. The wallpaper above is already the composited
             // result, so drawing either mesh here exposes the outline as the
             // large black "missing floor" polygon.
+            if (local < 1140) {
+                renderer_->draw(r,dropped_mario(),camera,static_cast<float>(local-380),
+                                {255,255,255,255},warm_room);
+            }
             if (local >= 1140) {
                 const float closeup_frame=static_cast<float>(local-1140);
                 renderer_->draw(r,model("room.closeup_ground"),camera,closeup_frame,
@@ -220,11 +249,7 @@ private:
                 renderer_->draw(r,model("room.closeup_air"),camera,closeup_frame,
                                 {255,255,255,210},warm_room);
                 auto revival=model("mario.revival");
-                const auto release=renderer_->placed_at_joint(model("mario.pickup"),100.0f,
-                                                               model("boss.pose1"),380.0f,1);
-                if (release.root_transform)
-                    revival.position={(*release.root_transform)[3],(*release.root_transform)[7],
-                                      (*release.root_transform)[11]};
+                revival.position=renderer_->fighter_position(dropped_mario(),759.0f);
                 renderer_->draw(r,revival,camera,closeup_frame,{255,255,255,255},warm_room);
             }
         }
@@ -242,19 +267,23 @@ private:
     }
     void fighter(RenderEngine& r, int local, std::string_view portrait, Color background) {
         r.fill(10, 10, 300, 220, background);
-        const char* descriptor = nullptr;
+        FighterKind kind=FighterKind::Mario;
+        bool has_fighter=true;
         GeometryLayout layout = GeometryLayout::Direct;
-        if (portrait.find("Mario") != std::string_view::npos) descriptor = "llMarioModelJointTreeDObjDesc";
-        else if (portrait.find("Donkey") != std::string_view::npos) descriptor = "llDonkeyModelJointTreeDObjDesc";
-        else if (portrait.find("Link") != std::string_view::npos) descriptor = "llLinkModelJointTreeDObjDesc";
-        else if (portrait.find("Samus") != std::string_view::npos) descriptor = "llSamusModelJointTreeDObjDesc";
-        else if (portrait.find("Yoshi") != std::string_view::npos) descriptor = "llYoshiModelJointTreeDObjDesc";
-        else if (portrait.find("Kirby") != std::string_view::npos) descriptor = "llKirbyModelJointTreeDObjDesc";
-        else if (portrait.find("Fox") != std::string_view::npos) descriptor = "llFoxModelJointTreeDObjDesc";
-        else if (portrait.find("Pikachu") != std::string_view::npos) descriptor = "llPikachuModelJointTreeDObjDesc";
-        if (descriptor && loader_) {
+        if (portrait.find("Mario") != std::string_view::npos) kind=FighterKind::Mario;
+        else if (portrait.find("Donkey") != std::string_view::npos) kind=FighterKind::Donkey;
+        else if (portrait.find("Link") != std::string_view::npos) kind=FighterKind::Link;
+        else if (portrait.find("Samus") != std::string_view::npos) kind=FighterKind::Samus;
+        else if (portrait.find("Yoshi") != std::string_view::npos) kind=FighterKind::Yoshi;
+        else if (portrait.find("Kirby") != std::string_view::npos) kind=FighterKind::Kirby;
+        else if (portrait.find("Fox") != std::string_view::npos) kind=FighterKind::Fox;
+        else if (portrait.find("Pikachu") != std::string_view::npos) kind=FighterKind::Pikachu;
+        else has_fighter=false;
+        if (has_fighter && loader_) {
             try {
-                auto model3d = loader_->fighter_model(descriptor, layout);
+                const auto spec=fighter_model_spec(kind);
+                layout=spec.joint_pairs ? GeometryLayout::JointPairs : GeometryLayout::Direct;
+                auto model3d = loader_->fighter_model(spec.descriptor, layout, spec.setup_parts);
                 n64::AnimationDecoder decoder(resources_->archive());
                 const std::uint32_t motion = portrait.find("Mario") != std::string_view::npos ? 362U :
                     (portrait.find("Link") != std::string_view::npos ? 409U : 0U);
@@ -281,10 +310,10 @@ private:
                 renderer_->draw(r, model3d, camera, static_cast<float>(local),
                                 {255,255,255,255}, LightingSystem::opening_room_at(1040));
             } catch (const std::exception&) {
-                descriptor = nullptr;
+                has_fighter=false;
             }
         }
-        if (!descriptor) {
+        if (!has_fighter) {
             const float scale = 1.0f + 0.1f * local / 60.0f;
             r.sprite(std::string("textures/") + std::string(portrait), {160,120}, {scale, 4.0f});
         }

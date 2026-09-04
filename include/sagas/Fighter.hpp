@@ -32,6 +32,16 @@ enum class FighterKind : std::uint8_t {
 
 enum class FighterStatus : std::uint8_t { Wait, Walk, Dash, KneeBend, Jump, Fall, Land };
 
+struct FighterModelSpec {
+    std::string_view descriptor;
+    // Original FTAttributes.setup_parts bits. Descriptor zero is bit 31;
+    // each subsequent descriptor consumes the next bit.
+    std::array<std::uint32_t,2> setup_parts;
+    // Yoshi and Master Hand use the two-slot fighter display-list layout;
+    // the regular cast otherwise uses one direct display list per joint.
+    bool joint_pairs{};
+};
+
 struct FighterBody {
     FighterKind kind{FighterKind::Mario};
     FighterAttributes attr{};
@@ -80,5 +90,6 @@ public:
 }
 
 [[nodiscard]] FighterAttributes fighter_attributes(FighterKind kind);
+[[nodiscard]] FighterModelSpec fighter_model_spec(FighterKind kind) noexcept;
 
 } // namespace sagas

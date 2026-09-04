@@ -29,6 +29,24 @@ Enter/Space/A or a controller's south/Start button accepts. Escape/B cancels;
 S skips. Startup accepts a skip after the original eight-frame lockout and each
 opening segment after its original ten-frame lockout.
 
+## Animation sequence viewer
+
+`OpeningScene.cpp` plays the opening animation graph. To inspect the same
+models, materials, and N64 textures without running the C++ runtime:
+
+```sh
+python3 -m pip install -r sagas/tools/sequence_viewer/requirements.txt
+python3 sagas/tools/view_sequence.py
+python3 sagas/tools/view_sequence.py --self-test
+python3 sagas/tools/view_sequence.py --dump-model llMarioModelJointTreeDObjDesc
+```
+
+The viewer reads `sagas/assets/scenes/opening.*.tsv` and the unpacked reloc
+bundle. Texture decode follows Smash Remix (`remix/src/texture_decode.c` plus
+MObj palettes from `ssb-decomp-re` `objdisplay.c`), not the deprecated
+`original_runtime` RDP path. The material dock flags missing palettes, unmatched
+formats, and per-joint MObjSub bindings.
+
 ## Architecture
 
 - `Application` is the façade for SDL lifecycle and the fixed 60 Hz loop.

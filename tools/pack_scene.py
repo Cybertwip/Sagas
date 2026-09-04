@@ -12,6 +12,12 @@ LAYOUTS = {"direct": 0, "links": 1, "pairs": 2}
 WRAPPERS = {"none": 0, "transn": 1, "xrotn": 2}
 
 
+def mask(value: str | None, default: int) -> int:
+    if value is None or not value.strip() or value == "-":
+        return default
+    return int(value, 0)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, type=pathlib.Path)
@@ -65,13 +71,15 @@ def main() -> None:
             if row["lighting"] == "spot":
                 flags |= 2
             resource_records.extend(struct.pack(
-                "<IIIIIIBBBB Iff fff",
+                "<IIIIIIBBBB Iff fff II",
                 string_offset(row["key"]), string_offset(row["descriptor"]),
                 string_offset(row["animation"]), string_offset(row["materials"]),
                 string_offset(row["material_animation"]), string_offset(row["dependency"]),
                 KINDS[row["kind"]], LAYOUTS[row["layout"]], WRAPPERS[row["wrapper"]], flags,
                 int(row["animation_file"]), float(row["transition_frame"]), float(row["material_start"]),
-                float(row["position_x"]), float(row["position_y"]), float(row["position_z"])))
+                float(row["position_x"]), float(row["position_y"]), float(row["position_z"]),
+                mask(row.get("setup_flags0"), 0xffffffff),
+                mask(row.get("setup_flags1"), 0xffffffff)))
 
     segment_names = {row["name"] for row in segments}
     for row in segments:
@@ -90,7 +98,7 @@ def main() -> None:
             "<IIIII", string_offset(row["segment"]), string_offset(row["resource"]),
             string_offset(row["camera"]), int(row["order"]), color))
 
-    header = struct.pack("<4sHHIIIII", b"SGSC", 2, 0, len(bundles), len(rows),
+    header = struct.pack("<4sHHIIIII", b"SGSC", 3, 0, len(bundles), len(rows),
                          len(segments), len(cues), len(strings))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(header + bundle_records + resource_records + segment_records + cue_records + strings)

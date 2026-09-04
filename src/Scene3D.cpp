@@ -85,22 +85,38 @@ std::vector<std::vector<std::optional<n64::Address>>> material_animation_table(
     return result;
 }
 
-std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model3D& model, float frame) {
+struct ModelMatrices {
+    std::vector<Matrix> world;
+    std::vector<Matrix> parent;
+};
+
+ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& model, float frame) {
     constexpr int kMaxDepth = 40;
     std::array<Matrix,kMaxDepth> parents{};
     std::array<char,kMaxDepth> have_parent{};
-    std::vector<Matrix> result;
-    result.reserve(model.nodes.size());
+    ModelMatrices result;
+    result.world.reserve(model.nodes.size());
+    result.parent.reserve(model.nodes.size());
     Matrix model_matrix=model.root_transform ? Matrix{*model.root_transform}
         : multiply(multiply(translation({model.position.x,model.position.y,model.position.z}),
                             rotation({model.rotation.x,model.rotation.y,model.rotation.z})),
                    scale({model.scale.x,model.scale.y,model.scale.z}));
-    if (!model.root_transform && model.fighter_root_animation) {
+    if (model.fighter_root_animation) {
         auto root=model.fighter_root;
         n64::AnimationDecoder::apply(root,animation.sample16(*model.fighter_root_animation,frame,
                                                               animation.pose(root)));
-        model_matrix=multiply(model_matrix,multiply(multiply(translation(root.translate),rotation(root.rotate)),
-                                                    scale(root.scale)));
+        if (model.fighter_wrapper==Model3D::FighterWrapper::TransN) {
+            // TransN is detached from the rendered hierarchy. The opening
+            // callback accumulates its frame-to-frame translation in TopN.
+            // Telescoping those deltas permits deterministic frame seeking.
+            const auto start=animation.sample16(*model.fighter_root_animation,0,
+                                                animation.pose(model.fighter_root));
+            for (int axis=0;axis<3;++axis) root.translate[axis]-=start.tracks[4+axis];
+            model_matrix=multiply(model_matrix,translation(root.translate));
+        } else {
+            model_matrix=multiply(model_matrix,multiply(multiply(translation(root.translate),rotation(root.rotate)),
+                                                        scale(root.scale)));
+        }
     }
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
         auto node=model.nodes[node_index];
@@ -109,21 +125,23 @@ std::vector<Matrix> world_matrices(n64::AnimationDecoder& animation, const Model
                 ? animation.sample16(*model.animation[node_index],frame,animation.pose(node))
                 : animation.sample(*model.animation[node_index],frame,animation.pose(node)));
         const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
-        Matrix world=multiply(model_matrix,local);
+        Matrix parent=model_matrix;
         // Fighter DObjDesc trees often start at depth 4 (below TopN/TransN).
         // Parenting those to an unset identity slot threw fingers and held
         // fighters into world origin — the window in the opening room.
         if (node.depth>0 && node.depth<=kMaxDepth) {
             int ancestor=node.depth-1;
             while (ancestor>0 && !have_parent[static_cast<std::size_t>(ancestor)]) --ancestor;
-            world=multiply(have_parent[static_cast<std::size_t>(ancestor)]
-                           ? parents[static_cast<std::size_t>(ancestor)] : model_matrix, local);
+            if (have_parent[static_cast<std::size_t>(ancestor)])
+                parent=parents[static_cast<std::size_t>(ancestor)];
         }
+        const Matrix world=multiply(parent,local);
         if (node.depth>=0 && node.depth<kMaxDepth) {
             parents[static_cast<std::size_t>(node.depth)]=world;
             have_parent[static_cast<std::size_t>(node.depth)]=true;
         }
-        result.push_back(world);
+        result.parent.push_back(parent);
+        result.world.push_back(world);
     }
     return result;
 }
@@ -154,18 +172,19 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
                                              std::string(material_animation_symbol));
         model.material_animation=material_animation_table(archive_,*table,model.materials);
     }
-    for (std::size_t i=0; i<model.nodes.size(); ++i) if (model.nodes[i].display_list) {
-        if (layout == GeometryLayout::JointPairs) {
-            const auto pair=*model.nodes[i].display_list;
-            if (const auto parent=archive_.resolve(pair))
-                model.parent_meshes[i]=decoder.decode(*parent,materials[i]);
-            if (const auto local=archive_.resolve({pair.file,pair.offset+4}))
-                model.meshes[i]=decoder.decode(*local,materials[i]);
-        }
-        else if (layout == GeometryLayout::DisplayListLinks)
-            model.meshes[i] = decoder.decode_links(*model.nodes[i].display_list,materials[i]);
-        else
-            model.meshes[i] = decoder.decode(*model.nodes[i].display_list,materials[i]);
+    if (layout==GeometryLayout::JointPairs) {
+        std::vector<std::optional<n64::Address>> pairs;
+        pairs.reserve(model.nodes.size());
+        for (const auto& node:model.nodes) pairs.push_back(node.display_list);
+        auto decoded=decoder.decode_joint_tree(pairs,materials);
+        model.parent_meshes=std::move(decoded.before);
+        model.meshes=std::move(decoded.after);
+    } else {
+        std::vector<std::optional<n64::Address>> display_lists;
+        display_lists.reserve(model.nodes.size());
+        for (const auto& node:model.nodes) display_lists.push_back(node.display_list);
+        model.meshes=decoder.decode_model_tree(display_lists,materials,
+                                               layout==GeometryLayout::DisplayListLinks);
     }
     if (!animation.empty()) {
         const auto symbol = archive_.symbol(animation);
@@ -175,29 +194,80 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
     return model;
 }
 
-Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout layout) {
+Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout layout,
+                                    std::array<std::uint32_t,2> setup_parts) {
     const auto desc=archive_.symbol(descriptor);
     if (!desc) throw std::runtime_error("missing fighter descriptor symbol: "+std::string(descriptor));
     Model3D model;
-    model.nodes=n64::SkeletonDecoder(archive_).decode(*desc);
+    const auto source_nodes=n64::SkeletonDecoder(archive_).decode(*desc);
+    n64::DisplayListDecoder decoder(archive_);
+    auto source_materials=decoder.materials({desc->file,0},source_nodes.size());
+    // FTData.o_attributes and FTCommonPart.p_costume_matanim_joints from
+    // ftdata.c / lbCommonAddMObjForFighterPartsDObj. Costume 0 is evaluated
+    // once, before decoding the DL (including its palette loads).
+    static const std::unordered_map<std::uint32_t,n64::Address> attributes{
+        {296,{203,0x428}}, {313,{209,0x46c}}, {317,{213,0x4a4}},
+        {320,{217,0x610}}, {323,{221,0x580}}, {324,{225,0x708}},
+        {338,{247,0x47c}}, {332,{236,0x488}}, {328,{229,0x808}},
+        {341,{243,0x41c}}, {330,{233,0x474}}, {335,{239,0x5bc}}
+    };
+    if (const auto entry=attributes.find(desc->file); entry!=attributes.end()) {
+        const auto attr=entry->second;
+        const auto parts=archive_.resolve({attr.file,attr.offset+0x2d4});
+        const auto costumes=parts ? archive_.resolve({parts->file,parts->offset+8}) : std::nullopt;
+        if (costumes) {
+            const auto scripts=material_animation_table(archive_,*costumes,source_materials);
+            n64::AnimationDecoder animation(archive_);
+            for (std::size_t i=0;i<source_materials.size();++i)
+                for (std::size_t j=0;j<source_materials[i].size();++j) {
+                    if (!scripts[i][j]) continue;
+                    auto& material=source_materials[i][j];
+                    n64::MaterialPose initial;
+                    initial.colors[0]=material.primitive;
+                    if (material.light1) initial.colors[3]=*material.light1;
+                    if (material.light2) initial.colors[4]=*material.light2;
+                    const auto pose=animation.sample_material(*scripts[i][j],0,initial);
+                    material.primitive=pose.colors[0];
+                    if (material.light1) material.light1=pose.colors[3];
+                    if (material.light2) material.light2=pose.colors[4];
+                    if (material.sprites)
+                        material.image=archive_.resolve({material.sprites->file,
+                            material.sprites->offset+4U*static_cast<unsigned>(pose.tracks[0])});
+                    if (material.palettes)
+                        material.palette=archive_.resolve({material.palettes->file,
+                            material.palettes->offset+4U*static_cast<unsigned>(pose.tracks[9])});
+                }
+        }
+    }
+    const auto enabled=[&](std::size_t index) {
+        const auto word=index/32;
+        return word<setup_parts.size() &&
+               (setup_parts[word]&(1U<<(31U-static_cast<unsigned>(index%32))))!=0;
+    };
+    model.nodes.reserve(source_nodes.size());
+    model.materials.reserve(source_nodes.size());
+    for (std::size_t i=0;i<source_nodes.size();++i) {
+        if (!enabled(i)) continue;
+        model.nodes.push_back(source_nodes[i]);
+        model.materials.push_back(source_materials[i]);
+    }
     model.meshes.resize(model.nodes.size());
     model.parent_meshes.resize(model.nodes.size());
     model.animation.resize(model.nodes.size());
-    n64::DisplayListDecoder decoder(archive_);
-    const auto materials=decoder.materials({desc->file,0},model.nodes.size());
-    model.materials=materials;
     model.material_animation.resize(model.nodes.size());
-    for (std::size_t i=0;i<model.nodes.size();++i) if (model.nodes[i].display_list) {
-        if (layout==GeometryLayout::JointPairs) {
-            const auto pair=*model.nodes[i].display_list;
-            if (const auto parent=archive_.resolve(pair))
-                model.parent_meshes[i]=decoder.decode(*parent,materials[i]);
-            if (const auto local=archive_.resolve({pair.file,pair.offset+4}))
-                model.meshes[i]=decoder.decode(*local,materials[i]);
-        }
-        else if (layout==GeometryLayout::DisplayListLinks)
-            model.meshes[i]=decoder.decode_links(*model.nodes[i].display_list,materials[i]);
-        else model.meshes[i]=decoder.decode(*model.nodes[i].display_list,materials[i]);
+    if (layout==GeometryLayout::JointPairs) {
+        std::vector<std::optional<n64::Address>> pairs;
+        pairs.reserve(model.nodes.size());
+        for (const auto& node:model.nodes) pairs.push_back(node.display_list);
+        auto decoded=decoder.decode_joint_tree(pairs,model.materials);
+        model.parent_meshes=std::move(decoded.before);
+        model.meshes=std::move(decoded.after);
+    } else {
+        std::vector<std::optional<n64::Address>> display_lists;
+        display_lists.reserve(model.nodes.size());
+        for (const auto& node:model.nodes) display_lists.push_back(node.display_list);
+        model.meshes=decoder.decode_model_tree(display_lists,model.materials,
+                                               layout==GeometryLayout::DisplayListLinks);
     }
     model.is_fighter=true;
     return model;
@@ -265,17 +335,30 @@ void Scene3DRenderer::begin() {
     batching_ = true;
 }
 
+Vec3 Scene3DRenderer::fighter_position(const Model3D& model, float frame) {
+    auto position=model.position;
+    if (model.fighter_wrapper==Model3D::FighterWrapper::TransN && model.fighter_root_animation) {
+        const auto initial=animation_.pose(model.fighter_root);
+        const auto start=animation_.sample16(*model.fighter_root_animation,0,initial);
+        const auto current=animation_.sample16(*model.fighter_root_animation,frame,initial);
+        position.x+=current.tracks[4]-start.tracks[4];
+        position.y+=current.tracks[5]-start.tracks[5];
+        position.z+=current.tracks[6]-start.tracks[6];
+    }
+    return position;
+}
+
 Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame,
                                          const Model3D& carrier, float carrier_frame,
                                          std::size_t carrier_joint) {
     Model3D placed=model;
     const auto carrier_matrices=world_matrices(animation_,carrier,carrier_frame);
-    if (carrier_joint>=carrier_matrices.size() || model.nodes.empty()) return placed;
+    if (carrier_joint>=carrier_matrices.world.size() || model.nodes.empty()) return placed;
     auto first_child=model.fighter_root;
     if (model.fighter_root_animation)
         n64::AnimationDecoder::apply(first_child,animation_.sample16(
             *model.fighter_root_animation,model_frame,animation_.pose(first_child)));
-    const Matrix attachment=multiply(carrier_matrices[carrier_joint],
+    const Matrix attachment=multiply(carrier_matrices.world[carrier_joint],
                                      translation({-first_child.translate[0],-first_child.translate[1],
                                                   -first_child.translate[2]}));
     // The original helper subtracts TopN's first child (TransN), then copies
@@ -284,9 +367,9 @@ Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame
     // attachment offset.
     Matrix root;
     for (int column=0;column<3;++column) {
-        Vec3 axis{carrier_matrices[carrier_joint].m[column],
-                  carrier_matrices[carrier_joint].m[4+column],
-                  carrier_matrices[carrier_joint].m[8+column]};
+        Vec3 axis{carrier_matrices.world[carrier_joint].m[column],
+                  carrier_matrices.world[carrier_joint].m[4+column],
+                  carrier_matrices.world[carrier_joint].m[8+column]};
         axis=normalize(axis);
         root.m[column]=axis.x;
         root.m[4+column]=axis.y;
@@ -329,7 +412,6 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
             runtime_flags[node]=pose.flags;
         }
     }
-    std::array<std::size_t,40> latest_at_depth{};
     int hidden_depth=-1;
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
         const int node_depth=model.nodes[node_index].depth;
@@ -339,7 +421,7 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
             hidden_depth=node_depth;
             continue;
         }
-        const Matrix& world=matrices[node_index];
+        const Matrix& world=matrices.world[node_index];
         std::vector<n64::MaterialPose> material_poses;
         if (node_index<model.materials.size()) {
             material_poses.resize(model.materials[node_index].size());
@@ -357,11 +439,17 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
             }
         }
         const auto render_mesh=[&](const n64::Mesh& mesh,const Matrix& mesh_world) {
+        const auto vertex_matrix=[&](const n64::Vertex& vertex) -> const Matrix& {
+            if (vertex.transform_node<matrices.world.size())
+                return vertex.transform_parent ? matrices.parent[vertex.transform_node]
+                                               : matrices.world[vertex.transform_node];
+            return mesh_world;
+        };
         for (std::size_t i=0;i+2<mesh.vertices.size();i+=3) {
             std::array<Vec3,3> world_points{};
             for (int j=0;j<3;++j) {
                 const auto& source=mesh.vertices[i+j];
-                world_points[j]=transform(mesh_world,{source.x,source.y,source.z});
+                world_points[j]=transform(vertex_matrix(source),{source.x,source.y,source.z});
             }
             const float edge0=std::sqrt(std::max(1.0e-12f,dot(sub(world_points[1],world_points[0]),
                                                               sub(world_points[1],world_points[0]))));
@@ -382,7 +470,7 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 const Vec3 relative=sub(point,camera.eye);
                 const bool valid_source_normal=dot(source.normal,source.normal)>1.0e-6f;
                 const Vec3 world_normal=source.lit&&valid_source_normal
-                    ? normalize(transform_normal(mesh_world,source.normal)) : face_normal;
+                    ? normalize(transform_normal(vertex_matrix(source),source.normal)) : face_normal;
                 Color surface=source.color;
                 if (source.material_index<material_poses.size()) {
                     const bool animated=node_index<model.material_animation.size()&&
@@ -415,14 +503,9 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
         };
         if ((runtime_flags[node_index]&1U)==0&&node_index<model.parent_meshes.size() &&
             !model.parent_meshes[node_index].vertices.empty()) {
-            const auto depth=model.nodes[node_index].depth;
-            const Matrix& parent_world=(depth>0 && depth<=40)
-                ? matrices[latest_at_depth[static_cast<std::size_t>(depth-1)]] : world;
-            render_mesh(model.parent_meshes[node_index],parent_world);
+            render_mesh(model.parent_meshes[node_index],matrices.parent[node_index]);
         }
         if ((runtime_flags[node_index]&1U)==0) render_mesh(model.meshes[node_index],world);
-        const auto depth=model.nodes[node_index].depth;
-        if (depth>=0 && depth<40) latest_at_depth[static_cast<std::size_t>(depth)]=node_index;
     }
     if (immediate) flush(render);
 }

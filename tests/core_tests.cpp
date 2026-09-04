@@ -87,37 +87,106 @@ int main() {
     assert(halo.emit_spotlight);
     assert(!halo.receive_lighting);
     assert(std::abs(halo.position.x + 1149.30f) < 0.1f);
+    assert(resources.model("boss.pose1").nodes.size() == 25);
+    assert(resources.model("mario.pickup").nodes.size() == 24);
+    assert(resources.model("link.fall").nodes.size() == 29);
     const auto fighter_scripts = animation_decoder.table({362, 0}, 25);
     assert(fighter_scripts[1]);
     const auto fighter_pose = animation_decoder.sample16(*fighter_scripts[1], 50);
     for (const auto value : fighter_pose.tracks) assert(std::isfinite(value));
     assert(std::abs(fighter_pose.tracks[0]) < 10.0f);
     assert(fighter_pose.tracks[7] > 0.01f && fighter_pose.tracks[7] < 10.0f);
-    const auto mario_model = scene_loader.fighter_model("llMarioModelJointTreeDObjDesc", sagas::GeometryLayout::Direct);
+    const auto mario_spec=sagas::fighter_model_spec(sagas::FighterKind::Mario);
+    const auto mario_model = scene_loader.fighter_model(mario_spec.descriptor,
+                                                        sagas::GeometryLayout::Direct,
+                                                        mario_spec.setup_parts);
+    assert(mario_model.nodes.size()==24);
     std::size_t mario_material_commands{};
-    for (const auto& part:mario_model.meshes) mario_material_commands+=part.material_commands;
+    std::size_t mario_triangles{}, mario_rejected{}, mario_unsupported{};
+    std::size_t mario_textured{}, mario_untextured{};
+    for (const auto& part:mario_model.meshes) {
+        mario_material_commands+=part.material_commands;
+        mario_triangles+=part.vertices.size()/3;
+        mario_rejected+=part.rejected_triangles;
+        mario_unsupported+=part.unsupported_commands;
+        for (const auto& vertex:part.vertices) {
+            mario_textured+=vertex.texture!=nullptr;
+            mario_untextured+=vertex.texture==nullptr;
+        }
+    }
+    assert(mario_triangles==320 && mario_rejected==0 && mario_unsupported==0);
+    assert(mario_textured==192 && mario_untextured==768);
     assert(mario_material_commands>0);
-    const auto mario_materials=sagas::n64::DisplayListDecoder(archive).materials({296,0},mario_model.nodes.size());
     std::size_t mario_material_count{};
     bool saw_material_image{}, saw_material_primitive{};
-    for (const auto& joint:mario_materials) for (const auto& material:joint) {
+    for (const auto& joint:mario_model.materials) for (const auto& material:joint) {
         ++mario_material_count;
         saw_material_image|=material.image.has_value();
         saw_material_primitive|=material.set_primitive;
     }
     assert(mario_material_count>=14 && saw_material_image && saw_material_primitive);
+    for (std::uint8_t value=0;value<static_cast<std::uint8_t>(sagas::FighterKind::Count);++value) {
+        const auto spec=sagas::fighter_model_spec(static_cast<sagas::FighterKind>(value));
+        const auto fighter=scene_loader.fighter_model(
+            spec.descriptor,
+            spec.joint_pairs ? sagas::GeometryLayout::JointPairs : sagas::GeometryLayout::Direct,
+            spec.setup_parts);
+        std::size_t triangles{}, rejected{}, unsupported{}, textured{}, untextured{};
+        for (const auto* parts:{&fighter.meshes,&fighter.parent_meshes})
+            for (const auto& part:*parts) {
+                triangles+=part.vertices.size()/3;
+                rejected+=part.rejected_triangles;
+                unsupported+=part.unsupported_commands;
+                for (const auto& vertex:part.vertices) {
+                    textured+=vertex.texture!=nullptr;
+                    untextured+=vertex.texture==nullptr;
+                }
+            }
+        if (rejected || unsupported) std::cerr << spec.descriptor << ": rejected=" << rejected << " unsupported=" << unsupported << "\n";
+        assert(triangles>0 && rejected==0 && unsupported==0);
+        assert(textured>0 && untextured>0);
+    }
     const auto boss_model = scene_loader.model("llBossModelJointTreeDObjDesc", {}, sagas::GeometryLayout::JointPairs);
+    std::size_t boss_triangles{}, boss_rejected{}, boss_unsupported{}, boss_seam_triangles{};
+    const auto count_boss_part=[&](const sagas::n64::Mesh& part) {
+        boss_triangles+=part.vertices.size()/3;
+        boss_rejected+=part.rejected_triangles;
+        boss_unsupported+=part.unsupported_commands;
+        for (std::size_t i=0;i+2<part.vertices.size();i+=3) {
+            const auto binding=[](const sagas::n64::Vertex& vertex) {
+                return std::pair{vertex.transform_node,vertex.transform_parent};
+            };
+            boss_seam_triangles+=binding(part.vertices[i])!=binding(part.vertices[i+1]) ||
+                                 binding(part.vertices[i])!=binding(part.vertices[i+2]);
+        }
+    };
+    for (const auto& part : boss_model.meshes) {
+        count_boss_part(part);
+    }
+    for (const auto& part : boss_model.parent_meshes) {
+        count_boss_part(part);
+    }
+    assert(boss_triangles==474 && boss_rejected==0 && boss_unsupported==0);
+    assert(boss_seam_triangles==207);
+    bool saw_boss_light{};
+    for (const auto& part : boss_model.meshes)
+        for (const auto& vertex : part.vertices)
+            if (vertex.light1 && vertex.light1->r > 200) saw_boss_light = true;
+    for (const auto& part : boss_model.parent_meshes)
+        for (const auto& vertex : part.vertices)
+            if (vertex.light1 && vertex.light1->r > 200) saw_boss_light = true;
+    assert(saw_boss_light);
     auto boss_animated=boss_model;
     const auto boss_scripts=animation_decoder.table({458,0},boss_animated.nodes.size()+1);
     boss_animated.fighter_root.scale={1,1,1};
     boss_animated.fighter_root_animation=boss_scripts.front();
-    boss_animated.fighter_wrapper=sagas::Model3D::FighterWrapper::TransN;
+    boss_animated.fighter_wrapper=sagas::Model3D::FighterWrapper::XRotN;
     boss_animated.animation.assign(boss_scripts.begin()+1,boss_scripts.end());
     boss_animated.fighter_animation=true;
     auto mario_animated=mario_model;
     mario_animated.fighter_root.scale={1,1,1};
     mario_animated.fighter_root_animation=fighter_scripts.front();
-    mario_animated.fighter_wrapper=sagas::Model3D::FighterWrapper::TransN;
+    mario_animated.fighter_wrapper=sagas::Model3D::FighterWrapper::XRotN;
     mario_animated.animation.assign(fighter_scripts.begin()+1,fighter_scripts.end());
     mario_animated.fighter_animation=true;
     sagas::Scene3DRenderer renderer(archive);
@@ -126,6 +195,23 @@ int main() {
         assert(placed.root_transform);
         for (const float value : *placed.root_transform) assert(std::isfinite(value));
     }
+    resources.activate("room.action");
+    const auto& falling=resources.model("mario.fall");
+    assert(falling.fighter_wrapper==sagas::Model3D::FighterWrapper::TransN);
+    const auto release_position=renderer.fighter_position(falling,0);
+    const auto midfall_position=renderer.fighter_position(falling,10);
+    const auto landed_position=renderer.fighter_position(falling,70);
+    assert(midfall_position.y<release_position.y-500);
+    assert(std::abs(landed_position.y-release_position.y+1949.5f)<0.01f);
+    assert(std::abs(renderer.fighter_position(falling,759).y-landed_position.y)<0.01f);
+    const auto& link_drop=resources.model("link.fall");
+    assert(std::abs(link_drop.position.y-4038.864014f)<0.01f);
+    assert(renderer.fighter_position(link_drop,70).y<link_drop.position.y-1900);
+    // The ROM's base shirt is green; costume 0 changes it to Mario red.
+    const auto shirt=mario_model.materials[4][0].primitive;
+    assert(shirt.r>180 && shirt.g<50 && shirt.b<50);
+    const auto pants=mario_model.materials[15][0].primitive;
+    assert(pants.b>pants.r && pants.b>pants.g);
     struct ModelCase { const char* descriptor; const char* animation; sagas::GeometryLayout layout; };
     const ModelCase opening_models[]{
         {"llMVCommonRoomBackgroundDObjDesc", "", sagas::GeometryLayout::DisplayListLinks},
@@ -188,6 +274,14 @@ int main() {
     // face must not flicker darker as the camera moves.
     assert(front_lit.r==back_lit.r && front_lit.g==back_lit.g && front_lit.b==back_lit.b);
     assert(front_lit.r>side_lit.r);
+    const auto early_room_rig=sagas::LightingSystem::opening_room_at(100);
+    // A dim room still needs a useful ambient floor and directional light.
+    // Regressing to the old double-dark values made every unlit face black.
+    assert((early_room_rig.ambient.r/255.0f)*early_room_rig.ambient_intensity>0.15f);
+    assert(early_room_rig.key.intensity>0.5f);
+    const auto early_room_surface=sagas::LightingSystem::shade(
+        {180,180,180,255},early_room_rig.key.direction,{0,0,1},early_room_rig);
+    assert(early_room_surface.r>50 && early_room_surface.g>45 && early_room_surface.b>40);
     auto room_rig=sagas::LightingSystem::opening_room();
     sagas::LightingSystem::aim_opening_spotlight(room_rig,{ -1149.30f, 2247.12f, -3681.99f },1.0f);
     assert(room_rig.spot.enabled);

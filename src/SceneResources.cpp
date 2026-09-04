@@ -11,7 +11,7 @@ namespace {
 
 constexpr std::size_t header_size = 28;
 constexpr std::size_t bundle_size = 12;
-constexpr std::size_t resource_size = 52;
+constexpr std::size_t resource_size = 60;
 constexpr std::size_t segment_size = 36;
 constexpr std::size_t cue_size = 20;
 
@@ -79,7 +79,7 @@ void SceneResourceManager::load_manifest(std::string_view logical) {
     clear();
     const auto blob = assets_.blob(logical);
     const std::span<const std::byte> data(*blob);
-    if (data.size() < header_size || std::memcmp(data.data(), "SGSC", 4) != 0 || u16(data, 4) != 2)
+    if (data.size() < header_size || std::memcmp(data.data(), "SGSC", 4) != 0 || u16(data, 4) != 3)
         throw std::runtime_error("unsupported scene resource manifest: " + std::string(logical));
     const auto bundle_count = u32(data, 8);
     const auto resource_count = u32(data, 12);
@@ -128,6 +128,7 @@ void SceneResourceManager::load_manifest(std::string_view logical) {
             descriptor.transition_frame = f32(data, item + 32);
             descriptor.material_start = f32(data, item + 36);
             descriptor.position = {f32(data, item + 40), f32(data, item + 44), f32(data, item + 48)};
+            descriptor.setup_parts = {u32(data, item + 52), u32(data, item + 56)};
             if (descriptor.key.empty() || owners_.contains(descriptor.key))
                 throw std::runtime_error("scene manifest contains an empty or duplicate resource key");
             owners_.emplace(descriptor.key, bundle.name);
@@ -183,7 +184,8 @@ Model3D SceneResourceManager::build_model(
             else throw std::runtime_error("missing scene animation symbol: " + descriptor.animation);
         }
     } else if (descriptor.kind == Kind::Fighter) {
-        model = loader_.fighter_model(descriptor.descriptor, descriptor.layout);
+        model = loader_.fighter_model(descriptor.descriptor, descriptor.layout,
+                                      descriptor.setup_parts);
         n64::AnimationDecoder animation(archive_);
         const auto scripts = animation.table({descriptor.animation_file, 0}, model.nodes.size() + 1);
         if (scripts.empty()) throw std::runtime_error("fighter animation table is empty: " + descriptor.key);

@@ -51,7 +51,9 @@ public:
                                 std::string_view materials = {},
                                 std::string_view material_animation = {});
     [[nodiscard]] Model3D fighter_model(std::string_view descriptor,
-                                        GeometryLayout layout = GeometryLayout::Direct);
+                                        GeometryLayout layout = GeometryLayout::Direct,
+                                        std::array<std::uint32_t,2> setup_parts = {
+                                            0xffffffffU, 0xffffffffU});
     [[nodiscard]] Model3D display_list(std::string_view symbol,
                                       GeometryLayout layout = GeometryLayout::Direct,
                                       std::string_view materials = {},
@@ -71,6 +73,7 @@ public:
     [[nodiscard]] Model3D placed_at_joint(const Model3D& model, float model_frame,
                                           const Model3D& carrier, float carrier_frame,
                                           std::size_t carrier_joint);
+    [[nodiscard]] Vec3 fighter_position(const Model3D& model, float frame);
     void flush(RenderEngine& render);
     void end(RenderEngine& render);
 private:

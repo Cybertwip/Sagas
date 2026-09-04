@@ -28,26 +28,29 @@ LightingRig LightingSystem::opening_room_at(int local) {
     rig.environment_up = {0,1,0};
     rig.key.direction = {0.5f,0.70710678f,0.5f};
     rig.key.color = {255,244,224,255};
-    // The room stays a night interior until the 3-2-1 snap (tic 860).
-    // Spotlight at 500 is a narrow cone; it is not the house lights.
+    // Keep the colour and scalar separate.  The previous values multiplied a
+    // very dark ambient colour by a very small intensity, leaving only about
+    // four percent illumination and turning the room into black geometry.
+    // The original room uses a 0x20 ambient floor plus a white directional
+    // light; this is the softer forward-rendered equivalent.
     if (local < 500) {
-        rig.ambient = {48,44,52,255};
-        rig.ambient_intensity = 0.22f;
-        rig.key.intensity = 0.04f;
-        rig.reflection = {40,48,64,255};
-        rig.reflection_intensity = 0.04f;
-        rig.shininess = 4.0f;
-    } else if (local < 860) {
-        rig.ambient = {72,64,70,255};
+        rig.ambient = {148,142,158,255};
         rig.ambient_intensity = 0.28f;
-        rig.key.intensity = 0.08f;
-        rig.reflection = {80,70,60,255};
-        rig.reflection_intensity = 0.08f;
-        rig.shininess = 6.0f;
+        rig.key.intensity = 0.56f;
+        rig.reflection = {92,106,132,255};
+        rig.reflection_intensity = 0.07f;
+        rig.shininess = 5.0f;
+    } else if (local < 860) {
+        rig.ambient = {170,154,150,255};
+        rig.ambient_intensity = 0.31f;
+        rig.key.intensity = 0.62f;
+        rig.reflection = {132,116,108,255};
+        rig.reflection_intensity = 0.10f;
+        rig.shininess = 7.0f;
     } else {
         rig.ambient = {176,180,192,255};
         rig.ambient_intensity = 0.78f;
-        rig.key.intensity = 0.42f;
+        rig.key.intensity = 0.58f;
         rig.reflection = {205,218,236,255};
         rig.reflection_intensity = 0.16f;
         rig.shininess = 8.0f;

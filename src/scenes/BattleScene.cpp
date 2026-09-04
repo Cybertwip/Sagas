@@ -10,23 +10,6 @@
 namespace sagas {
 namespace {
 
-const char* descriptor_for(FighterKind kind) {
-    switch (kind) {
-        case FighterKind::Luigi: return "llLuigiModelJointTreeDObjDesc";
-        case FighterKind::Donkey: return "llDonkeyModelJointTreeDObjDesc";
-        case FighterKind::Link: return "llLinkModelJointTreeDObjDesc";
-        case FighterKind::Samus: return "llSamusModelJointTreeDObjDesc";
-        case FighterKind::Captain: return "llCaptainModelJointTreeDObjDesc";
-        case FighterKind::Ness: return "llNessModelJointTreeDObjDesc";
-        case FighterKind::Yoshi: return "llYoshiModelJointTreeDObjDesc";
-        case FighterKind::Kirby: return "llKirbyModelJointTreeDObjDesc";
-        case FighterKind::Fox: return "llFoxModelJointTreeDObjDesc";
-        case FighterKind::Pikachu: return "llPikachuModelJointTreeDObjDesc";
-        case FighterKind::Purin: return "llPurinModelJointTreeDObjDesc";
-        default: return "llMarioModelJointTreeDObjDesc";
-    }
-}
-
 class BattleScene final : public Scene {
 public:
     BattleScene(FighterKind p1, FighterKind p2, int stock)
@@ -46,8 +29,11 @@ public:
         renderer_ = std::make_unique<Scene3DRenderer>(services.resources.archive());
         for (int i = 0; i < 2; ++i) {
             try {
-                models_[i] = loader_->fighter_model(descriptor_for(bodies_[i].kind),
-                                                    GeometryLayout::Direct);
+                const auto spec=fighter_model_spec(bodies_[i].kind);
+                models_[i] = loader_->fighter_model(spec.descriptor,
+                                                    spec.joint_pairs ? GeometryLayout::JointPairs
+                                                                     : GeometryLayout::Direct,
+                                                    spec.setup_parts);
                 models_[i].scale = {1,1,1};
             } catch (const std::exception&) {}
         }

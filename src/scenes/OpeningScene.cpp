@@ -121,15 +121,13 @@ private:
     void draw_room_shell(RenderEngine& r, const Camera3D& camera, float camera_frame,
                          int local, const LightingRig& lights) {
         renderer_->draw(r,model("room.outside"),camera,camera_frame,{255,255,255,255},lights);
-        // Haze and sunlight are translucent N64 combiner passes.  Preserve
-        // them as subtle atmosphere instead of replacing the window with an
-        // opaque rectangle.
-        renderer_->draw(r,model("room.haze"),camera,camera_frame,{255,255,255,48},lights);
+        // The original DL link and combiner provide atmosphere opacity.
+        renderer_->draw(r,model("room.haze"),camera,camera_frame,{255,255,255,255},lights);
         renderer_->draw(r,model("room.background"),camera,static_cast<float>(local),
                         {255,255,255,255},lights);
         if (local < 450)
             renderer_->draw(r,model("room.sunlight"),camera,camera_frame,
-                            {255,255,255,40},lights);
+                            {255,255,255,255},lights);
         renderer_->draw(r,model("room.desk"),camera,camera_frame,{255,255,255,255},lights);
         const float prop_frame=static_cast<float>(std::max(local-560,0));
         renderer_->draw(r,model("room.books"),camera,prop_frame,{255,255,255,255},lights);

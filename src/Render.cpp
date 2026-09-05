@@ -104,6 +104,15 @@ uniform vec3 shadowUp;
 uniform vec3 shadowForward;
 uniform vec3 shadowMinimum;
 uniform vec3 shadowMaximum;
+uniform bool rdpEnabled;
+uniform bool useLighting;
+uniform vec3 keyDirection;
+uniform vec3 n64Diffuse;
+uniform vec3 n64Ambient;
+uniform bool textureGen;
+uniform bool textureGenLinear;
+uniform vec2 generatedScale;
+out vec4 nativeShade;
 out vec3 normal;
 out vec3 viewDirection;
 out vec3 viewPosition;
@@ -121,6 +130,15 @@ void main() {
     viewPosition=inPosition;
     vertexColor=inColor;
     textureUV=inUV;
+    nativeShade=inColor;
+    if (rdpEnabled && useLighting) {
+        vec3 N=normalize(inNormal);
+        nativeShade.rgb=clamp(n64Ambient+n64Diffuse*max(dot(N,normalize(keyDirection)),0.0),0.0,1.0);
+        if (textureGen) {
+            vec2 generated=textureGenLinear ? acos(clamp(-N.xy,-1.0,1.0))/3.14159265 : (N.xy+1.0)*0.5;
+            textureUV=generated*generatedScale;
+        }
+    }
     vec3 lightPosition=vec3(dot(inPosition,shadowRight),dot(inPosition,shadowUp),
                             dot(inPosition,shadowForward));
     shadowCoordinate=(lightPosition-shadowMinimum)/max(shadowMaximum-shadowMinimum,vec3(0.0001));
@@ -130,6 +148,14 @@ void main() {
 constexpr const char* fragment_forward=R"GLSL(#version 410 core
 uniform sampler2D colorTexture;
 uniform sampler2DShadow shadowMap;
+uniform bool rdpEnabled;
+uniform uvec2 combineWords;
+uniform int combineCycles;
+uniform vec4 primitiveColor;
+uniform vec4 environmentColor;
+uniform vec4 drawTint;
+uniform float alphaThreshold;
+in vec4 nativeShade;
 uniform bool useTexture;
 uniform bool useLighting;
 uniform bool translucent;
@@ -186,6 +212,46 @@ float filteredShadow(vec3 coordinate,vec3 N,vec3 L) {
     return visibility/25.0;
 }
 
+// Nintendo RDP color-combiner muxes: each component evaluates (A-B)*C+D.
+vec3 rgbSource(uint selector,int inputSlot,vec4 combined,vec4 texel,vec4 shade) {
+    if (selector==0u) return combined.rgb;
+    if (selector==1u || selector==2u) return texel.rgb;
+    if (selector==3u) return primitiveColor.rgb;
+    if (selector==4u) return shade.rgb;
+    if (selector==5u) return environmentColor.rgb;
+    if (inputSlot==2) {
+        if (selector==7u) return vec3(combined.a);
+        if (selector==8u || selector==9u) return vec3(texel.a);
+        if (selector==10u) return vec3(primitiveColor.a);
+        if (selector==11u) return vec3(shade.a);
+        if (selector==12u) return vec3(environmentColor.a);
+        return vec3(0.0);
+    }
+    if (selector==6u && inputSlot!=1) return vec3(1.0);
+    return vec3(0.0);
+}
+float alphaSource(uint selector,bool multiplier,vec4 combined,vec4 texel,vec4 shade) {
+    if (selector==0u) return multiplier ? 0.0 : combined.a;
+    if (selector==1u || selector==2u) return texel.a;
+    if (selector==3u) return primitiveColor.a;
+    if (selector==4u) return shade.a;
+    if (selector==5u) return environmentColor.a;
+    if (selector==6u) return multiplier ? 0.0 : 1.0;
+    return 0.0;
+}
+vec4 combineCycle(int cycle,vec4 previous,vec4 texel,vec4 shade) {
+    uint h=combineWords.x, l=combineWords.y;
+    uvec4 rgb=cycle==0 ? uvec4((h>>20)&15u,(l>>28)&15u,(h>>15)&31u,(l>>15)&7u)
+                      : uvec4((h>>5)&15u,(l>>24)&15u,h&31u,(l>>6)&7u);
+    uvec4 a=cycle==0 ? uvec4((h>>12)&7u,(l>>12)&7u,(h>>9)&7u,(l>>9)&7u)
+                    : uvec4((l>>21)&7u,(l>>3)&7u,(l>>18)&7u,l&7u);
+    vec3 color=(rgbSource(rgb.x,0,previous,texel,shade)-rgbSource(rgb.y,1,previous,texel,shade))
+        *rgbSource(rgb.z,2,previous,texel,shade)+rgbSource(rgb.w,3,previous,texel,shade);
+    float alpha=(alphaSource(a.x,false,previous,texel,shade)-alphaSource(a.y,false,previous,texel,shade))
+        *alphaSource(a.z,true,previous,texel,shade)+alphaSource(a.w,false,previous,texel,shade);
+    return clamp(vec4(color,alpha),0.0,1.0);
+}
+
 void main() {
     vec4 texel=vec4(1.0);
     if (useTexture) {
@@ -193,6 +259,17 @@ void main() {
         vec2 uv=vec2(n64Coordinate(textureUV.x,extent.x,textureMode.x,textureMask.x,textureWindow.x),
                      n64Coordinate(textureUV.y,extent.y,textureMode.y,textureMask.y,textureWindow.y));
         texel=texture(colorTexture,uv);
+    }
+    if (rdpEnabled) {
+        // Textures are uploaded as sRGB; the RDP combines their encoded
+        // channels, then the framebuffer performs the display conversion.
+        vec4 encoded=vec4(pow(max(texel.rgb,vec3(0.0)),vec3(1.0/2.2)),texel.a);
+        vec4 combined=vec4(0.0);
+        if (combineCycles==2) combined=combineCycle(0,combined,encoded,nativeShade);
+        combined=combineCycle(1,combined,encoded,nativeShade)*drawTint;
+        if (combined.a<=alphaThreshold) discard;
+        fragmentColor=vec4(pow(max(combined.rgb,vec3(0.0)),vec3(2.2)),translucent ? combined.a : 1.0);
+        return;
     }
     vec3 vertexLinear=pow(max(vertexColor.rgb,vec3(0.0)),vec3(2.2));
     vec3 albedo=texel.rgb*vertexLinear*materialDiffuse;
@@ -625,6 +702,23 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     glUniform1i(uniform("shadowMap"),1);
     glUniform1i(uniform("useTexture"),texture_handle!=0);
     glUniform1i(uniform("useLighting"),material.lit);
+    glUniform1i(uniform("rdpEnabled"),material.rdp.enabled);
+    glUniform2ui(uniform("combineWords"),material.rdp.combine_hi,material.rdp.combine_lo);
+    glUniform1i(uniform("combineCycles"),material.rdp.cycles);
+    const auto rgba_uniform=[&](const char* name,Color c) {
+        glUniform4f(uniform(name),c.r/255.0f,c.g/255.0f,c.b/255.0f,c.a/255.0f);
+    };
+    rgba_uniform("primitiveColor",material.rdp.primitive);
+    rgba_uniform("environmentColor",material.rdp.environment);
+    rgba_uniform("drawTint",material.rdp.tint);
+    glUniform1f(uniform("alphaThreshold"),material.rdp.alpha_threshold);
+    glUniform1i(uniform("textureGen"),material.rdp.texture_gen);
+    glUniform1i(uniform("textureGenLinear"),material.rdp.texture_gen_linear);
+    glUniform2f(uniform("generatedScale"),material.rdp.generated_scale.x,material.rdp.generated_scale.y);
+    const auto diffuse=material.material_diffuse;
+    const auto ambient=material.material_ambient;
+    glUniform3f(uniform("n64Diffuse"),diffuse.r/255.0f,diffuse.g/255.0f,diffuse.b/255.0f);
+    glUniform3f(uniform("n64Ambient"),ambient.r/255.0f,ambient.g/255.0f,ambient.b/255.0f);
     glUniform1i(uniform("translucent"),material.translucent);
     glUniform1i(uniform("shadowsReady"),shadows_ready_&&material.lit);
     glUniform2i(uniform("textureMode"),material.texture_mode_s,material.texture_mode_t);

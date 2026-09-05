@@ -534,7 +534,7 @@ void Scene3DRenderer::flush(RenderEngine& render) {
     };
     std::vector<ForwardVertex> shadow_geometry;
     shadow_geometry.reserve(triangles_.size()*3);
-    for (const auto& triangle:triangles_) if (!triangle.translucent)
+    for (const auto& triangle:triangles_) if (!triangle.translucent && !triangle.rdp.enabled)
         for (const auto& point:triangle.points) shadow_geometry.push_back(convert(point));
     render.prepare_forward_shadows(shadow_geometry,triangles_.front().lights.key.direction);
 
@@ -548,6 +548,7 @@ void Scene3DRenderer::flush(RenderEngine& render) {
         // with those bytes is what tinted fighter meshes strange colors.
         if (triangle.material_light1) material.material_diffuse=*triangle.material_light1;
         if (triangle.material_light2) material.material_ambient=*triangle.material_light2;
+        else if (triangle.rdp.enabled) material.material_ambient={32,32,32,255};
         material.fov_y=triangle.fov_y;
         material.near_plane=triangle.near_plane;
         material.far_plane=triangle.far_plane;

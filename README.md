@@ -77,7 +77,21 @@ reversed relative to those bitfields.
 
 Fighter materials evaluate costume 0 before display-list decoding, including
 palette selection. Shade-only parts do not inherit a previous primitive color.
-The Python sequence viewer uses the same costume and root-motion rules.
+The Python sequence viewer uses the same costume, intensity-alpha, and root-motion rules.
+
+Cartridge geometry now carries its one/two-cycle RDP color combiner, primitive
+and environment colors, alpha comparison, culling, and texture-generation state
+into the native renderer. It uses interpolated vertex lighting rather than the
+engine's generic material highlights. Room haze and sunlight use their authored
+texture alpha. GPU texture entries retain ownership of their decoded image and
+are retired after scene resources release it, preventing stale textures when
+allocator addresses are reused.
+
+The eight fighter introductions use their source name cards, stance animations,
+posed-camera programs, split viewports, stage models, map spawn points, and
+motion-camera endpoints. Their motion panels use cartridge action clips, but
+full gameplay status/physics playback and effects remain outstanding. See
+[OPENING_TASKS.md](OPENING_TASKS.md) for the remaining fidelity work.
 
 ```sh
 cmake --build sagas/build -j
@@ -88,7 +102,8 @@ python3 sagas/tools/view_sequence.py --self-test
 
 C++ test assertions remain enabled in Release builds. The tests cover the
 1,949.5-unit Mario drop, stable landed position, Link's spawn position, the red
-costume shirt, blue overalls, and white shade-only gloves. Render captures
+costume shirt, blue overalls, white shade-only gloves, sunlight alpha, all eight
+stage models, and stance-table alignment. Render captures
 also check the attachment, landing, spotlight, and revival. These checks do
 not establish pixel-for-pixel parity for the entire opening; the renderer still
 approximates N64 lighting/compositing, and later segments retain placeholder

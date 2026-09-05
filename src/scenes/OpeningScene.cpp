@@ -330,6 +330,9 @@ private:
         const float remaining=1.0f-distance/600.0f;
         posed.position={intro.start.x*remaining,intro.start.y*remaining,0};
         Camera3D initial;
+        initial.fov_y=30;
+        initial.near_plane=100;
+        initial.far_plane=12800;
         initial.viewport=vp;
         initial.aspect=vp[2]/vp[3];
         const auto camera=loader_->camera(std::string("llMVOpeningCommon")+
@@ -368,6 +371,9 @@ private:
         r.reset_scissor();
         Camera3D camera;
         camera.viewport=vp;
+        camera.fov_y=38;
+        camera.near_plane=256;
+        camera.far_plane=39936;
         camera.aspect=vp[2]/vp[3];
         const float time=static_cast<float>(local-15);
         const float fraction=time/45.0f;

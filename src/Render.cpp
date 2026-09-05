@@ -114,7 +114,7 @@ uniform vec3 n64Ambient;
 uniform bool textureGen;
 uniform bool textureGenLinear;
 uniform vec2 generatedScale;
-out vec4 nativeShade;
+noperspective out vec4 nativeShade;
 out vec3 normal;
 out vec3 viewDirection;
 out vec3 viewPosition;
@@ -158,7 +158,7 @@ uniform vec4 environmentColor;
 uniform vec4 drawTint;
 uniform float alphaThreshold;
 uniform bool alphaTest;
-in vec4 nativeShade;
+noperspective in vec4 nativeShade;
 uniform bool useTexture;
 uniform bool useLighting;
 uniform bool translucent;
@@ -713,6 +713,13 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
         glDisable(GL_BLEND);
         glDepthMask(GL_TRUE);
     }
+    // N64 XLU depth comparison admits coplanar surfaces within the pixel's
+    // depth slope. A small raster bias avoids stippled self-occlusion of
+    // authored overlays (the chest front and room shadows) in the GL buffer.
+    if (material.rdp.enabled && material.translucent) {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(-1.0f,-1.0f);
+    } else glDisable(GL_POLYGON_OFFSET_FILL);
     glUseProgram(program_forward_);
     const auto uniform=[&](const char* name) { return glGetUniformLocation(program_forward_,name); };
     const auto& viewport=material.viewport;
@@ -790,6 +797,7 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(data.size()*sizeof(VertexForward)),data.data(),GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(data.size()));
     glDisable(GL_CULL_FACE);
+    glDisable(GL_POLYGON_OFFSET_FILL);
     reset_scissor();
 }
 

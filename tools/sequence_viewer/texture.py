@@ -1,4 +1,4 @@
-"""N64 texel decode matching remix/src/texture_decode.c (Smash Remix target)."""
+"""N64 texel decode, including intensity in both the RGB and alpha channels."""
 
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ def decode_texel(
             intensity = nibble(data, pixel) * 17
         else:
             intensity = data[pixel] if pixel < len(data) else 0
-        color = Color(intensity, intensity, intensity, 255)
+        color = Color(intensity, intensity, intensity, intensity)
     else:
         unmatched = True
         color = Color(255, 0, 255, 255)

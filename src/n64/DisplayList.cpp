@@ -292,6 +292,7 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
             vertex.light2=state.light2;
         }
         vertex.rdp=state.rdp;
+        vertex.rdp.cull_mode=state.geometry_mode&0x600U;
         vertex.rdp.primitive=state.primitive;
         vertex.rdp.environment=state.environment;
         vertex.rdp.texture_gen=(state.geometry_mode&0x40000U)!=0;
@@ -329,7 +330,7 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
         // alpha as coverage, and XLU surfaces with a=0 keep texel alpha.
         const bool contact_shadow=!vertex.lit && vertex.color.a<255 &&
             vertex.color.r<8 && vertex.color.g<8 && vertex.color.b<8;
-        vertex.translucent=state.translucent || contact_shadow;
+        vertex.translucent=state.translucent || (!state.rdp.enabled && contact_shadow);
         if (!vertex.lit && vertex.color.a==0 && !contact_shadow) vertex.color.a=255;
         mesh.vertices.push_back(std::move(vertex));
     }
@@ -517,10 +518,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                             return static_cast<float>(static_cast<std::int8_t>(packed >> shift)) / 127.0f;
                         };
                         out.vertex.normal = {component(24), component(16), component(8)};
-                        // With lighting enabled this fourth byte is not
-                        // vertex opacity (the vertex stores a normal, not
-                        // RGBA). Opaque lit surfaces must still write color
-                        // and depth; scene translucency is supplied by tint.
+                        // RGB bytes hold the normal; the fourth byte remains SHADE alpha.
                         out.vertex.color = state.primitive;
                         out.vertex.light1=state.light1;
                         out.vertex.light2=state.light2;
@@ -529,7 +527,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                             static_cast<std::uint8_t>(packed >> 16), static_cast<std::uint8_t>(packed >> 8),
                             static_cast<std::uint8_t>(packed)};
                     }
-                    out.vertex.shade=state.lighting ? Color{255,255,255,255} : out.vertex.color;
+                    out.vertex.shade=state.lighting ? Color{255,255,255,static_cast<std::uint8_t>(packed)} : out.vertex.color;
                     out.valid = true;
                 }
                 break;

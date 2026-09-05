@@ -153,25 +153,29 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
                             std::string_view material_animation_symbol) {
     const auto desc = archive_.symbol(descriptor);
     if (!desc) throw std::runtime_error("missing model descriptor symbol: " + std::string(descriptor));
+    const auto symbol=[&](std::string_view name) -> std::optional<n64::Address> {
+        if (name.empty()) return {};
+        const auto address=archive_.symbol(name);
+        if (!address) throw std::runtime_error("missing model resource: "+std::string(name));
+        return address;
+    };
+    return model(*desc,symbol(animation),layout,symbol(material_symbol),symbol(material_animation_symbol));
+}
+
+Model3D Scene3DLoader::model(n64::Address desc,std::optional<n64::Address> animation,
+                            GeometryLayout layout,std::optional<n64::Address> material_table,
+                            std::optional<n64::Address> material_animation) {
     Model3D model;
-    model.nodes = n64::SkeletonDecoder(archive_).decode(*desc);
+    model.nodes = n64::SkeletonDecoder(archive_).decode(desc);
     model.meshes.resize(model.nodes.size());
     model.parent_meshes.resize(model.nodes.size());
     n64::DisplayListDecoder decoder(archive_);
     std::vector<std::vector<n64::Material>> materials(model.nodes.size());
-    if (!material_symbol.empty()) {
-        const auto table=archive_.symbol(material_symbol);
-        if (!table) throw std::runtime_error("missing material symbol: " + std::string(material_symbol));
-        materials=decoder.materials(*table,model.nodes.size());
-    }
+    if (material_table) materials=decoder.materials(*material_table,model.nodes.size());
     model.materials=materials;
     model.material_animation.resize(model.nodes.size());
-    if (!material_animation_symbol.empty()) {
-        const auto table=archive_.symbol(material_animation_symbol);
-        if (!table) throw std::runtime_error("missing material animation symbol: "+
-                                             std::string(material_animation_symbol));
-        model.material_animation=material_animation_table(archive_,*table,model.materials);
-    }
+    if (material_animation) model.material_animation=material_animation_table(
+        archive_,*material_animation,model.materials);
     if (layout==GeometryLayout::JointPairs) {
         std::vector<std::optional<n64::Address>> pairs;
         pairs.reserve(model.nodes.size());
@@ -186,12 +190,36 @@ Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view anima
         model.meshes=decoder.decode_model_tree(display_lists,materials,
                                                layout==GeometryLayout::DisplayListLinks);
     }
-    if (!animation.empty()) {
-        const auto symbol = archive_.symbol(animation);
-        if (!symbol) throw std::runtime_error("missing animation symbol: " + std::string(animation));
-        model.animation = n64::AnimationDecoder(archive_).table(*symbol, model.nodes.size());
-    } else model.animation.resize(model.nodes.size());
+    if (animation) model.animation=n64::AnimationDecoder(archive_).table(*animation,model.nodes.size());
+    else model.animation.resize(model.nodes.size());
     return model;
+}
+
+Stage3D Scene3DLoader::stage(std::string_view header) {
+    const auto address=archive_.symbol(header);
+    if (!address) throw std::runtime_error("missing stage header: "+std::string(header));
+    const auto pointer=[&](std::uint32_t offset) {
+        return archive_.resolve({address->file,address->offset+offset});
+    };
+    Stage3D result;
+    const auto mask=archive_.u32({address->file,address->offset+68})>>24;
+    for (unsigned i=0;i<4;++i) if (const auto desc=pointer(i*16))
+        result.layers[i]=model(*desc,pointer(i*16+4),
+            mask&(1U<<i) ? GeometryLayout::DisplayListLinks : GeometryLayout::Direct,
+            pointer(i*16+8),pointer(i*16+12));
+    if (const auto geometry=pointer(64)) {
+        const auto count=static_cast<std::uint16_t>(archive_.s16({geometry->file,geometry->offset+20}));
+        if (const auto objects=archive_.resolve({geometry->file,geometry->offset+24}))
+            for (unsigned i=0;i<count;++i) {
+                const n64::Address item{objects->file,objects->offset+i*6};
+                if (archive_.s16(item)==0x15) { // nMPMapObjKindMoviePlayer1
+                    result.movie_player1={static_cast<float>(archive_.s16({item.file,item.offset+2})),
+                                          static_cast<float>(archive_.s16({item.file,item.offset+4})),0};
+                    break;
+                }
+            }
+    }
+    return result;
 }
 
 Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout layout,
@@ -572,7 +600,7 @@ void Scene3DRenderer::flush(RenderEngine& render) {
         const auto& x=a.rdp;
         const auto& y=b.rdp;
         return a.viewport==b.viewport && a.aspect==b.aspect && x.enabled==y.enabled && x.combine_hi==y.combine_hi && x.combine_lo==y.combine_lo &&
-            x.cycles==y.cycles && x.texture_gen==y.texture_gen && x.texture_gen_linear==y.texture_gen_linear &&
+            x.cycles==y.cycles && x.cull_mode==y.cull_mode && x.texture_gen==y.texture_gen && x.texture_gen_linear==y.texture_gen_linear &&
             x.generated_scale.x==y.generated_scale.x && x.generated_scale.y==y.generated_scale.y &&
             x.alpha_threshold==y.alpha_threshold && same_color(x.primitive,y.primitive) &&
             same_color(x.environment,y.environment) && same_color(x.tint,y.tint) &&

@@ -46,6 +46,11 @@ struct Model3D {
     std::optional<std::array<float,16>> root_transform;
 };
 
+struct Stage3D {
+    std::array<Model3D,4> layers;
+    Vec3 movie_player1{};
+};
+
 // Builder pattern: converts reloc symbols into immutable renderable models.
 class Scene3DLoader final {
 public:
@@ -54,6 +59,11 @@ public:
                                 GeometryLayout layout = GeometryLayout::DisplayListLinks,
                                 std::string_view materials = {},
                                 std::string_view material_animation = {});
+    [[nodiscard]] Stage3D stage(std::string_view header);
+    [[nodiscard]] Model3D model(n64::Address descriptor,
+                                std::optional<n64::Address> animation, GeometryLayout layout,
+                                std::optional<n64::Address> materials,
+                                std::optional<n64::Address> material_animation);
     [[nodiscard]] Model3D fighter_model(std::string_view descriptor,
                                         GeometryLayout layout = GeometryLayout::Direct,
                                         std::array<std::uint32_t,2> setup_parts = {

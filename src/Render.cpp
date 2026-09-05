@@ -574,6 +574,7 @@ void RenderEngine::draw_2d(std::span<const TriangleVertex> vertices,GLuint textu
     glBindBuffer(GL_ARRAY_BUFFER,vbo_2d_);
     glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(data.size()*sizeof(Vertex2D)),data.data(),GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(data.size()));
+    glDisable(GL_CULL_FACE);
 }
 
 void RenderEngine::sprite(std::string_view logical,Vec2 center,Vec2 scale,Color tint) {
@@ -664,6 +665,7 @@ void RenderEngine::prepare_forward_shadows(std::span<const ForwardVertex> vertic
     glBindBuffer(GL_ARRAY_BUFFER,vbo_forward_);
     glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(data.size()*sizeof(VertexForward)),data.data(),GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(data.size()));
+    glDisable(GL_CULL_FACE);
     glDisable(GL_POLYGON_OFFSET_FILL);
     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
     glBindFramebuffer(GL_FRAMEBUFFER,0);
@@ -680,7 +682,12 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
         vertex.color.b/255.0f,vertex.color.a/255.0f,vertex.uv.x,vertex.uv.y});
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
-    glDisable(GL_CULL_FACE);
+    if (material.rdp.enabled && material.rdp.cull_mode) {
+        glEnable(GL_CULL_FACE);
+        glFrontFace(GL_CCW);
+        glCullFace(material.rdp.cull_mode==0x600U ? GL_FRONT_AND_BACK :
+                   material.rdp.cull_mode==0x200U ? GL_FRONT : GL_BACK);
+    } else glDisable(GL_CULL_FACE);
     if (material.additive) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA,GL_ONE);
@@ -768,6 +775,7 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     glBindBuffer(GL_ARRAY_BUFFER,vbo_forward_);
     glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(data.size()*sizeof(VertexForward)),data.data(),GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(data.size()));
+    glDisable(GL_CULL_FACE);
     reset_scissor();
 }
 

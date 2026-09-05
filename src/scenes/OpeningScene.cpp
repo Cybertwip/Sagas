@@ -127,7 +127,7 @@ private:
         renderer_->draw(r,model("room.haze"),camera,camera_frame,{255,255,255,255},lights);
         renderer_->draw(r,model("room.background"),camera,static_cast<float>(local),
                         {255,255,255,255},lights);
-        if (false)
+        if (local < 450)
             renderer_->draw(r,model("room.sunlight"),camera,camera_frame,
                             {255,255,255,255},lights);
         renderer_->draw(r,model("room.desk"),camera,camera_frame,{255,255,255,255},lights);
@@ -364,8 +364,7 @@ private:
         }
         const auto& vp=view.viewport;
         r.scissor_game(vp[0],vp[1],vp[2],vp[3]);
-        if (!view.wallpaper.empty()) r.sprite("textures/"+std::string(view.wallpaper)+".png",
-                 {vp[0]+vp[2]/2,vp[1]+vp[3]/2},{vp[2]/320,vp[3]/240});
+        r.sprite_rect("textures/"+std::string(view.wallpaper)+".png",vp[0],vp[1],vp[2],vp[3]);
         r.reset_scissor();
         Camera3D camera;
         camera.viewport=vp;

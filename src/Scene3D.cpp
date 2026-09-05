@@ -602,7 +602,7 @@ void Scene3DRenderer::flush(RenderEngine& render) {
         return a.viewport==b.viewport && a.aspect==b.aspect && x.enabled==y.enabled && x.combine_hi==y.combine_hi && x.combine_lo==y.combine_lo &&
             x.cycles==y.cycles && x.cull_mode==y.cull_mode && x.texture_gen==y.texture_gen && x.texture_gen_linear==y.texture_gen_linear &&
             x.generated_scale.x==y.generated_scale.x && x.generated_scale.y==y.generated_scale.y &&
-            x.alpha_threshold==y.alpha_threshold && same_color(x.primitive,y.primitive) &&
+            x.alpha_threshold==y.alpha_threshold && x.alpha_test==y.alpha_test && same_color(x.primitive,y.primitive) &&
             same_color(x.environment,y.environment) && same_color(x.tint,y.tint) &&
             a.texture.get()==b.texture.get() && a.fov_y==b.fov_y &&
             a.near_plane==b.near_plane && a.far_plane==b.far_plane &&

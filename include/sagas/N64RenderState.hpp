@@ -15,7 +15,7 @@ struct N64RenderState {
     float alpha_threshold{};
     unsigned cycles{1};
     unsigned cull_mode{}; // F3DEX2 G_CULL_FRONT / G_CULL_BACK bits (0x200 / 0x400).
-    bool enabled{}, texture_gen{}, texture_gen_linear{};
+    bool enabled{}, texture_gen{}, texture_gen_linear{}, alpha_test{};
 };
 
 } // namespace sagas

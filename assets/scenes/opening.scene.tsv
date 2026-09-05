@@ -3,7 +3,7 @@ room.base	room.background	model	llMVCommonRoomBackgroundDObjDesc	-	links	llMVCom
 room.base	room.sunlight	display	llMVCommonRoomSunlightDisplayList	-	links	-	-	0	none	-	0	0	unlit	0	0	0		
 room.base	room.desk	model	llMVCommonRoomDeskDObjDesc	-	direct	-	-	0	none	-	0	0	lit	0	0	0		
 room.base	room.outside	display	llMVCommonRoomOutsideDisplayList	-	links	-	-	0	none	-	0	0	lit	0	0	0		
-room.base	room.haze	display	llMVCommonRoomHazeDisplayList	-	links	-	-	0	none	-	0	0	unlit	0	0	0		
+room.base	room.haze	display	llMVCommonRoomHazeDisplayList	-	links	-	-	0	none	-	0	0	lit	0	0	0		
 room.base	room.books	model	llMVCommonRoomBooksDObjDesc	llMVCommonRoomBooksAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
 room.base	room.lamp	model	llMVCommonRoomLampDObjDesc	llMVCommonRoomLampAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
 room.base	room.tissues	display	llMVCommonRoomTissuesDisplayList	llMVCommonRoomTissuesAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		

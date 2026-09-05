@@ -299,6 +299,7 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
         vertex.rdp.texture_gen_linear=(state.geometry_mode&0x80000U)!=0;
         vertex.rdp.generated_scale={1024.0f*state.texture_scale_s/width,
                                     1024.0f*state.texture_scale_t/height};
+        vertex.rdp.alpha_test=state.alpha_compare==1 || (state.render_mode&0x1000U)!=0;
         vertex.rdp.alpha_threshold=state.alpha_compare==1 ? state.blend.a/255.0f : 0;
         vertex.texture = image;
         float u=(vertex.u*state.texture_scale_s - tile.uls*0.25f);

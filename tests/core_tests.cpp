@@ -55,6 +55,30 @@ int main() {
     for (const auto value : at_middle.tracks) assert(std::isfinite(value));
     assert(at_start.tracks != at_middle.tracks);
     sagas::Scene3DLoader scene_loader(archive);
+    // The room beam is I8: intensity supplies alpha, including clear texels.
+    const auto sunlight=scene_loader.display_list("llMVCommonRoomSunlightDisplayList",
+                                                  sagas::GeometryLayout::DisplayListLinks);
+    const auto& beam=sunlight.meshes.front().vertices.front();
+    assert(beam.translucent && beam.rdp.enabled && beam.rdp.alpha_test);
+    assert(std::abs(beam.rdp.alpha_threshold-8.0f/255.0f)<1e-6f);
+    assert(beam.texture && beam.texture->width==32 && beam.texture->height==32);
+    bool has_clear_texel=false,has_partial_texel=false;
+    for (std::size_t i=0;i<beam.texture->rgba.size();i+=4) {
+        assert(beam.texture->rgba[i]==beam.texture->rgba[i+3]);
+        has_clear_texel|=beam.texture->rgba[i+3]==0;
+        has_partial_texel|=beam.texture->rgba[i+3]>0 && beam.texture->rgba[i+3]<255;
+    }
+    assert(has_clear_texel && has_partial_texel);
+    for (const auto* name:{"Castle","Jungle","Hyrule","Zebes","Yoster","Pupupu","Sector","Yamabuki"}) {
+        const auto stage=scene_loader.stage(std::string("llGR")+name+"MapMapHeader");
+        std::size_t vertices=0;
+        for (const auto& layer:stage.layers) for (const auto& part:layer.meshes) {
+            assert(part.unsupported_commands==0);
+            vertices+=part.vertices.size();
+        }
+        assert(vertices>0);
+        assert(std::isfinite(stage.movie_player1.x) && std::isfinite(stage.movie_player1.y));
+    }
     const auto room_background=scene_loader.model(
         "llMVCommonRoomBackgroundDObjDesc", {}, sagas::GeometryLayout::DisplayListLinks,
         "llMVCommonRoomBackgroundMObjSub");
@@ -81,6 +105,17 @@ int main() {
     }
     sagas::SceneResourceManager resources(assets);
     resources.load_manifest("scenes/opening.sgscene");
+    for (const auto& intro : std::array<std::pair<const char*,unsigned>,8>{{
+        {"mario",367},{"donkey",390},{"link",413},{"samus",401},
+        {"yoshi",455},{"kirby",426},{"fox",378},{"pikachu",485}}}) {
+        const std::string bundle=std::string("intro.")+intro.first;
+        resources.activate(bundle);
+        const auto& stance=resources.model(bundle+".stance");
+        assert(stance.fighter_wrapper==sagas::Model3D::FighterWrapper::None);
+        assert(!stance.fighter_root_animation);
+        assert(stance.animation==animation_decoder.table({intro.second,0},stance.nodes.size()));
+        resources.release(bundle);
+    }
     resources.activate("room.base");
     resources.activate("room.action");
     const auto& halo = resources.model("room.spotlight");

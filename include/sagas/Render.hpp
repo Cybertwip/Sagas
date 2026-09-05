@@ -50,6 +50,8 @@ public:
                    const std::shared_ptr<const RasterImage>& image = {});
     void prepare_forward_shadows(std::span<const ForwardVertex> vertices, Vec3 light_direction);
     void forward(std::span<const ForwardVertex> vertices, const ForwardMaterial& material);
+    void sprite_rect(std::string_view logical, float x, float y, float w, float h,
+                     Color tint = {255,255,255,255});
     void clear_depth();
     void scissor_game(float x, float y, float w, float h);
     void reset_scissor();
@@ -64,7 +66,9 @@ private:
     SDL_GLContextState* context_{};
     AssetRepository& assets_;
     std::unordered_map<std::string, Texture> textures_;
-    std::unordered_map<const RasterImage*, std::uint32_t> raster_textures_;
+    // Keep image ownership until the GPU entry is retired; allocator address
+    // reuse must never make a new model sample an old model's texture.
+    std::unordered_map<std::shared_ptr<const RasterImage>, std::uint32_t> raster_textures_;
     std::uint32_t program_2d_{}, program_forward_{}, program_shadow_{};
     std::uint32_t vao_2d_{}, vbo_2d_{}, vao_forward_{}, vbo_forward_{};
     std::uint32_t shadow_framebuffer_{}, shadow_texture_{};

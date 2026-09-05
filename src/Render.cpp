@@ -135,10 +135,11 @@ void main() {
     if (rdpEnabled && useLighting) {
         vec3 N=normalize(inNormal);
         nativeShade.rgb=clamp(n64Ambient+n64Diffuse*max(dot(N,normalize(keyDirection)),0.0),0.0,1.0);
-        if (textureGen) {
-            vec2 generated=textureGenLinear ? acos(clamp(-N.xy,-1.0,1.0))/3.14159265 : (N.xy+1.0)*0.5;
-            textureUV=generated*generatedScale;
-        }
+    }
+    if (rdpEnabled && textureGen) {
+        vec3 N=normalize(inNormal);
+        vec2 generated=textureGenLinear ? acos(clamp(-N.xy,-1.0,1.0))/3.14159265 : (N.xy+1.0)*0.5;
+        textureUV=generated*generatedScale;
     }
     vec3 lightPosition=vec3(dot(inPosition,shadowRight),dot(inPosition,shadowUp),
                             dot(inPosition,shadowForward));
@@ -156,6 +157,7 @@ uniform vec4 primitiveColor;
 uniform vec4 environmentColor;
 uniform vec4 drawTint;
 uniform float alphaThreshold;
+uniform bool alphaTest;
 in vec4 nativeShade;
 uniform bool useTexture;
 uniform bool useLighting;
@@ -268,7 +270,7 @@ void main() {
         vec4 combined=vec4(0.0);
         if (combineCycles==2) combined=combineCycle(0,combined,encoded,nativeShade);
         combined=combineCycle(1,combined,encoded,nativeShade)*drawTint;
-        if (combined.a<=alphaThreshold) discard;
+        if (alphaTest && combined.a<=alphaThreshold) discard;
         fragmentColor=vec4(pow(max(combined.rgb,vec3(0.0)),vec3(2.2)),translucent ? combined.a : 1.0);
         return;
     }
@@ -513,7 +515,7 @@ RenderEngine::Texture& RenderEngine::texture(std::string_view logical) {
 
 std::uint32_t RenderEngine::raster_texture(const std::shared_ptr<const RasterImage>& image) {
     if (!image||image->width<=0||image->height<=0||image->rgba.empty()) return 0;
-    if (const auto found=raster_textures_.find(image.get());found!=raster_textures_.end()) return found->second;
+    if (const auto found=raster_textures_.find(image);found!=raster_textures_.end()) return found->second;
     GLuint handle{};
     glGenTextures(1,&handle);
     glBindTexture(GL_TEXTURE_2D,handle);
@@ -523,13 +525,19 @@ std::uint32_t RenderEngine::raster_texture(const std::shared_ptr<const RasterIma
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-    raster_textures_.emplace(image.get(),handle);
+    raster_textures_.emplace(image,handle);
     return handle;
 }
 
 void RenderEngine::begin(Color clear) {
     SDL_GL_MakeCurrent(window_,context_);
     shadows_ready_=false;
+    for (auto it=raster_textures_.begin();it!=raster_textures_.end();) {
+        if (it->first.use_count()==1) {
+            glDeleteTextures(1,&it->second);
+            it=raster_textures_.erase(it);
+        } else ++it;
+    }
     int drawable_width{},drawable_height{};
     SDL_GetWindowSizeInPixels(window_,&drawable_width,&drawable_height);
     const float target=4.0f/3.0f;
@@ -587,6 +595,11 @@ void RenderEngine::sprite(std::string_view logical,Vec2 center,Vec2 scale,Color 
         {{left,top},tint,{0,0}},{{right,top},tint,{1,0}},{{right,bottom},tint,{1,1}},
         {{left,top},tint,{0,0}},{{right,bottom},tint,{1,1}},{{left,bottom},tint,{0,1}}}};
     draw_2d(vertices,source.handle);
+}
+
+void RenderEngine::sprite_rect(std::string_view logical,float x,float y,float w,float h,Color tint) {
+    const auto& source=texture(logical);
+    sprite(logical,{x+w/2,y+h/2},{w/source.width,h/source.height},tint);
 }
 
 void RenderEngine::sprite_at(std::string_view logical,Vec2 top_left,Vec2 scale,Color tint) {
@@ -725,6 +738,7 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     rgba_uniform("environmentColor",material.rdp.environment);
     rgba_uniform("drawTint",material.rdp.tint);
     glUniform1f(uniform("alphaThreshold"),material.rdp.alpha_threshold);
+    glUniform1i(uniform("alphaTest"),material.rdp.alpha_test);
     glUniform1i(uniform("textureGen"),material.rdp.texture_gen);
     glUniform1i(uniform("textureGenLinear"),material.rdp.texture_gen_linear);
     glUniform2f(uniform("generatedScale"),material.rdp.generated_scale.x,material.rdp.generated_scale.y);

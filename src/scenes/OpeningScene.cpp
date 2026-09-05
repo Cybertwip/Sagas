@@ -127,7 +127,7 @@ private:
         renderer_->draw(r,model("room.haze"),camera,camera_frame,{255,255,255,255},lights);
         renderer_->draw(r,model("room.background"),camera,static_cast<float>(local),
                         {255,255,255,255},lights);
-        if (local < 450)
+        if (false)
             renderer_->draw(r,model("room.sunlight"),camera,camera_frame,
                             {255,255,255,255},lights);
         renderer_->draw(r,model("room.desk"),camera,camera_frame,{255,255,255,255},lights);
@@ -315,6 +315,7 @@ private:
                             {intro.name_x+intro.letter_x[i],100});
             return;
         }
+        draw_intro_motion(r,local,name);
         const auto& vp=intro.viewport;
         r.fill(vp[0],vp[1],vp[2],vp[3],intro.background);
         auto posed=model(std::string("intro.")+std::string(name)+".stance");
@@ -335,6 +336,70 @@ private:
             std::string(intro.fighter_name)+"CamAnimJoint",static_cast<float>(local),initial);
         renderer_->draw(r,posed,camera,static_cast<float>(local-15),{255,255,255,255},
                         LightingSystem::opening_room());
+    }
+    void draw_intro_motion(RenderEngine& r,int local,std::string_view name) {
+        struct MotionView {
+            std::string_view key,stage,wallpaper;
+            std::array<float,4> viewport;
+            Vec3 eye0,at0,eye1,at1;
+            float roll0,roll1;
+            std::uint32_t motion;
+        };
+        // CObjDesc start/end and MoviePlayer1 map objects from mvOpening*.c.
+        static constexpr MotionView views[]{
+            {"mario","Castle","MVOpeningRoomWallpaper",{110,10,200,220},{300,500,1700},{0,100,0},{800,500,1300},{100,100,0},.15f,.15f,606},
+            {"donkey","Jungle","StageJungle",{10,10,200,220},{-1100,150,400},{0,150,0},{-900,500,1800},{0,500,0},0,0,942},
+            {"link","Hyrule","StageCastle",{10,90,300,140},{-800,180,800},{0,180,0},{200,0,400},{0,240,0},0,.4f,1188},
+            {"samus","Zebes","StageZebes",{110,10,200,220},{400,1100,0},{0,200,0},{1600,230,200},{0,200,0},.6f,.6f,1015},
+            {"yoshi","Yoster","StageYoshi",{10,10,300,140},{1200,150,1000},{100,200,0},{2000,100,600},{1300,100,-100},0,0,1821},
+            {"kirby","Pupupu","StageDreamLand",{10,10,200,220},{0,400,2000},{0,400,0},{1100,400,1800},{1100,400,0},0,0,1269},
+            {"fox","Sector","StageSector",{10,10,200,220},{-400,320,100},{0,320,0},{-3000,300,250},{0,300,-200},0,.7f,779},
+            {"pikachu","Yamabuki","StagePokemon",{110,10,200,220},{0,0,20000},{0,0,0},{50,-1640,1000},{50,-1640,0},0,0,1957}
+        };
+        const auto& view=*std::find_if(std::begin(views),std::end(views),
+            [name](const auto& v) { return v.key==name; });
+        if (motion_stage_name_!=name) {
+            motion_stage_=loader_->stage("llGR"+std::string(view.stage)+"MapMapHeader");
+            motion_stage_name_=name;
+        }
+        const auto& vp=view.viewport;
+        r.scissor_game(vp[0],vp[1],vp[2],vp[3]);
+        if (!view.wallpaper.empty()) r.sprite("textures/"+std::string(view.wallpaper)+".png",
+                 {vp[0]+vp[2]/2,vp[1]+vp[3]/2},{vp[2]/320,vp[3]/240});
+        r.reset_scissor();
+        Camera3D camera;
+        camera.viewport=vp;
+        camera.aspect=vp[2]/vp[3];
+        const float time=static_cast<float>(local-15);
+        const float fraction=time/45.0f;
+        const auto interpolate=[&](Vec3 a,Vec3 b) {
+            return Vec3{a.x+(b.x-a.x)*fraction+motion_stage_.movie_player1.x,
+                        a.y+(b.y-a.y)*fraction+motion_stage_.movie_player1.y,
+                        a.z+(b.z-a.z)*fraction};
+        };
+        camera.eye=interpolate(view.eye0,view.eye1);
+        camera.at=interpolate(view.at0,view.at1);
+        camera.up.x=view.roll0+(view.roll1-view.roll0)*fraction;
+        for (const auto& layer:motion_stage_.layers)
+            renderer_->draw(r,layer,camera,time,{255,255,255,255},LightingSystem::opening_room());
+        auto fighter=model("intro."+std::string(name)+".stance");
+        fighter.position=motion_stage_.movie_player1;
+        fighter.rotation.y=std::numbers::pi_v<float>/2;
+        std::uint32_t motion=view.motion;
+        float frame=time;
+        // Recorded button events select the actual cartridge clips. Full
+        // fighter status/physics playback is tracked in OPENING_TASKS.md.
+        if (name=="mario") {
+            if (time>=33) { motion=614; frame=time-33; }
+            else if (time>=12) { motion=607; frame=time-12; }
+        } else if (name=="donkey" && time>=4) { motion=943; frame=time-4; }
+        else if (name=="fox") { fighter.rotation.y=-std::numbers::pi_v<float>/2; frame=std::fmod(time,13.0f); }
+        else if (name=="yoshi" && time>=21) { motion=1876; frame=time-21; }
+        else if (name=="kirby" && time>=4) { motion=1387; frame=time-4; }
+        n64::AnimationDecoder decoder(resources_->archive());
+        fighter.animation=decoder.table({motion,0},fighter.nodes.size());
+        renderer_->draw(r,fighter,camera,frame,{255,255,255,255},LightingSystem::opening_room());
+        renderer_->flush(r);
     }
     void fighter(RenderEngine& r, int local, std::string_view portrait, Color background) {
         r.fill(10, 10, 300, 220, background);
@@ -412,6 +477,8 @@ private:
     [[nodiscard]] const Model3D& model(std::string_view key) const {
         return resources_->model(key);
     }
+    Stage3D motion_stage_;
+    std::string motion_stage_name_;
     int tic_{};
     int total_duration_{};
     bool done_{};

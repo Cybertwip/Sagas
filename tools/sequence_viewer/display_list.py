@@ -92,9 +92,11 @@ class DisplayListDecoder:
                     break
                 material = Material()
                 sprites = archive.resolve(sub.shifted(4))
+                material.sprites = sprites
                 if sprites is not None and archive.u32(sprites) != 0:
                     material.image = archive.resolve(sprites)
                 palettes = archive.resolve(sub.shifted(0x2C))
+                material.palettes = palettes
                 if palettes is not None and archive.u32(palettes) != 0:
                     material.palette = archive.resolve(palettes)
                 material.format = archive.u8(sub.shifted(2))
@@ -255,8 +257,21 @@ class DisplayListDecoder:
             w0 = archive.u32(address)
             w1 = archive.u32(address.shifted(4))
             opcode = w0 >> 24
-            if opcode in (0x00, 0xE1, 0xE3, 0xE6, 0xE7, 0xE8, 0xE9, 0xF1, 0xFC):
+            if opcode in (0x00, 0xE1, 0xE3, 0xE6, 0xE7, 0xE8, 0xE9, 0xF1):
                 pass
+            elif opcode == 0xFC:
+                rgb = ((w0 >> 20) & 15, (w1 >> 28) & 15, (w0 >> 15) & 31, (w1 >> 15) & 7,
+                       (w0 >> 5) & 15, (w1 >> 24) & 15, w0 & 31, (w1 >> 6) & 7)
+                alpha = ((w0 >> 12) & 7, (w1 >> 12) & 7, (w0 >> 9) & 7, (w1 >> 9) & 7,
+                         (w1 >> 21) & 7, (w1 >> 3) & 7, (w1 >> 18) & 7, w1 & 7)
+                state.primitive_rgb = 3 in rgb
+                state.primitive_alpha = 3 in alpha
+            elif opcode in (0xF9, 0xFB):
+                color = Color((w1 >> 24) & 255, (w1 >> 16) & 255, (w1 >> 8) & 255, w1 & 255)
+                if opcode == 0xF9:
+                    state.blend = color
+                else:
+                    state.environment = color
             elif opcode == 0xE2:
                 if (w0 & 0xFFFF) == 0x001C:
                     state.render_mode = w1
@@ -429,7 +444,8 @@ class DisplayListDecoder:
             color = vertex.color
             light1, light2 = vertex.light1, vertex.light2
             if vertex.lit:
-                color = state.primitive
+                rgb = state.primitive if state.primitive_rgb else Color()
+                color = Color(rgb.r, rgb.g, rgb.b, state.primitive.a if state.primitive_alpha else 255)
                 light1, light2 = state.light1, state.light2
             u = vertex.u * state.texture_scale_s - tile.uls * 0.25
             v = vertex.v * state.texture_scale_t - tile.ult * 0.25
@@ -543,6 +559,10 @@ class _State:
     geometry_mode: int = 0x00020000
     lighting: bool = True
     texture_enabled: bool = False
+    primitive_rgb: bool = False
+    primitive_alpha: bool = False
+    blend: Color = field(default_factory=Color)
+    environment: Color = field(default_factory=Color)
     primitive: Color = field(default_factory=Color)
     light1: Optional[Color] = None
     light2: Optional[Color] = None

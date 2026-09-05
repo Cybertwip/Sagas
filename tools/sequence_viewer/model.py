@@ -157,6 +157,40 @@ class ModelLoader:
         source_nodes = decode_skeleton(self.archive, desc)
         source_materials = self.decoder.materials(Address(desc.file, 0), len(source_nodes))
 
+        # Same FTData attribute offsets as the C++ fighter loader.
+        attributes = {
+            296: (203, 0x428), 313: (209, 0x46c), 317: (213, 0x4a4),
+            320: (217, 0x610), 323: (221, 0x580), 324: (225, 0x708),
+            338: (247, 0x47c), 332: (236, 0x488), 328: (229, 0x808),
+            341: (243, 0x41c), 330: (233, 0x474), 335: (239, 0x5bc),
+        }
+        if desc.file in attributes:
+            attr = Address(*attributes[desc.file])
+            parts = self.archive.resolve(attr.shifted(0x2d4))
+            costumes = self.archive.resolve(parts.shifted(8)) if parts else None
+            if costumes:
+                scripts = _material_animation_table(self.archive, costumes, source_materials)
+                for materials, joint_scripts in zip(source_materials, scripts):
+                    for material, script in zip(materials, joint_scripts):
+                        if script is None:
+                            continue
+                        initial = MaterialPose()
+                        initial.colors[0] = material.primitive
+                        if material.light1:
+                            initial.colors[3] = material.light1
+                        if material.light2:
+                            initial.colors[4] = material.light2
+                        pose = sample_material(self.archive, script, 0, initial)
+                        material.primitive = pose.colors[0]
+                        if material.light1:
+                            material.light1 = pose.colors[3]
+                        if material.light2:
+                            material.light2 = pose.colors[4]
+                        if material.sprites:
+                            material.image = self.archive.resolve(material.sprites.shifted(4 * int(pose.tracks[0])))
+                        if material.palettes:
+                            material.palette = self.archive.resolve(material.palettes.shifted(4 * int(pose.tracks[9])))
+
         def enabled(index: int) -> bool:
             word = index // 32
             return word < len(setup_parts) and bool(setup_parts[word] & (1 << (31 - index % 32)))
@@ -274,9 +308,14 @@ def matrix_sets(archive: RelocArchive, model: Model3D, frame: float) -> tuple[li
         root = apply_pose(
             model.fighter_root,
             sample16(archive, model.fighter_root_animation, frame, pose_from_node(model.fighter_root)))
-        model_matrix = multiply(
-            model_matrix,
-            multiply(multiply(translation(root.translate), rotation(root.rotate)), scale(root.scale)))
+        if model.fighter_wrapper == FighterWrapper.TransN:
+            start = sample16(archive, model.fighter_root_animation, 0, pose_from_node(model.fighter_root))
+            delta = tuple(root.translate[i] - start.tracks[4 + i] for i in range(3))
+            model_matrix = multiply(model_matrix, translation(delta))
+        else:
+            model_matrix = multiply(
+                model_matrix,
+                multiply(multiply(translation(root.translate), rotation(root.rotate)), scale(root.scale)))
     result: list[Matrix] = []
     result_parents: list[Matrix] = []
     for index, source in enumerate(model.nodes):

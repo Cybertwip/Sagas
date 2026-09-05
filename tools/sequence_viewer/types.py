@@ -85,6 +85,8 @@ class RasterImage:
 
 @dataclass
 class Material:
+    sprites: Optional[Address] = None
+    palettes: Optional[Address] = None
     image: Optional[Address] = None
     palette: Optional[Address] = None
     format: int = 0

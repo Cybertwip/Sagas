@@ -64,3 +64,32 @@ only source is an N64 display list currently retain their exact timeline and
 use a composed portrait/wallpaper presentation until the display-list and
 skeleton decoder is connected.
 
+
+## Opening room regression checks
+
+The room uses Master Hand's heavy-item joint (joint 5, descriptor node 1),
+releases Mario at tic 380, creates the second dropped fighter at tic 695,
+and carries the landed position into the stand animation at tic 1140.
+Falling follows the figatree TransN translation deltas; there is no synthetic
+gravity curve or fixed fall-distance cap. The `FTAnimDesc` bitfields are the
+reference for wrapper roles: the `TRANSN`/`XROTN` macro names in `ftdef.h` are
+reversed relative to those bitfields.
+
+Fighter materials evaluate costume 0 before display-list decoding, including
+palette selection. Shade-only parts do not inherit a previous primitive color.
+The Python sequence viewer uses the same costume and root-motion rules.
+
+```sh
+cmake --build sagas/build -j
+ctest --test-dir sagas/build --output-on-failure
+python3 sagas/tools/view_sequence.py --self-test
+./sagas/build/sagas --headless --frames 453 --capture /tmp/sagas-drop.png
+```
+
+C++ test assertions remain enabled in Release builds. The tests cover the
+1,949.5-unit Mario drop, stable landed position, Link's spawn position, the red
+costume shirt, blue overalls, and white shade-only gloves. Render captures
+also check the attachment, landing, spotlight, and revival. These checks do
+not establish pixel-for-pixel parity for the entire opening; the renderer still
+approximates N64 lighting/compositing, and later segments retain placeholder
+presentations.

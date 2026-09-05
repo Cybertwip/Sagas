@@ -210,6 +210,9 @@ int main() {
     // The ROM's base shirt is green; costume 0 changes it to Mario red.
     const auto shirt=mario_model.materials[4][0].primitive;
     assert(shirt.r>180 && shirt.g<50 && shirt.b<50);
+    for (const std::size_t glove : {18U,23U})
+        for (const auto& vertex : mario_model.meshes[glove].vertices)
+            assert(vertex.color.r==255 && vertex.color.g==255 && vertex.color.b==255);
     const auto pants=mario_model.materials[15][0].primitive;
     assert(pants.b>pants.r && pants.b>pants.g);
     struct ModelCase { const char* descriptor; const char* animation; sagas::GeometryLayout layout; };
@@ -243,9 +246,6 @@ int main() {
                 assert(std::isfinite(vertex.u) && std::isfinite(vertex.v));
                 if (vertex.lit) {
                     saw_lit=true;
-                    // A lit N64 vertex stores a normal in RGB+A.  Its last
-                    // byte is never surface opacity.
-                    assert(vertex.color.a==255);
                 } else saw_unlit=true;
                 if (vertex.texture) {
                     saw_textured=true;

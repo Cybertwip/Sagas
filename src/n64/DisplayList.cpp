@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cmath>
-#include <cstdio>
 #include <sstream>
 #include <stdexcept>
 
@@ -31,7 +30,11 @@ struct DisplayListDecoder::State {
     std::uint32_t geometry_mode{0x00020000U};
     bool lighting{true};
     bool texture_enabled{};
+    bool primitive_rgb{};
+    bool primitive_alpha{};
     Color primitive{255,255,255,255};
+    Color blend{};
+    Color environment{};
     std::optional<Color> light1;
     std::optional<Color> light2;
     std::optional<std::uint16_t> material_index;
@@ -273,7 +276,8 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
         // primitive state therefore belongs to triangle emission time, not
         // to the earlier cache load.
         if (vertex.lit) {
-            vertex.color=state.primitive;
+            vertex.color=state.primitive_rgb ? state.primitive : Color{255,255,255,255};
+            vertex.color.a=state.primitive_alpha ? state.primitive.a : 255;
             vertex.light1=state.light1;
             vertex.light2=state.light2;
         }
@@ -432,8 +436,20 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
         const auto opcode = w0 >> 24;
         switch (opcode) {
             case 0x00: case 0xe1: case 0xe3: case 0xe6: case 0xe7: case 0xe8: case 0xe9:
-            case 0xf1: case 0xfc:
+            case 0xf1:
                 break;
+            case 0xfc: { // SetCombine: PRIMITIVE is not used by shade-only parts.
+                const auto rgb_uses_primitive=[](unsigned a,unsigned b,unsigned c,unsigned d) {
+                    return a==3 || b==3 || c==3 || d==3;
+                };
+                state.primitive_rgb=rgb_uses_primitive((w0>>20)&15,(w1>>28)&15,(w0>>15)&31,(w1>>15)&7)
+                    || rgb_uses_primitive((w0>>5)&15,(w1>>24)&15,w0&31,(w1>>6)&7);
+                state.primitive_alpha=((w0>>12)&7)==3 || ((w1>>12)&7)==3
+                    || ((w0>>9)&7)==3 || ((w1>>9)&7)==3
+                    || ((w1>>21)&7)==3 || ((w1>>3)&7)==3
+                    || ((w1>>18)&7)==3 || (w1&7)==3;
+                break;
+            }
             case 0xe2: // F3DEX2 SetOtherModeL
                 if ((w0&0xffffU)==0x001cU) {
                     state.render_mode=w1;
@@ -586,6 +602,13 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                 break;
             }
             case 0xdf: return;
+            case 0xf9: // SetBlendColor (alpha compare reference)
+            case 0xfb: { // SetEnvColor
+                auto& color=opcode==0xf9 ? state.blend : state.environment;
+                color={static_cast<std::uint8_t>(w1>>24),static_cast<std::uint8_t>(w1>>16),
+                       static_cast<std::uint8_t>(w1>>8),static_cast<std::uint8_t>(w1)};
+                break;
+            }
             case 0xfa:
                 state.primitive = {static_cast<std::uint8_t>(w1 >> 24), static_cast<std::uint8_t>(w1 >> 16),
                                    static_cast<std::uint8_t>(w1 >> 8), static_cast<std::uint8_t>(w1)};
@@ -623,7 +646,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                 state.image.format=(w0>>21)&7U; state.image.size=(w0>>19)&3U; state.image.width=(w0&0xfffU)+1;
                 state.image.address=archive_.resolve({address.file,address.offset+4});
                 break;
-            default: std::fprintf(stderr,"unsupported %u:%x %08x %08x\n",address.file,address.offset,w0,w1); ++mesh.unsupported_commands; break;
+            default: ++mesh.unsupported_commands; break;
         }
     }
     throw std::runtime_error("N64 display-list command budget exceeded");

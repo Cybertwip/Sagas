@@ -18,6 +18,8 @@ struct Camera3D {
 enum class GeometryLayout { Direct, DisplayListLinks, JointPairs };
 
 struct Model3D {
+    // Use FTAnimDesc.flags semantics: 0x80000000 is XRotN (rendered),
+    // 0x40000000 is TransN (detached motion). ftdef.h names are reversed.
     enum class FighterWrapper { None, TransN, XRotN };
     std::vector<n64::Node> nodes;
     std::vector<n64::Mesh> meshes;

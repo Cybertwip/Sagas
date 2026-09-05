@@ -90,6 +90,13 @@ public:
             throw std::runtime_error("unknown opening render strategy: " + segment.renderer);
         }
         renderer_->end(r);
+        if (segment.renderer=="room") {
+            // Original room cameras use the 10,10–310,230 viewport.
+            r.fill(0,0,320,10,{0,0,0,255});
+            r.fill(0,230,320,10,{0,0,0,255});
+            r.fill(0,10,10,220,{0,0,0,255});
+            r.fill(310,10,10,220,{0,0,0,255});
+        }
         const float edge = segment.renderer == "room" ? 1.0f : std::min({1.0f, local / 10.0f,
                                      (static_cast<int>(segment.duration) - local) / 10.0f});
         if (edge < 1) r.fill(0, 0, 320, 240,
@@ -166,7 +173,7 @@ private:
                 const auto held=renderer_->placed_at_joint(model("mario.pickup"),pickup_frame,
                                                             boss,boss_frame,held_joint);
                 renderer_->draw(r,held,camera,pickup_frame,{255,255,255,255},lights);
-            } else {
+            } else if (local < 500) {
                 const auto falling=dropped_mario();
                 renderer_->draw(r,falling,camera,static_cast<float>(local-380),
                                 {255,255,255,255},lights);
@@ -177,9 +184,6 @@ private:
             renderer_->draw(r,link,camera,static_cast<float>(local-695),
                             {255,255,255,255},lights);
         }
-        if (local >= 860)
-            renderer_->draw(r,model("room.snap"),camera,static_cast<float>(local-860),
-                            {255,255,255,255},lights);
     }
     void room(RenderEngine& r, int local) {
         // These are the four original camera programs and scene changes from
@@ -227,6 +231,22 @@ private:
                 r.clear_depth();
                 renderer_->draw(r,model("room.logo"),camera,static_cast<float>(local),
                                 {255,255,255,255},warm_room);
+            }
+            if (local >= 450) {
+                // DL link 26 overlays the room; at 500 the pulled fighter
+                // moves to link 9, which is rendered after this overlay.
+                renderer_->flush(r);
+                const int alpha=std::min(160,(local-449)*9);
+                r.fill(10,10,300,220,{0,0,0,static_cast<std::uint8_t>(alpha)});
+                if (local >= 500) {
+                    renderer_->draw(r,model("room.spotlight"),camera,static_cast<float>(local-500),
+                                    {255,255,255,255},warm_room);
+                    renderer_->draw(r,dropped_mario(),camera,static_cast<float>(local-380),
+                                    {255,255,255,255},warm_room);
+                }
+                if (local >= 860)
+                    renderer_->draw(r,model("room.snap"),camera,static_cast<float>(local-860),
+                                    {255,255,255,255},warm_room);
             }
         } else {
             wallpaper(r, "MVOpeningRoomWallpaper.png");

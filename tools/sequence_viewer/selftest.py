@@ -72,6 +72,11 @@ def run_selftest(assets: Path, scene_dir: Path) -> list[str]:
           "Mario has rejected display-list triangles")
     mario_material_commands = sum(part.material_commands for part in mario.meshes)
     check(mario_material_commands > 0, "Mario model issued no MObj segment commands")
+    shirt = mario.materials[4][0].primitive
+    check(shirt.r > 180 and shirt.g < 50 and shirt.b < 50, "Mario costume 0 shirt is not red")
+    check(all(v.color.r == 255 and v.color.g == 255 and v.color.b == 255
+              for i in (18, 23) for v in mario.meshes[i].vertices),
+          "Mario shade-only gloves inherited primitive color")
     mario_textures = collect_textures(mario)
     check(mario_textures, "Mario decoded no textures")
     check(not any(texture.missing_palette for texture in mario_textures),

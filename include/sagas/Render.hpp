@@ -5,6 +5,7 @@
 #include <sagas/N64RenderState.hpp>
 
 #include <filesystem>
+#include <array>
 
 struct SDL_Window;
 struct SDL_GLContextState;
@@ -29,6 +30,8 @@ struct ForwardMaterial {
     std::uint16_t texture_window_s{}, texture_window_t{};
     bool lit{}, translucent{}, additive{};
     N64RenderState rdp;
+    std::array<float,4> viewport{10,10,300,220};
+    float aspect{4.0f/3.0f};
 };
 
 class RenderEngine final {

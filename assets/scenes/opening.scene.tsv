@@ -1,36 +1,44 @@
 bundle	key	kind	descriptor	animation	layout	materials	material_animation	animation_file	wrapper	dependency	transition_frame	material_start	lighting	position_x	position_y	position_z	setup_flags0	setup_flags1
-room.base	room.background	model	llMVCommonRoomBackgroundDObjDesc	-	links	llMVCommonRoomBackgroundMObjSub	llMVCommonRoomBackgroundMatAnimJoint	0	none	-	0	1080	lit	0	0	0
-room.base	room.sunlight	display	llMVCommonRoomSunlightDisplayList	-	links	-	-	0	none	-	0	0	unlit	0	0	0
-room.base	room.desk	model	llMVCommonRoomDeskDObjDesc	-	direct	-	-	0	none	-	0	0	lit	0	0	0
-room.base	room.outside	display	llMVCommonRoomOutsideDisplayList	-	links	-	-	0	none	-	0	0	lit	0	0	0
-room.base	room.haze	display	llMVCommonRoomHazeDisplayList	-	links	-	-	0	none	-	0	0	unlit	0	0	0
-room.base	room.books	model	llMVCommonRoomBooksDObjDesc	llMVCommonRoomBooksAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0
-room.base	room.lamp	model	llMVCommonRoomLampDObjDesc	llMVCommonRoomLampAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0
-room.base	room.tissues	display	llMVCommonRoomTissuesDisplayList	llMVCommonRoomTissuesAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0
-room.base	room.logo	model	llMVCommonRoomLogoDObjDesc	-	links	llMVCommonRoomLogoMObjSub	llMVCommonRoomLogoMatAnimJoint	0	none	-	0	0	unlit	0	0	0
-room.base	room.boss_shadow	display	llMVCommonRoomBossShadowDisplayList	llMVCommonRoomBossShadowAnimJoint	direct	-	-	0	none	-	0	0	unlit	0	0	0
+room.base	room.background	model	llMVCommonRoomBackgroundDObjDesc	-	links	llMVCommonRoomBackgroundMObjSub	llMVCommonRoomBackgroundMatAnimJoint	0	none	-	0	1080	lit	0	0	0		
+room.base	room.sunlight	display	llMVCommonRoomSunlightDisplayList	-	links	-	-	0	none	-	0	0	unlit	0	0	0		
+room.base	room.desk	model	llMVCommonRoomDeskDObjDesc	-	direct	-	-	0	none	-	0	0	lit	0	0	0		
+room.base	room.outside	display	llMVCommonRoomOutsideDisplayList	-	links	-	-	0	none	-	0	0	lit	0	0	0		
+room.base	room.haze	display	llMVCommonRoomHazeDisplayList	-	links	-	-	0	none	-	0	0	unlit	0	0	0		
+room.base	room.books	model	llMVCommonRoomBooksDObjDesc	llMVCommonRoomBooksAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
+room.base	room.lamp	model	llMVCommonRoomLampDObjDesc	llMVCommonRoomLampAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
+room.base	room.tissues	display	llMVCommonRoomTissuesDisplayList	llMVCommonRoomTissuesAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
+room.base	room.logo	model	llMVCommonRoomLogoDObjDesc	-	links	llMVCommonRoomLogoMObjSub	llMVCommonRoomLogoMatAnimJoint	0	none	-	0	0	unlit	0	0	0		
+room.base	room.boss_shadow	display	llMVCommonRoomBossShadowDisplayList	llMVCommonRoomBossShadowAnimJoint	direct	-	-	0	none	-	0	0	unlit	0	0	0		
 room.base	boss.pose1	fighter	llBossModelJointTreeDObjDesc	-	pairs	-	-	458	xrotn	-	0	0	lit	0	0	0	0xffffff80	0
-room.action	room.pencils	model	llMVCommonRoomPencilsDObjDesc	llMVCommonRoomPencilsAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0
-room.action	boss.pose2	transition	-	-	direct	-	-	459	xrotn	boss.pose1	560	0	lit	0	0	0
-room.action	boss.pose3	transition	-	-	direct	-	-	460	xrotn	boss.pose2	300	0	lit	0	0	0
+room.action	room.pencils	model	llMVCommonRoomPencilsDObjDesc	llMVCommonRoomPencilsAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
+room.action	boss.pose2	transition	-	-	direct	-	-	459	xrotn	boss.pose1	560	0	lit	0	0	0		
+room.action	boss.pose3	transition	-	-	direct	-	-	460	xrotn	boss.pose2	300	0	lit	0	0	0		
 room.action	mario.pickup	fighter	llMarioModelJointTreeDObjDesc	-	direct	-	-	362	xrotn	-	0	0	lit	0	0	0	0xffffff00	0
-room.action	mario.fall	transition	-	-	direct	-	-	363	transn	mario.pickup	100	0	lit	0	0	0
+room.action	mario.fall	transition	-	-	direct	-	-	363	transn	mario.pickup	100	0	lit	0	0	0		
 room.action	link.fall	fighter	llLinkModelJointTreeDObjDesc	-	direct	-	-	409	transn	-	0	0	lit	872.3249512	4038.864014	-4734.600098	0xfff9fffe	0
-room.action	room.spotlight	display	llMVCommonRoomSpotlightDisplayList	-	direct	llMVCommonRoomSpotlightMObjSub	llMVCommonRoomSpotlightMatAnimJoint	0	none	-	0	0	spot	-1149.30	2247.12	-3681.99
-room.action	room.snap	model	llMVCommonRoomSnapDObjDesc	llMVCommonRoomSnapAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0
-room.transition	room.desk_ground	model	llMVCommonRoomDeskGroundDObjDesc	-	links	llMVCommonRoomDeskGroundMObjSub	llMVCommonRoomDeskGroundMatAnimJoint	0	none	-	0	0	lit	0	0	0
-room.transition	room.transition_outline	display	llMVOpeningRoomTransitionOutlineDisplayList	llMVOpeningRoomTransitionOutlineAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0
-room.transition	room.transition_overlay	display	llMVOpeningRoomTransitionOverlayDisplayList	llMVOpeningRoomTransitionOverlayAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0
-room.closeup	room.closeup_air	model	llMVCommonRoomCloseUpEffectAirDObjDesc	llMVCommonRoomCloseUpEffectAirAnimJoint	links	llMVCommonRoomCloseUpEffectAirMObjSub	llMVCommonRoomCloseUpEffectAirMatAnimJoint	0	none	-	0	0	lit	0	0	0
-room.closeup	room.closeup_ground	model	llMVCommonRoomCloseUpEffectGroundDObjDesc	llMVCommonRoomCloseUpEffectGroundAnimJoint	links	llMVCommonRoomCloseUpEffectGroundMObjSub	llMVCommonRoomCloseUpEffectGroundMatAnimJoint	0	none	-	0	0	lit	0	0	0
-room.closeup	mario.revival	transition	-	-	direct	-	-	364	transn	mario.fall	760	0	lit	0	0	0
-cliff	cliff.hills	model	llMVOpeningCliffHillsDObjDesc	-	direct	-	-	0	none	-	0	0	lit	0	0	0
-cliff	cliff.ocarina	model	llMVOpeningCliffOcarinaDObjDesc	llMVOpeningCliffOcarinaAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0
-yamabuki	yamabuki.legs	model	llMVOpeningYamabukiLegsDObjDesc	llMVOpeningYamabukiLegsAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0
-yamabuki	yamabuki.shadow	model	llMVOpeningYamabukiLegsShadowDObjDesc	llMVOpeningYamabukiLegsShadowAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0
-yamabuki	yamabuki.ball	model	llMVOpeningYamabukiMBallDObjDesc	llMVOpeningYamabukiMBallAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0
-yoster	yoster.nest	model	llMVOpeningYosterNestDObjDesc	-	links	-	-	0	none	-	0	0	lit	0	0	0
-yoster	yoster.ground	model	llMVOpeningYosterGroundDObjDesc	llMVOpeningYosterGroundAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0
-sector	sector.great_fox	model	llMVOpeningSectorGreatFoxDObjDesc	llMVOpeningSectorGreatFoxAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0
-standoff	standoff.ground	display	llMVOpeningStandoffGroundDisplayList	-	direct	-	-	0	none	-	0	0	lit	0	0	0
-standoff	standoff.lightning	model	llMVOpeningStandoffLightningDObjDesc	llMVOpeningStandoffLightningAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0
+room.action	room.spotlight	display	llMVCommonRoomSpotlightDisplayList	-	direct	llMVCommonRoomSpotlightMObjSub	llMVCommonRoomSpotlightMatAnimJoint	0	none	-	0	0	spot	-1149.30	2247.12	-3681.99		
+room.action	room.snap	model	llMVCommonRoomSnapDObjDesc	llMVCommonRoomSnapAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0		
+room.transition	room.desk_ground	model	llMVCommonRoomDeskGroundDObjDesc	-	links	llMVCommonRoomDeskGroundMObjSub	llMVCommonRoomDeskGroundMatAnimJoint	0	none	-	0	0	lit	0	0	0		
+room.transition	room.transition_outline	display	llMVOpeningRoomTransitionOutlineDisplayList	llMVOpeningRoomTransitionOutlineAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
+room.transition	room.transition_overlay	display	llMVOpeningRoomTransitionOverlayDisplayList	llMVOpeningRoomTransitionOverlayAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
+room.closeup	room.closeup_air	model	llMVCommonRoomCloseUpEffectAirDObjDesc	llMVCommonRoomCloseUpEffectAirAnimJoint	links	llMVCommonRoomCloseUpEffectAirMObjSub	llMVCommonRoomCloseUpEffectAirMatAnimJoint	0	none	-	0	0	lit	0	0	0		
+room.closeup	room.closeup_ground	model	llMVCommonRoomCloseUpEffectGroundDObjDesc	llMVCommonRoomCloseUpEffectGroundAnimJoint	links	llMVCommonRoomCloseUpEffectGroundMObjSub	llMVCommonRoomCloseUpEffectGroundMatAnimJoint	0	none	-	0	0	lit	0	0	0		
+room.closeup	mario.revival	transition	-	-	direct	-	-	364	transn	mario.fall	760	0	lit	0	0	0		
+cliff	cliff.hills	model	llMVOpeningCliffHillsDObjDesc	-	direct	-	-	0	none	-	0	0	lit	0	0	0		
+cliff	cliff.ocarina	model	llMVOpeningCliffOcarinaDObjDesc	llMVOpeningCliffOcarinaAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
+yamabuki	yamabuki.legs	model	llMVOpeningYamabukiLegsDObjDesc	llMVOpeningYamabukiLegsAnimJoint	direct	-	-	0	none	-	0	0	lit	0	0	0		
+yamabuki	yamabuki.shadow	model	llMVOpeningYamabukiLegsShadowDObjDesc	llMVOpeningYamabukiLegsShadowAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0		
+yamabuki	yamabuki.ball	model	llMVOpeningYamabukiMBallDObjDesc	llMVOpeningYamabukiMBallAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0		
+yoster	yoster.nest	model	llMVOpeningYosterNestDObjDesc	-	links	-	-	0	none	-	0	0	lit	0	0	0		
+yoster	yoster.ground	model	llMVOpeningYosterGroundDObjDesc	llMVOpeningYosterGroundAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0		
+sector	sector.great_fox	model	llMVOpeningSectorGreatFoxDObjDesc	llMVOpeningSectorGreatFoxAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0		
+standoff	standoff.ground	display	llMVOpeningStandoffGroundDisplayList	-	direct	-	-	0	none	-	0	0	lit	0	0	0		
+standoff	standoff.lightning	model	llMVOpeningStandoffLightningDObjDesc	llMVOpeningStandoffLightningAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0		
+intro.mario	intro.mario.stance	fighter	llMarioModelJointTreeDObjDesc	-	direct	-	-	367	none	-	0	0	lit	0	0	0	0xffffff00	0
+intro.donkey	intro.donkey.stance	fighter	llDonkeyModelJointTreeDObjDesc	-	direct	-	-	390	none	-	0	0	lit	0	0	0	0xffffff80	0
+intro.link	intro.link.stance	fighter	llLinkModelJointTreeDObjDesc	-	direct	-	-	413	none	-	0	0	lit	0	0	0	0xfff9fffe	0
+intro.samus	intro.samus.stance	fighter	llSamusModelJointTreeDObjDesc	-	direct	-	-	401	none	-	0	0	lit	0	0	0	0xfff803ff	0
+intro.yoshi	intro.yoshi.stance	fighter	llYoshiModelJointTreeDObjDesc	-	pairs	-	-	455	none	-	0	0	lit	0	0	0	0xfbffffe0	0
+intro.kirby	intro.kirby.stance	fighter	llKirbyModelJointTreeDObjDesc	-	direct	-	-	426	none	-	0	0	lit	0	0	0	0xef7cffc0	0
+intro.fox	intro.fox.stance	fighter	llFoxModelJointTreeDObjDesc	-	direct	-	-	378	none	-	0	0	lit	0	0	0	0xffffffc0	0
+intro.pikachu	intro.pikachu.stance	fighter	llPikachuModelJointTreeDObjDesc	-	direct	-	-	485	none	-	0	0	lit	0	0	0	0xffffffc0	0

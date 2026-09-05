@@ -320,7 +320,7 @@ Camera3D Scene3DLoader::camera(std::string_view animation, float frame, Camera3D
                       initial_camera.at.x, initial_camera.at.y, initial_camera.at.z,
                       initial_camera.up.x, initial_camera.up.z, initial_camera.fov_y};
     const auto pose = n64::AnimationDecoder(archive_).sample(*script, frame, initial);
-    Camera3D result;
+    Camera3D result=initial_camera;
     result.eye={pose.tracks[0],pose.tracks[1],pose.tracks[2]};
     result.at={pose.tracks[4],pose.tracks[5],pose.tracks[6]};
     result.up={pose.tracks[8],1,0};
@@ -507,7 +507,7 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                                   material_light1,material_light2,camera.fov_y,camera.near_plane,camera.far_plane,
                                   sampler.lit&&model.receive_lighting,
                                   sampler.translucent||tint.a<255||animated_translucency||model.additive,
-                                  model.additive,rdp});
+                                  model.additive,rdp,camera.viewport,camera.aspect});
         }
         };
         if ((runtime_flags[node_index]&1U)==0&&node_index<model.parent_meshes.size() &&
@@ -542,6 +542,8 @@ void Scene3DRenderer::flush(RenderEngine& render) {
         ForwardMaterial material;
         material.texture=triangle.texture;
         material.rdp=triangle.rdp;
+        material.viewport=triangle.viewport;
+        material.aspect=triangle.aspect;
         material.lights=triangle.lights;
         // MObj light1/light2 are the part's local Lights1 (diffuse/ambient),
         // not a replacement for the scene rig. Overwriting the key color
@@ -569,7 +571,7 @@ void Scene3DRenderer::flush(RenderEngine& render) {
     const auto same_material=[&](const ForwardMaterial& a,const ForwardMaterial& b) {
         const auto& x=a.rdp;
         const auto& y=b.rdp;
-        return x.enabled==y.enabled && x.combine_hi==y.combine_hi && x.combine_lo==y.combine_lo &&
+        return a.viewport==b.viewport && a.aspect==b.aspect && x.enabled==y.enabled && x.combine_hi==y.combine_hi && x.combine_lo==y.combine_lo &&
             x.cycles==y.cycles && x.texture_gen==y.texture_gen && x.texture_gen_linear==y.texture_gen_linear &&
             x.generated_scale.x==y.generated_scale.x && x.generated_scale.y==y.generated_scale.y &&
             x.alpha_threshold==y.alpha_threshold && same_color(x.primitive,y.primitive) &&

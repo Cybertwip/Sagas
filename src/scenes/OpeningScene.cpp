@@ -68,6 +68,8 @@ public:
             room(r, local);
         } else if (segment.renderer == "portraits") {
             portraits(r, local);
+        } else if (segment.renderer == "fighter_intro") {
+            fighter_intro(r,local,segment.name);
         } else if (segment.renderer == "fighter") {
             fighter(r, local, segment.argument, segment.color);
         } else if (segment.renderer == "wallpaper") {
@@ -97,7 +99,7 @@ public:
             r.fill(0,10,10,220,{0,0,0,255});
             r.fill(310,10,10,220,{0,0,0,255});
         }
-        const float edge = segment.renderer == "room" ? 1.0f : std::min({1.0f, local / 10.0f,
+        const float edge = (segment.renderer == "room" || segment.renderer == "fighter_intro") ? 1.0f : std::min({1.0f, local / 10.0f,
                                      (static_cast<int>(segment.duration) - local) / 10.0f});
         if (edge < 1) r.fill(0, 0, 320, 240,
                              {0,0,0,static_cast<std::uint8_t>((1-edge)*255)});
@@ -282,6 +284,57 @@ private:
             r.sprite("textures/MVOpeningPortraitsSet" + std::to_string(local < 75 ? 1 : 2) + "/" + std::string(set[i]) + ".png",
                      {x, 37.5f + static_cast<float>(i) * 55.0f});
         }
+    }
+    void fighter_intro(RenderEngine& r,int local,std::string_view name) {
+        struct Intro {
+            std::string_view key, fighter_name, letters;
+            std::array<float,7> letter_x;
+            float name_x;
+            std::array<float,4> viewport;
+            Vec3 start;
+            Color background;
+        };
+        // mvOpening{Fighter}MakeName / MakePosedFighter / MakePosedFighterCamera.
+        static constexpr Intro intros[]{
+            {"mario","Mario","MARIO",{0,40,80,110,125},80,{10,10,100,220},{0,600,0},{160,170,255,255}},
+            {"donkey","Donkey","DK",{0,40},120,{210,10,100,220},{0,-600,0},{70,90,0,255}},
+            {"link","Link","LINK",{0,30,45,80},100,{10,10,300,80},{600,0,0},{150,120,180,255}},
+            {"samus","Samus","SAMUS",{0,30,70,110,140},80,{10,10,100,220},{0,600,0},{0,0,80,255}},
+            {"yoshi","Yoshi","YOSHI",{0,30,65,95,128},80,{10,150,300,80},{-600,0,0},{255,190,90,255}},
+            {"kirby","Kirby","KIRBY",{0,35,50,80,110},90,{210,10,100,220},{0,600,0},{80,170,255,255}},
+            {"fox","Fox","FOX",{0,30,75},110,{210,10,100,220},{0,600,0},{0,60,40,255}},
+            {"pikachu","Pikachu","PIKACHU",{0,30,45,75,110,140,170},65,{10,10,100,220},{0,-600,0},{110,170,110,255}}
+        };
+        const auto found=std::find_if(std::begin(intros),std::end(intros),
+                                      [name](const auto& intro) { return intro.key==name; });
+        if (found==std::end(intros)) throw std::runtime_error("unknown fighter introduction");
+        const auto& intro=*found;
+        if (local<15) {
+            for (std::size_t i=0;i<intro.letters.size();++i)
+                r.sprite_at(std::string("textures/IFCommonAnnounceCommon/Letter")+intro.letters[i]+".png",
+                            {intro.name_x+intro.letter_x[i],100});
+            return;
+        }
+        const auto& vp=intro.viewport;
+        r.fill(vp[0],vp[1],vp[2],vp[3],intro.background);
+        auto posed=model(std::string("intro.")+std::string(name)+".stance");
+        float distance{},speed{};
+        for (int tick=15;tick<=local && tick<60;++tick) {
+            if (tick==15) speed=17;
+            if (tick==45) speed=15;
+            if (tick>15 && tick<45) speed-=1.0f/15.0f;
+            if (tick>45 && tick<60) speed-=1;
+            distance+=speed;
+        }
+        const float remaining=1.0f-distance/600.0f;
+        posed.position={intro.start.x*remaining,intro.start.y*remaining,0};
+        Camera3D initial;
+        initial.viewport=vp;
+        initial.aspect=vp[2]/vp[3];
+        const auto camera=loader_->camera(std::string("llMVOpeningCommon")+
+            std::string(intro.fighter_name)+"CamAnimJoint",static_cast<float>(local),initial);
+        renderer_->draw(r,posed,camera,static_cast<float>(local-15),{255,255,255,255},
+                        LightingSystem::opening_room());
     }
     void fighter(RenderEngine& r, int local, std::string_view portrait, Color background) {
         r.fill(10, 10, 300, 220, background);

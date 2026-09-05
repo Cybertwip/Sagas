@@ -97,6 +97,8 @@ layout(location=1) in vec3 inNormal;
 layout(location=2) in vec4 inColor;
 layout(location=3) in vec2 inUV;
 uniform float focal;
+uniform vec2 viewportScale;
+uniform vec2 viewportOffset;
 uniform float nearPlane;
 uniform float farPlane;
 uniform vec3 shadowRight;
@@ -123,8 +125,7 @@ void main() {
     float z=inPosition.z;
     float clipZ=((farPlane+nearPlane)/(farPlane-nearPlane))*z
                -(2.0*farPlane*nearPlane)/(farPlane-nearPlane);
-    gl_Position=vec4(inPosition.x*focal*0.703125,
-                     inPosition.y*focal*0.916666667,clipZ,z);
+    gl_Position=vec4(inPosition.xy*focal*viewportScale+viewportOffset*z,clipZ,z);
     normal=inNormal;
     viewDirection=normalize(-inPosition);
     viewPosition=inPosition;
@@ -694,6 +695,11 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     }
     glUseProgram(program_forward_);
     const auto uniform=[&](const char* name) { return glGetUniformLocation(program_forward_,name); };
+    const auto& viewport=material.viewport;
+    scissor_game(viewport[0],viewport[1],viewport[2],viewport[3]);
+    glUniform2f(uniform("viewportScale"),viewport[2]/320.0f/material.aspect,viewport[3]/240.0f);
+    glUniform2f(uniform("viewportOffset"),(viewport[0]+viewport[2]*0.5f)/160.0f-1.0f,
+                1.0f-(viewport[1]+viewport[3]*0.5f)/120.0f);
     glUniform1f(uniform("focal"),1.0f/std::tan(material.fov_y*0.008726646259971648f));
     glUniform1f(uniform("nearPlane"),material.near_plane);
     glUniform1f(uniform("farPlane"),material.far_plane);
@@ -762,6 +768,7 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     glBindBuffer(GL_ARRAY_BUFFER,vbo_forward_);
     glBufferData(GL_ARRAY_BUFFER,static_cast<GLsizeiptr>(data.size()*sizeof(VertexForward)),data.data(),GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES,0,static_cast<GLsizei>(data.size()));
+    reset_scissor();
 }
 
 void RenderEngine::clear_depth() {

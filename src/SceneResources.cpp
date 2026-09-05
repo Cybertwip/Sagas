@@ -187,12 +187,13 @@ Model3D SceneResourceManager::build_model(
         model = loader_.fighter_model(descriptor.descriptor, descriptor.layout,
                                       descriptor.setup_parts);
         n64::AnimationDecoder animation(archive_);
-        const auto scripts = animation.table({descriptor.animation_file, 0}, model.nodes.size() + 1);
+        const auto scripts = animation.table({descriptor.animation_file, 0}, model.nodes.size() + (descriptor.wrapper==Model3D::FighterWrapper::None ? 0 : 1));
         if (scripts.empty()) throw std::runtime_error("fighter animation table is empty: " + descriptor.key);
         model.fighter_root.scale = {1, 1, 1};
-        model.fighter_root_animation = scripts.front();
+        model.fighter_root_animation = descriptor.wrapper==Model3D::FighterWrapper::None
+            ? std::nullopt : scripts.front();
         model.fighter_wrapper = descriptor.wrapper;
-        model.animation.assign(scripts.begin() + 1, scripts.end());
+        model.animation.assign(scripts.begin() + (descriptor.wrapper==Model3D::FighterWrapper::None ? 0 : 1), scripts.end());
         model.fighter_animation = true;
         model.is_fighter = true;
     } else {
@@ -213,11 +214,12 @@ Model3D SceneResourceManager::build_model(
                 n64::AnimationDecoder::apply(model.nodes[i], animation.sample16(
                     *model.animation[i], descriptor.transition_frame, animation.pose(model.nodes[i])));
         }
-        const auto scripts = animation.table({descriptor.animation_file, 0}, model.nodes.size() + 1);
+        const auto scripts = animation.table({descriptor.animation_file, 0}, model.nodes.size() + (descriptor.wrapper==Model3D::FighterWrapper::None ? 0 : 1));
         if (scripts.empty()) throw std::runtime_error("fighter transition table is empty: " + descriptor.key);
-        model.fighter_root_animation = scripts.front();
+        model.fighter_root_animation = descriptor.wrapper==Model3D::FighterWrapper::None
+            ? std::nullopt : scripts.front();
         model.fighter_wrapper = descriptor.wrapper;
-        model.animation.assign(scripts.begin() + 1, scripts.end());
+        model.animation.assign(scripts.begin() + (descriptor.wrapper==Model3D::FighterWrapper::None ? 0 : 1), scripts.end());
         model.fighter_animation = true;
         model.is_fighter = true;
     }

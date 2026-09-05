@@ -13,6 +13,8 @@ struct Camera3D {
     Vec3 at{};
     Vec3 up{0, 1, 0};
     float fov_y{45}, near_plane{16}, far_plane{65536};
+    std::array<float,4> viewport{10,10,300,220};
+    float aspect{4.0f/3.0f};
 };
 
 enum class GeometryLayout { Direct, DisplayListLinks, JointPairs };
@@ -97,6 +99,8 @@ private:
         float fov_y{45}, near_plane{16}, far_plane{65536};
         bool lit{}, translucent{}, additive{};
         N64RenderState rdp;
+        std::array<float,4> viewport{10,10,300,220};
+        float aspect{4.0f/3.0f};
     };
     n64::AnimationDecoder animation_;
     std::vector<ProjectedTriangle> triangles_;

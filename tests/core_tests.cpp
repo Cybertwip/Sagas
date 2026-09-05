@@ -36,6 +36,12 @@ int main() {
     assert(title_start.end_tick == 38 && title_start.voices.size() == 1);
     assert(title_start.voices[0].wave == 21 && title_start.voices[0].pitch[1].tick == 10);
     sagas::n64::RelocArchive archive(assets);
+    // Figatree streams can end in the final two bytes of a reloc file.
+    const auto punch_bytes=archive.bytes(936);
+    const auto last_half=static_cast<std::uint32_t>(punch_bytes.size()-2);
+    assert(static_cast<std::uint16_t>(archive.s16({936,last_half}))==
+        ((std::to_integer<unsigned>(punch_bytes[last_half])<<8) |
+          std::to_integer<unsigned>(punch_bytes[last_half+1])));
     const auto ground = archive.symbol("llMVOpeningStandoffGroundDisplayList");
     assert(ground);
     const auto mesh = sagas::n64::DisplayListDecoder(archive).decode(*ground);
@@ -72,6 +78,11 @@ int main() {
     assert(has_clear_texel && has_partial_texel);
     for (const auto* name:{"Castle","Jungle","Hyrule","Zebes","Yoster","Pupupu","Sector","Yamabuki"}) {
         const auto stage=scene_loader.stage(std::string("llGR")+name+"MapMapHeader");
+        for (const auto& layer:stage.layers)
+            for (std::size_t node=0;node<layer.nodes.size();++node) if (layer.animation[node])
+                for (int frame:{0,247,248,319})
+                    (void)animation_decoder.sample(*layer.animation[node],static_cast<float>(frame),
+                                                   animation_decoder.pose(layer.nodes[node]));
         std::size_t vertices=0;
         for (const auto& layer:stage.layers) for (const auto& part:layer.meshes) {
             assert(part.unsupported_commands==0);
@@ -80,6 +91,15 @@ int main() {
         assert(vertices>0);
         assert(std::isfinite(stage.movie_player1.x) && std::isfinite(stage.movie_player1.y));
     }
+    // RGBA32 tile-line stride counts one of the two TMEM banks. Treating
+    // it as a packed source stride turned these 32x32 billboards into stripes.
+    const auto nest=scene_loader.model("llMVOpeningYosterNestDObjDesc");
+    std::size_t rgba_billboards=0;
+    for (const auto& vertex:nest.meshes[2].vertices) if (vertex.texture) {
+        assert(vertex.texture->width==32 && vertex.texture->height==32);
+        ++rgba_billboards;
+    }
+    assert(rgba_billboards>0);
     const auto room_background=scene_loader.model(
         "llMVCommonRoomBackgroundDObjDesc", {}, sagas::GeometryLayout::DisplayListLinks,
         "llMVCommonRoomBackgroundMObjSub");
@@ -106,6 +126,16 @@ int main() {
     }
     sagas::SceneResourceManager resources(assets);
     resources.load_manifest("scenes/opening.sgscene");
+    constexpr std::array<unsigned,19> source_starts{
+        0,1335,1515,1605,1695,1785,1875,1965,2055,2145,
+        2250,2500,2690,2880,3230,3420,3610,3975,4155};
+    assert(resources.timeline().size()==source_starts.size());
+    unsigned presentation_tick=0;
+    for (std::size_t i=0;i<source_starts.size();++i) {
+        assert(presentation_tick==source_starts[i]);
+        presentation_tick+=resources.timeline()[i].duration;
+    }
+    assert(presentation_tick==4195);
     for (const auto& intro : std::array<std::pair<const char*,unsigned>,8>{{
         {"mario",367},{"donkey",390},{"link",413},{"samus",401},
         {"yoshi",455},{"kirby",426},{"fox",378},{"pikachu",485}}}) {
@@ -116,6 +146,15 @@ int main() {
         assert(!stance.fighter_root_animation);
         assert(stance.animation==animation_decoder.table({intro.second,0},stance.nodes.size()));
         resources.release(bundle);
+    }
+    resources.activate("jungle");
+    resources.activate("standoff");
+    for (const auto* key:{"jungle.donkey","jungle.samus","standoff.mario","standoff.kirby"}) {
+        const auto& actor=resources.model(key);
+        for (std::size_t node=0;node<actor.nodes.size();++node) if (actor.animation[node])
+            for (int frame:{0,30,100,319})
+                (void)animation_decoder.sample16(*actor.animation[node],static_cast<float>(frame),
+                                                animation_decoder.pose(actor.nodes[node]));
     }
     resources.activate("room.base");
     resources.activate("room.action");
@@ -137,6 +176,22 @@ int main() {
                                                         sagas::GeometryLayout::Direct,
                                                         mario_spec.setup_parts);
     assert(mario_model.nodes.size()==24);
+    bool mario_face_has_interior_uv=false;
+    for (const auto& vertex:mario_model.meshes[8].vertices)
+        if (vertex.texture && vertex.texture->width==32 && vertex.texture->height==32 &&
+            vertex.u>0.1f && vertex.u<0.9f && vertex.v>0.1f && vertex.v<0.9f)
+            mario_face_has_interior_uv=true;
+    assert(mario_face_has_interior_uv);
+    const auto pikachu_spec=sagas::fighter_model_spec(sagas::FighterKind::Pikachu);
+    const auto pikachu=scene_loader.fighter_model(pikachu_spec.descriptor,
+        sagas::GeometryLayout::Direct,pikachu_spec.setup_parts);
+    std::size_t shared_joint_vertices=0;
+    for (std::size_t node=0;node<pikachu.meshes.size();++node)
+        for (const auto& vertex:pikachu.meshes[node].vertices) {
+            assert(vertex.transform_node<pikachu.nodes.size());
+            if (vertex.transform_node!=node) ++shared_joint_vertices;
+        }
+    assert(shared_joint_vertices==106);
     std::size_t mario_material_commands{};
     std::size_t mario_triangles{}, mario_rejected{}, mario_unsupported{};
     std::size_t mario_textured{}, mario_untextured{};

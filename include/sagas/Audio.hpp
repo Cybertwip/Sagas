@@ -26,6 +26,7 @@ public:
     [[nodiscard]] bool music_ready(std::string_view logical) const;
     void play_music(std::string_view logical, float gain = 1.0f);
     void stop();
+    [[nodiscard]] double music_seconds() const;
 private:
     struct PreparedAudio {
         std::vector<std::int16_t> samples;
@@ -40,6 +41,9 @@ private:
     std::future<PreparedAudio> music_job_;
     std::string music_job_name_;
     float music_job_gain_{};
+    std::size_t music_bytes_{};
+    int music_bytes_per_second_{};
+    std::chrono::steady_clock::time_point music_started_{};
 };
 
 } // namespace sagas

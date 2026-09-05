@@ -350,7 +350,19 @@ void AudioEngine::play_music(std::string_view logical, float gain) {
     } else {
         prepared = synthesize_music(std::string(logical), gain);
     }
+    music_bytes_=prepared.samples.size()*sizeof(std::int16_t);
+    music_bytes_per_second_=prepared.rate*prepared.channels*sizeof(std::int16_t);
     queue(music_stream_, prepared.samples, prepared.rate, prepared.channels);
+    music_started_=std::chrono::steady_clock::now();
+}
+
+double AudioEngine::music_seconds() const {
+    if (!music_stream_ || music_bytes_per_second_<=0) return 0;
+    const auto queued=SDL_GetAudioStreamQueued(music_stream_);
+    const double elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-music_started_).count();
+    if (queued<0) return elapsed;
+    const double played=static_cast<double>(music_bytes_-std::min(music_bytes_,static_cast<std::size_t>(queued)))/music_bytes_per_second_;
+    return queued==0 ? std::max(played,elapsed) : played;
 }
 
 } // namespace sagas

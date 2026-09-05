@@ -540,7 +540,7 @@ void RenderEngine::begin(Color clear) {
     }
     int drawable_width{},drawable_height{};
     SDL_GetWindowSizeInPixels(window_,&drawable_width,&drawable_height);
-    const float target=4.0f/3.0f;
+    const float target=16.0f/9.0f;
     if (drawable_height>0&&static_cast<float>(drawable_width)/drawable_height>target) {
         viewport_height_=drawable_height;
         viewport_width_=static_cast<int>(std::lround(drawable_height*target));
@@ -717,7 +717,7 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     const auto uniform=[&](const char* name) { return glGetUniformLocation(program_forward_,name); };
     const auto& viewport=material.viewport;
     scissor_game(viewport[0],viewport[1],viewport[2],viewport[3]);
-    glUniform2f(uniform("viewportScale"),viewport[2]/320.0f/material.aspect,viewport[3]/240.0f);
+    glUniform2f(uniform("viewportScale"),viewport[2]/320.0f/(material.aspect*(4.0f/3.0f)),viewport[3]/240.0f);
     glUniform2f(uniform("viewportOffset"),(viewport[0]+viewport[2]*0.5f)/160.0f-1.0f,
                 1.0f-(viewport[1]+viewport[3]*0.5f)/120.0f);
     glUniform1f(uniform("focal"),1.0f/std::tan(material.fov_y*0.008726646259971648f));

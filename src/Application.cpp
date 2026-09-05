@@ -30,13 +30,15 @@ Application::Application(ApplicationOptions options) : options_(std::move(option
     SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS,1);
     SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES,4);
     const auto flags = SDL_WINDOW_OPENGL | (options_.headless ? SDL_WINDOW_HIDDEN : SDL_WINDOW_RESIZABLE);
-    window_=SDL_CreateWindow("Sagas | Smash Remix",960,720,flags);
+    window_=SDL_CreateWindow("Sagas | Smash Remix",1280,720,flags);
     if (!window_) fail("OpenGL window creation failed");
+    if (!SDL_SetWindowAspectRatio(window_,16.0f/9.0f,16.0f/9.0f))
+        fail("window aspect ratio setup failed");
     assets_ = std::make_unique<AssetRepository>(options_.asset_root);
     render_ = std::make_unique<RenderEngine>(window_, *assets_);
     audio_ = std::make_unique<AudioEngine>(*assets_);
     resources_ = std::make_unique<SceneResourceManager>(*assets_);
-    services_ = std::make_unique<Services>(Services{*assets_, *render_, *audio_, physics_, *resources_});
+    services_ = std::make_unique<Services>(Services{*assets_, *render_, *audio_, physics_, *resources_, options_.headless});
     auto first_scene = options_.start_at_menu ? make_menu_scene() :
                        (options_.start_at_title ? make_title_scene() : make_startup_scene());
     scenes_ = std::make_unique<SceneMachine>(std::move(first_scene), *services_);
@@ -111,7 +113,7 @@ int Application::run() {
         const auto input = poll_input();
         running = !input.quit;
         const auto now = clock::now();
-        accumulator += options_.headless ? step : std::min(now - previous, std::chrono::duration_cast<clock::duration>(std::chrono::milliseconds(250)));
+        accumulator += options_.headless ? step : now - previous;
         previous = now;
         bool first = true;
         while (accumulator >= step) {

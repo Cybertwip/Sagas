@@ -502,7 +502,7 @@ class DisplayListDecoder:
         bits = 4 << tile.size
         width = height = source_x = source_y = source_row_bytes = 0
         if loaded is not None and loaded.block:
-            row_bytes = tile.line * 8
+            row_bytes = tile.line * (16 if tile.size == 3 else 8)
             load_bits = 4 << loaded.size
             load_units = (loaded.lrs - loaded.uls) + 1 if loaded.lrs >= loaded.uls else 0
             total_bits = load_units * load_bits

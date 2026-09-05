@@ -26,6 +26,11 @@ public:
         resources_->prefetch("room.action");
     }
     void update(Services& services, const InputState& input, float) override {
+        const int target=services.deterministic_clock ? tic_+1 :
+            std::max(tic_,static_cast<int>(services.audio.music_seconds()*60.0));
+        // Process every crossed cue, even when rendering or loading missed
+        // frames; the soundtrack remains the clock in a live presentation.
+        while (tic_<std::min(target,total_duration_)) {
         ++tic_;
         // The room has source-scripted sub-scenes inside one timeline segment.
         if (tic_ == 250) services.resources.activate("room.action");
@@ -35,7 +40,7 @@ public:
             services.resources.prefetch("room.closeup");
         }
         if (tic_ == 1120) services.resources.activate("room.closeup");
-        if (tic_ == 1320) {
+        if (tic_ == 1335) {
             services.resources.release("room.base");
             services.resources.release("room.action");
             services.resources.release("room.transition");
@@ -54,6 +59,7 @@ public:
             }
             start += segment.duration;
         }
+        }
         if (tic_ >= 10 && (input.accept_pressed || input.cancel_pressed || input.skip_pressed)) done_ = true;
         if (tic_ >= total_duration_) done_ = true;
     }
@@ -63,13 +69,25 @@ public:
         renderer_->begin();
         const auto position = locate(tic_);
         const auto& segment = *position.segment;
-        const int local = position.local;
+        // The scheduler holds the outgoing image while loading the next
+        // overlay, until its absolute soundtrack deadline in mvOpening*.c.
+        int active=160;
+        if (segment.name=="room") active=1320;
+        else if (segment.name=="portraits") active=150;
+        else if (segment.renderer=="fighter_intro") active=60;
+        else if (segment.name=="run") active=220;
+        else if (segment.name=="jungle" || segment.name=="standoff") active=320;
+        else if (segment.name=="newcomers") active=40;
+        const int local=std::min(position.local,active-1);
+        try {
         if (segment.renderer == "room") {
             room(r, local);
         } else if (segment.renderer == "portraits") {
             portraits(r, local);
         } else if (segment.renderer == "fighter_intro") {
             fighter_intro(r,local,segment.name);
+        } else if (segment.renderer == "jungle") {
+            jungle(r,local);
         } else if (segment.renderer == "fighter") {
             fighter(r, local, segment.argument, segment.color);
         } else if (segment.renderer == "wallpaper") {
@@ -92,6 +110,9 @@ public:
             throw std::runtime_error("unknown opening render strategy: " + segment.renderer);
         }
         renderer_->end(r);
+        } catch (const std::exception& error) {
+            throw std::runtime_error("opening "+segment.name+" frame "+std::to_string(local)+": "+error.what());
+        }
         if (segment.renderer=="room") {
             // Original room cameras use the 10,10–310,230 viewport.
             r.fill(0,0,320,10,{0,0,0,255});
@@ -99,10 +120,6 @@ public:
             r.fill(0,10,10,220,{0,0,0,255});
             r.fill(310,10,10,220,{0,0,0,255});
         }
-        const float edge = (segment.renderer == "room" || segment.renderer == "fighter_intro") ? 1.0f : std::min({1.0f, local / 10.0f,
-                                     (static_cast<int>(segment.duration) - local) / 10.0f});
-        if (edge < 1) r.fill(0, 0, 320, 240,
-                             {0,0,0,static_cast<std::uint8_t>((1-edge)*255)});
         r.end();
     }
     std::unique_ptr<Scene> next() override { return done_ ? make_title_scene() : nullptr; }
@@ -405,6 +422,48 @@ private:
         fighter.animation=decoder.table({motion,0},fighter.nodes.size());
         renderer_->draw(r,fighter,camera,frame,{255,255,255,255},LightingSystem::opening_room());
         renderer_->flush(r);
+    }
+    void jungle(RenderEngine& r,int local) {
+        if (motion_stage_name_!="jungle") {
+            motion_stage_=loader_->stage("llGRJungleMapMapHeader");
+            motion_stage_name_="jungle";
+        }
+        r.sprite_rect("textures/StageJungle.png",10,10,300,220);
+        Camera3D initial;
+        initial.fov_y=38;
+        initial.aspect=15.0f/11.0f;
+        initial.near_plane=50;
+        initial.far_plane=15000;
+        const auto camera=loader_->camera("llMVOpeningJungleCamAnimJoint",static_cast<float>(local),initial);
+        for (const auto& layer:motion_stage_.layers)
+            renderer_->draw(r,layer,camera,static_cast<float>(local));
+        n64::AnimationDecoder decoder(resources_->archive());
+        auto donkey=model("jungle.donkey");
+        auto samus=model("jungle.samus");
+        donkey.position=motion_stage_.movie_player2;
+        samus.position=motion_stage_.movie_player3;
+        samus.position.x+=1100;
+        donkey.rotation.y=std::numbers::pi_v<float>/2;
+        samus.rotation.y=-std::numbers::pi_v<float>/2;
+        // Source key-event phases. Collision responses and attack effects
+        // still require the gameplay simulation (see OPENING_TASKS.md).
+        unsigned dk_motion=942, samus_motion=958;
+        int dk_start=0,samus_start=0;
+        if (local>=4) { dk_motion=943; dk_start=4; }
+        if (local>=32) { dk_motion=944; dk_start=32; }
+        if (local>=52) { dk_motion=810; dk_start=52; }
+        if (local>=82) { dk_motion=806; dk_start=82; }
+        if (local>=92) { dk_motion=922; dk_start=92; }
+        if (local>=154) { dk_motion=806; dk_start=154; }
+        if (local>=168) { dk_motion=936; dk_start=168; donkey.rotation.y=-std::numbers::pi_v<float>/2; }
+        if (local>=20) { samus_motion=953; samus_start=20; }
+        if (local>=95) { samus_motion=1015; samus_start=95; }
+        if (local>=96) { samus_motion=959; samus_start=96; }
+        if (local>=156) { samus_motion=953; samus_start=156; }
+        donkey.animation=decoder.table({dk_motion,0},donkey.nodes.size());
+        samus.animation=decoder.table({samus_motion,0},samus.nodes.size());
+        renderer_->draw(r,donkey,camera,static_cast<float>(local-dk_start));
+        renderer_->draw(r,samus,camera,static_cast<float>(local-samus_start));
     }
     void fighter(RenderEngine& r, int local, std::string_view portrait, Color background) {
         r.fill(10, 10, 300, 220, background);

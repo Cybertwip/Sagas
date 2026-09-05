@@ -33,7 +33,7 @@ yoster	yoster.nest	model	llMVOpeningYosterNestDObjDesc	-	links	-	-	0	none	-	0	0	
 yoster	yoster.ground	model	llMVOpeningYosterGroundDObjDesc	llMVOpeningYosterGroundAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0		
 sector	sector.great_fox	model	llMVOpeningSectorGreatFoxDObjDesc	llMVOpeningSectorGreatFoxAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0		
 standoff	standoff.ground	display	llMVOpeningStandoffGroundDisplayList	-	direct	-	-	0	none	-	0	0	lit	0	0	0		
-standoff	standoff.lightning	model	llMVOpeningStandoffLightningDObjDesc	llMVOpeningStandoffLightningAnimJoint	links	-	-	0	none	-	0	0	lit	0	0	0		
+standoff	standoff.lightning	model	llMVOpeningStandoffLightningDObjDesc	llMVOpeningStandoffLightningAnimJoint	links	llMVOpeningStandoffLightningMObjSub	llMVOpeningStandoffLightningMatAnimJoint	0	none	-	0	0	lit	0	0	0
 intro.mario	intro.mario.stance	fighter	llMarioModelJointTreeDObjDesc	-	direct	-	-	367	none	-	0	0	lit	0	0	0	0xffffff00	0
 intro.donkey	intro.donkey.stance	fighter	llDonkeyModelJointTreeDObjDesc	-	direct	-	-	390	none	-	0	0	lit	0	0	0	0xffffff80	0
 intro.link	intro.link.stance	fighter	llLinkModelJointTreeDObjDesc	-	direct	-	-	413	none	-	0	0	lit	0	0	0	0xfff9fffe	0
@@ -42,3 +42,7 @@ intro.yoshi	intro.yoshi.stance	fighter	llYoshiModelJointTreeDObjDesc	-	pairs	-	-
 intro.kirby	intro.kirby.stance	fighter	llKirbyModelJointTreeDObjDesc	-	direct	-	-	426	none	-	0	0	lit	0	0	0	0xef7cffc0	0
 intro.fox	intro.fox.stance	fighter	llFoxModelJointTreeDObjDesc	-	direct	-	-	378	none	-	0	0	lit	0	0	0	0xffffffc0	0
 intro.pikachu	intro.pikachu.stance	fighter	llPikachuModelJointTreeDObjDesc	-	direct	-	-	485	none	-	0	0	lit	0	0	0	0xffffffc0	0
+standoff	standoff.mario	fighter	llMarioModelJointTreeDObjDesc	-	direct	-	-	365	none	-	0	0	lit	0	0	0	0xffffff00	0
+standoff	standoff.kirby	fighter	llKirbyModelJointTreeDObjDesc	-	direct	-	-	424	none	-	0	0	lit	0	0	0	0xef7cffc0	0
+jungle	jungle.donkey	fighter	llDonkeyModelJointTreeDObjDesc	-	direct	-	-	942	none	-	0	0	lit	0	0	0	0xffffff80	0
+jungle	jungle.samus	fighter	llSamusModelJointTreeDObjDesc	-	direct	-	-	958	none	-	0	0	lit	0	0	0	0xfff803ff	0

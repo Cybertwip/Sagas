@@ -361,7 +361,9 @@ std::shared_ptr<const RasterImage> DisplayListDecoder::texture(State& state) {
         // render tile's line describes its physical row stride.  TileSize
         // is a sampling/clamp window and can intentionally be much larger
         // than the source image, so it must not be used as image dimensions.
-        const unsigned row_bytes = tile.line * 8U;
+        // RGBA32 stores RG and BA in separate TMEM banks. The tile line
+        // advances each bank, so a source row contains twice that byte count.
+        const unsigned row_bytes = tile.line * (tile.size==3 ? 16U : 8U);
         const unsigned load_bits = 4U << loaded->second.size;
         const std::uint64_t load_units = loaded->second.lrs >= loaded->second.uls
             ? static_cast<std::uint64_t>(loaded->second.lrs - loaded->second.uls) + 1U : 0U;

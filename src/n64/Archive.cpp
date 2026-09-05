@@ -76,7 +76,7 @@ std::optional<Address> RelocArchive::resolve(Address pointer_word) {
 std::uint32_t RelocArchive::u32(Address address) {
     const std::scoped_lock lock(mutex_);
     const auto data = bytes(address.file);
-    if (address.offset + 4 > data.size()) throw std::out_of_range("N64 u32 read");
+    if (address.offset + 4 > data.size()) throw std::out_of_range("N64 u32 read at "+std::to_string(address.file)+":"+std::to_string(address.offset)+" (size "+std::to_string(data.size())+")");
     const auto* p = data.data() + address.offset;
     return (std::to_integer<std::uint32_t>(p[0]) << 24) |
            (std::to_integer<std::uint32_t>(p[1]) << 16) |
@@ -85,7 +85,11 @@ std::uint32_t RelocArchive::u32(Address address) {
 
 std::int16_t RelocArchive::s16(Address address) {
     const std::scoped_lock lock(mutex_);
-    return static_cast<std::int16_t>(u32(address) >> 16);
+    const auto data=bytes(address.file);
+    if (address.offset+2>data.size()) throw std::out_of_range("N64 s16 read at "+
+        std::to_string(address.file)+":"+std::to_string(address.offset));
+    return static_cast<std::int16_t>((std::to_integer<unsigned>(data[address.offset])<<8) |
+                                     std::to_integer<unsigned>(data[address.offset+1]));
 }
 float RelocArchive::f32(Address address) {
     const std::scoped_lock lock(mutex_);

@@ -235,7 +235,11 @@ SceneResourceManager::BuiltBundle SceneResourceManager::build(
     const Bundle& bundle, std::unordered_map<std::string, Model3D> dependencies) {
     BuiltBundle built{bundle.name, {}};
     for (const auto& descriptor : bundle.resources) {
-        auto model = build_model(descriptor, dependencies);
+        Model3D model;
+        try { model=build_model(descriptor,dependencies); }
+        catch (const std::exception& error) {
+            throw std::runtime_error("scene resource "+descriptor.key+": "+error.what());
+        }
         dependencies.insert_or_assign(descriptor.key, model);
         built.models.emplace(descriptor.key, std::move(model));
     }

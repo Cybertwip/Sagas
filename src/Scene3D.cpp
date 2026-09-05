@@ -125,6 +125,10 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
                 ? animation.sample16(*model.animation[node_index],frame,animation.pose(node))
                 : animation.sample(*model.animation[node_index],frame,animation.pose(node)));
         const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
+        // A sibling ends the previous branch. Disabled fighter descriptors
+        // can leave depth gaps; they must not pick up a cousin's old matrix.
+        for (int depth=std::max(node.depth,0);depth<kMaxDepth;++depth)
+            have_parent[static_cast<std::size_t>(depth)]=false;
         Matrix parent=model_matrix;
         // Fighter DObjDesc trees often start at depth 4 (below TopN/TransN).
         // Parenting those to an unset identity slot threw fingers and held
@@ -212,10 +216,12 @@ Stage3D Scene3DLoader::stage(std::string_view header) {
         if (const auto objects=archive_.resolve({geometry->file,geometry->offset+24}))
             for (unsigned i=0;i<count;++i) {
                 const n64::Address item{objects->file,objects->offset+i*6};
-                if (archive_.s16(item)==0x15) { // nMPMapObjKindMoviePlayer1
-                    result.movie_player1={static_cast<float>(archive_.s16({item.file,item.offset+2})),
-                                          static_cast<float>(archive_.s16({item.file,item.offset+4})),0};
-                    break;
+                const auto kind=archive_.s16(item);
+                if (kind>=0x15 && kind<=0x17) {
+                    auto& position=kind==0x15 ? result.movie_player1 :
+                                   kind==0x16 ? result.movie_player2 : result.movie_player3;
+                    position={static_cast<float>(archive_.s16({item.file,item.offset+2})),
+                              static_cast<float>(archive_.s16({item.file,item.offset+4})),0};
                 }
             }
     }

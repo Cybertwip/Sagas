@@ -324,6 +324,8 @@ def matrix_sets(archive: RelocArchive, model: Model3D, frame: float) -> tuple[li
             sampler = sample16 if model.fighter_animation else sample32
             node = apply_pose(node, sampler(archive, model.animation[index], frame, pose_from_node(node)))
         local = multiply(multiply(translation(node.translate), rotation(node.rotate)), scale(node.scale))
+        for depth in range(max(node.depth, 0), max_depth):
+            have_parent[depth] = False
         parent = model_matrix
         if 0 < node.depth <= max_depth:
             ancestor = node.depth - 1

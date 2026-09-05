@@ -9,3 +9,5 @@ yoster	1	yoster.ground	llMVOpeningYosterCamAnimJoint	255	255	255	255
 sector	0	sector.great_fox	llMVOpeningSectorCamAnimJoint	255	255	255	255
 standoff	0	standoff.ground	llMVOpeningStandoffCamAnimJoint	255	255	255	255
 standoff	1	standoff.lightning	llMVOpeningStandoffCamAnimJoint	255	255	255	255
+standoff	2	standoff.mario	llMVOpeningStandoffCamAnimJoint	255	255	255	255
+standoff	3	standoff.kirby	llMVOpeningStandoffCamAnimJoint	255	255	255	255

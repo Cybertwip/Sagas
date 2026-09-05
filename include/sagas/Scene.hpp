@@ -13,6 +13,7 @@ struct Services {
     AudioEngine& audio;
     PhysicsWorld& physics;
     SceneResourceManager& resources;
+    bool deterministic_clock{};
 };
 
 class Scene {

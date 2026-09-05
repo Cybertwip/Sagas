@@ -118,7 +118,7 @@ def run_selftest(assets: Path, scene_dir: Path) -> list[str]:
     table = SceneTable(scene_dir / "opening.scene.tsv", scene_dir / "opening.sequence.tsv",
                        scene_dir / "opening.cues.tsv")
     check(len(table.segments) == 19, f"opening sequence has {len(table.segments)} segments, expected 19")
-    check(table.total_duration == 3650, f"opening duration {table.total_duration}, expected 3650")
+    check(table.total_duration == 4195, f"opening duration {table.total_duration}, expected 4195")
     room_bundle = table.build_bundle(loader, "room.base")
     check("room.background" in room_bundle, "room.base did not build room.background")
     stats = model_stats(room_bundle["room.background"])

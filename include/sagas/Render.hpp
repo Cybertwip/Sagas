@@ -2,6 +2,7 @@
 
 #include <sagas/Core.hpp>
 #include <sagas/Lighting.hpp>
+#include <sagas/N64RenderState.hpp>
 
 #include <filesystem>
 
@@ -27,6 +28,7 @@ struct ForwardMaterial {
     std::uint8_t texture_mask_s{}, texture_mask_t{};
     std::uint16_t texture_window_s{}, texture_window_t{};
     bool lit{}, translucent{}, additive{};
+    N64RenderState rdp;
 };
 
 class RenderEngine final {

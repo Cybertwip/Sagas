@@ -259,7 +259,7 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
         std::vector<std::optional<n64::Address>> pairs;
         pairs.reserve(model.nodes.size());
         for (const auto& node:model.nodes) pairs.push_back(node.display_list);
-        auto decoded=decoder.decode_joint_tree(pairs,model.materials);
+        auto decoded=decoder.decode_joint_tree(pairs,model.materials,true);
         model.parent_meshes=std::move(decoded.before);
         model.meshes=std::move(decoded.after);
     } else {
@@ -267,7 +267,7 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
         display_lists.reserve(model.nodes.size());
         for (const auto& node:model.nodes) display_lists.push_back(node.display_list);
         model.meshes=decoder.decode_model_tree(display_lists,model.materials,
-                                               layout==GeometryLayout::DisplayListLinks);
+                                               layout==GeometryLayout::DisplayListLinks,true);
     }
     model.is_fighter=true;
     return model;
@@ -471,26 +471,35 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                 const bool valid_source_normal=dot(source.normal,source.normal)>1.0e-6f;
                 const Vec3 world_normal=source.lit&&valid_source_normal
                     ? normalize(transform_normal(vertex_matrix(source),source.normal)) : face_normal;
-                Color surface=source.color;
+                Color surface=source.rdp.enabled ? source.shade : source.color;
                 if (source.material_index<material_poses.size()) {
                     const bool animated=node_index<model.material_animation.size()&&
                         source.material_index<model.material_animation[node_index].size()&&
                         model.material_animation[node_index][source.material_index].has_value();
-                    if (animated) surface=source.lit ? material_poses[source.material_index].colors[0]
+                    if (animated && !source.rdp.enabled) surface=source.lit ? material_poses[source.material_index].colors[0]
                                                     : modulate(surface,material_poses[source.material_index].colors[0]);
                 }
                 triangle[j]={{dot(relative,right),dot(relative,up),dot(relative,forward)},
-                             modulate(surface,tint),{source.u,source.v},
+                             source.rdp.enabled ? surface : modulate(surface,tint),{source.u,source.v},
                              normalize({dot(world_normal,right),dot(world_normal,up),dot(world_normal,forward)})};
             }
             const auto& sampler=mesh.vertices[i];
             auto material_light1=sampler.light1;
             auto material_light2=sampler.light2;
+            auto rdp=sampler.rdp;
+            rdp.tint=tint;
             bool animated_translucency{};
             if (sampler.material_index<material_poses.size()) {
-                material_light1=material_poses[sampler.material_index].colors[3];
-                material_light2=material_poses[sampler.material_index].colors[4];
-                animated_translucency=material_poses[sampler.material_index].colors[0].a<255;
+                const auto& source=model.materials[node_index][sampler.material_index];
+                if (source.light1) material_light1=material_poses[sampler.material_index].colors[3];
+                if (source.light2) material_light2=material_poses[sampler.material_index].colors[4];
+                const bool animated=node_index<model.material_animation.size() &&
+                    sampler.material_index<model.material_animation[node_index].size() &&
+                    model.material_animation[node_index][sampler.material_index];
+                if (animated) {
+                    rdp.primitive=material_poses[sampler.material_index].colors[0];
+                    animated_translucency=rdp.primitive.a<255;
+                }
             }
             triangles_.push_back({triangle,sampler.texture,sampler.texture_mode_s,sampler.texture_mode_t,
                                   sampler.texture_mask_s,sampler.texture_mask_t,
@@ -498,7 +507,7 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
                                   material_light1,material_light2,camera.fov_y,camera.near_plane,camera.far_plane,
                                   sampler.lit&&model.receive_lighting,
                                   sampler.translucent||tint.a<255||animated_translucency||model.additive,
-                                  model.additive});
+                                  model.additive,rdp});
         }
         };
         if ((runtime_flags[node_index]&1U)==0&&node_index<model.parent_meshes.size() &&
@@ -532,6 +541,7 @@ void Scene3DRenderer::flush(RenderEngine& render) {
     const auto make_material=[](const ProjectedTriangle& triangle) {
         ForwardMaterial material;
         material.texture=triangle.texture;
+        material.rdp=triangle.rdp;
         material.lights=triangle.lights;
         // MObj light1/light2 are the part's local Lights1 (diffuse/ambient),
         // not a replacement for the scene rig. Overwriting the key color
@@ -556,7 +566,14 @@ void Scene3DRenderer::flush(RenderEngine& render) {
         return a.r==b.r&&a.g==b.g&&a.b==b.b&&a.a==b.a;
     };
     const auto same_material=[&](const ForwardMaterial& a,const ForwardMaterial& b) {
-        return a.texture.get()==b.texture.get() && a.fov_y==b.fov_y &&
+        const auto& x=a.rdp;
+        const auto& y=b.rdp;
+        return x.enabled==y.enabled && x.combine_hi==y.combine_hi && x.combine_lo==y.combine_lo &&
+            x.cycles==y.cycles && x.texture_gen==y.texture_gen && x.texture_gen_linear==y.texture_gen_linear &&
+            x.generated_scale.x==y.generated_scale.x && x.generated_scale.y==y.generated_scale.y &&
+            x.alpha_threshold==y.alpha_threshold && same_color(x.primitive,y.primitive) &&
+            same_color(x.environment,y.environment) && same_color(x.tint,y.tint) &&
+            a.texture.get()==b.texture.get() && a.fov_y==b.fov_y &&
             a.near_plane==b.near_plane && a.far_plane==b.far_plane &&
             a.texture_mode_s==b.texture_mode_s && a.texture_mode_t==b.texture_mode_t &&
             a.texture_mask_s==b.texture_mask_s && a.texture_mask_t==b.texture_mask_t &&

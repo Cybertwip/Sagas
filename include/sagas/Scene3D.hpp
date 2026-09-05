@@ -96,6 +96,7 @@ private:
         std::optional<Color> material_light2;
         float fov_y{45}, near_plane{16}, far_plane{65536};
         bool lit{}, translucent{}, additive{};
+        N64RenderState rdp;
     };
     n64::AnimationDecoder animation_;
     std::vector<ProjectedTriangle> triangles_;

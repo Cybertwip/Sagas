@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sagas/n64/Archive.hpp>
+#include <sagas/N64RenderState.hpp>
 
 namespace sagas::n64 {
 
@@ -26,6 +27,7 @@ struct Vertex {
     Vec3 normal{};
     bool lit{};
     Color color{255, 255, 255, 255};
+    Color shade{255,255,255,255};
     std::optional<Color> light1;
     std::optional<Color> light2;
     std::shared_ptr<const RasterImage> texture;
@@ -40,6 +42,7 @@ struct Vertex {
     std::uint16_t transform_node{0xffffU};
     bool transform_parent{};
     bool translucent{};
+    N64RenderState rdp;
 };
 
 struct Mesh {
@@ -64,10 +67,10 @@ public:
     // Master Hand's pre-matrix lists reuse vertices loaded by earlier joints.
     [[nodiscard]] JointMeshes decode_joint_tree(
         std::span<const std::optional<Address>> pairs,
-        std::span<const std::vector<Material>> materials);
+        std::span<const std::vector<Material>> materials, bool fighter = false);
     [[nodiscard]] std::vector<Mesh> decode_model_tree(
         std::span<const std::optional<Address>> display_lists,
-        std::span<const std::vector<Material>> materials, bool linked);
+        std::span<const std::vector<Material>> materials, bool linked, bool fighter = false);
 private:
     struct State;
     void apply_mobj(State& state, const Material& material);

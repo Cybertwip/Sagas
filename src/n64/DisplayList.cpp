@@ -34,7 +34,10 @@ struct DisplayListDecoder::State {
     bool primitive_alpha{};
     Color primitive{255,255,255,255};
     Color blend{};
-    Color environment{};
+    Color environment{255,255,255,255};
+    std::uint32_t other_mode_h{};
+    unsigned alpha_compare{};
+    N64RenderState rdp;
     std::optional<Color> light1;
     std::optional<Color> light2;
     std::optional<std::uint16_t> material_index;
@@ -196,7 +199,10 @@ void DisplayListDecoder::links(Mesh& mesh, State& state, Address address) {
         const auto list_id = archive_.u32(address);
         if (list_id == 4) return;
         const auto target = archive_.resolve({address.file, address.offset + 4});
-        if (target) list(mesh,state,*target,0);
+        if (target) {
+            state.translucent=(list_id&1U)!=0;
+            list(mesh,state,*target,0);
+        }
     }
     throw std::runtime_error("unterminated N64 display-list links");
 }
@@ -219,11 +225,13 @@ Mesh DisplayListDecoder::decode_pairs(Address pairs, std::span<const Material> m
 
 JointMeshes DisplayListDecoder::decode_joint_tree(
     std::span<const std::optional<Address>> pairs,
-    std::span<const std::vector<Material>> materials) {
+    std::span<const std::vector<Material>> materials, bool fighter) {
     JointMeshes result;
     result.before.resize(pairs.size());
     result.after.resize(pairs.size());
     State state;
+    state.other_mode_h=fighter ? 0x00100000U : 0;
+    state.rdp.cycles=fighter ? 2 : 1;
     for (std::size_t node=0;node<pairs.size();++node) {
         state.materials=node<materials.size() ? std::span<const Material>(materials[node])
                                               : std::span<const Material>{};
@@ -245,9 +253,11 @@ JointMeshes DisplayListDecoder::decode_joint_tree(
 
 std::vector<Mesh> DisplayListDecoder::decode_model_tree(
     std::span<const std::optional<Address>> display_lists,
-    std::span<const std::vector<Material>> materials, bool linked) {
+    std::span<const std::vector<Material>> materials, bool linked, bool fighter) {
     std::vector<Mesh> result(display_lists.size());
     State state;
+    state.other_mode_h=fighter ? 0x00100000U : 0;
+    state.rdp.cycles=fighter ? 2 : 1;
     for (std::size_t node=0;node<display_lists.size();++node) {
         state.materials=node<materials.size() ? std::span<const Material>(materials[node])
                                               : std::span<const Material>{};
@@ -281,6 +291,14 @@ void DisplayListDecoder::triangle(Mesh& mesh, State& state, unsigned a, unsigned
             vertex.light1=state.light1;
             vertex.light2=state.light2;
         }
+        vertex.rdp=state.rdp;
+        vertex.rdp.primitive=state.primitive;
+        vertex.rdp.environment=state.environment;
+        vertex.rdp.texture_gen=(state.geometry_mode&0x40000U)!=0;
+        vertex.rdp.texture_gen_linear=(state.geometry_mode&0x80000U)!=0;
+        vertex.rdp.generated_scale={1024.0f*state.texture_scale_s/width,
+                                    1024.0f*state.texture_scale_t/height};
+        vertex.rdp.alpha_threshold=state.alpha_compare==1 ? state.blend.a/255.0f : 0;
         vertex.texture = image;
         float u=(vertex.u*state.texture_scale_s - tile.uls*0.25f);
         float v=(vertex.v*state.texture_scale_t - tile.ult*0.25f);
@@ -417,7 +435,7 @@ std::shared_ptr<const RasterImage> DisplayListDecoder::texture(State& state) {
                 intensity = ((source_pixel & 1) ? (packed & 15) : (packed >> 4)) * 17;
             } else intensity = byte(source,row+source_pixel);
             color = {static_cast<std::uint8_t>(intensity),static_cast<std::uint8_t>(intensity),
-                     static_cast<std::uint8_t>(intensity),255};
+                     static_cast<std::uint8_t>(intensity),static_cast<std::uint8_t>(intensity)};
         }
         const auto out = (static_cast<std::size_t>(y) * width + x) * 4;
         output->rgba[out]=color.r; output->rgba[out+1]=color.g; output->rgba[out+2]=color.b; output->rgba[out+3]=color.a;
@@ -435,10 +453,13 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
         const auto w1 = archive_.u32({address.file, address.offset + 4});
         const auto opcode = w0 >> 24;
         switch (opcode) {
-            case 0x00: case 0xe1: case 0xe3: case 0xe6: case 0xe7: case 0xe8: case 0xe9:
+            case 0x00: case 0xe1: case 0xe6: case 0xe7: case 0xe8: case 0xe9:
             case 0xf1:
                 break;
             case 0xfc: { // SetCombine: PRIMITIVE is not used by shade-only parts.
+                state.rdp.enabled=true;
+                state.rdp.combine_hi=w0&0xffffffU;
+                state.rdp.combine_lo=w1;
                 const auto rgb_uses_primitive=[](unsigned a,unsigned b,unsigned c,unsigned d) {
                     return a==3 || b==3 || c==3 || d==3;
                 };
@@ -450,7 +471,18 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                     || ((w1>>18)&7)==3 || (w1&7)==3;
                 break;
             }
+            case 0xe3: { // F3DEX2 SetOtherModeH
+                const unsigned length=(w0&255U)+1;
+                const unsigned shift=32-((w0>>8)&255U)-length;
+                if (length<=32 && shift<32) {
+                    const auto mask=static_cast<std::uint32_t>(((1ULL<<length)-1)<<shift);
+                    state.other_mode_h=(state.other_mode_h&~mask)|(w1&mask);
+                    state.rdp.cycles=((state.other_mode_h>>20)&3U)==1 ? 2 : 1;
+                }
+                break;
+            }
             case 0xe2: // F3DEX2 SetOtherModeL
+                if ((w0&0xffffU)==0x1e01U) state.alpha_compare=w1&3U;
                 if ((w0&0xffffU)==0x001cU) {
                     state.render_mode=w1;
                     state.translucent=source_alpha_blend(state.render_mode);
@@ -497,6 +529,7 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                             static_cast<std::uint8_t>(packed >> 16), static_cast<std::uint8_t>(packed >> 8),
                             static_cast<std::uint8_t>(packed)};
                     }
+                    out.vertex.shade=state.lighting ? Color{255,255,255,255} : out.vertex.color;
                     out.valid = true;
                 }
                 break;

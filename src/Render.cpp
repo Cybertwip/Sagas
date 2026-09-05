@@ -713,13 +713,6 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
         glDisable(GL_BLEND);
         glDepthMask(GL_TRUE);
     }
-    // N64 XLU depth comparison admits coplanar surfaces within the pixel's
-    // depth slope. A small raster bias avoids stippled self-occlusion of
-    // authored overlays (the chest front and room shadows) in the GL buffer.
-    if (material.rdp.enabled && material.translucent) {
-        glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(-1.0f,-1.0f);
-    } else glDisable(GL_POLYGON_OFFSET_FILL);
     glUseProgram(program_forward_);
     const auto uniform=[&](const char* name) { return glGetUniformLocation(program_forward_,name); };
     const auto& viewport=material.viewport;

@@ -27,7 +27,8 @@ struct DisplayListDecoder::State {
     std::optional<Address> palette;
     unsigned render_tile{};
     float texture_scale_s{1}, texture_scale_t{1};
-    std::uint32_t geometry_mode{0x00020000U};
+    // sSYRdpResetDisplayList, followed by the scene lighting callback.
+    std::uint32_t geometry_mode{0x00220405U};
     bool lighting{true};
     bool texture_enabled{};
     bool primitive_rgb{};

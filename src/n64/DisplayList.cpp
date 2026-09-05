@@ -165,8 +165,6 @@ void DisplayListDecoder::apply_mobj(State& state, const Material& material) {
         const unsigned fmt=current ? material.format : material.block_format;
         const unsigned siz=current ? material.size : material.block_size;
         state.image = {material.image, fmt, siz, material.width};
-        state.texture_scale_s = material.texture_scale_s;
-        state.texture_scale_t = material.texture_scale_t;
     }
     if (flags & 0x20U) {
         auto& tile = state.tiles[state.render_tile];
@@ -176,7 +174,11 @@ void DisplayListDecoder::apply_mobj(State& state, const Material& material) {
         tile.lrt = material.tile_lrt;
         tile.window_set = true;
     }
-    if (flags & 0x80U) state.texture_enabled=true;
+    if (flags & 0x80U) {
+        state.texture_enabled=true;
+        state.texture_scale_s=material.texture_scale_s;
+        state.texture_scale_t=material.texture_scale_t;
+    }
 }
 
 Mesh DisplayListDecoder::decode(Address display_list, std::span<const Material> materials) {
@@ -264,6 +266,10 @@ std::vector<Mesh> DisplayListDecoder::decode_model_tree(
                                               : std::span<const Material>{};
         state.material_index.reset();
         if (!display_lists[node]) continue;
+        // Cached vertices already belong to the matrix active at their load.
+        // Later joints may reference them to connect the skin at a seam.
+        state.transform_node=static_cast<std::uint16_t>(node);
+        state.transform_parent=false;
         if (linked) links(result[node],state,*display_lists[node]);
         else list(result[node],state,*display_lists[node],0);
     }

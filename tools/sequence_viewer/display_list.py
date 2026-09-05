@@ -202,6 +202,8 @@ class DisplayListDecoder:
             state.material_index = None
             if display_list is None:
                 continue
+            state.transform_node = node
+            state.transform_parent = False
             if linked:
                 cursor = display_list
                 for _ in range(64):
@@ -235,8 +237,6 @@ class DisplayListDecoder:
             fmt = material.format if current else material.block_format
             siz = material.size if current else material.block_size
             state.image = _Image(material.image, fmt, siz, material.width)
-            state.texture_scale_s = material.texture_scale_s
-            state.texture_scale_t = material.texture_scale_t
         if flags & 0x20:
             tile = state.tiles[state.render_tile]
             tile.uls = material.tile_uls
@@ -246,6 +246,8 @@ class DisplayListDecoder:
             tile.window_set = True
         if flags & 0x80:
             state.texture_enabled = True
+            state.texture_scale_s = material.texture_scale_s
+            state.texture_scale_t = material.texture_scale_t
 
     def _list(self, mesh: Mesh, state: _State, address: Address, depth: int) -> None:
         if depth >= 32:

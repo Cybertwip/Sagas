@@ -59,6 +59,7 @@ int main() {
     const auto sunlight=scene_loader.display_list("llMVCommonRoomSunlightDisplayList",
                                                   sagas::GeometryLayout::DisplayListLinks);
     const auto& beam=sunlight.meshes.front().vertices.front();
+    assert(beam.rdp.cull_mode==0x400U);
     assert(beam.translucent && beam.rdp.enabled && beam.rdp.alpha_test);
     assert(std::abs(beam.rdp.alpha_threshold-8.0f/255.0f)<1e-6f);
     assert(beam.texture && beam.texture->width==32 && beam.texture->height==32);

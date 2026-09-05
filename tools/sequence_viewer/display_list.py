@@ -556,7 +556,7 @@ class _State:
     render_tile: int = 0
     texture_scale_s: float = 1.0
     texture_scale_t: float = 1.0
-    geometry_mode: int = 0x00020000
+    geometry_mode: int = 0x00220405
     lighting: bool = True
     texture_enabled: bool = False
     primitive_rgb: bool = False

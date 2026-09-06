@@ -25,6 +25,7 @@ struct Model3D {
     // 0x40000000 is TransN (detached motion). ftdef.h names are reversed.
     enum class FighterWrapper { None, TransN, XRotN };
     std::vector<n64::Node> nodes;
+    std::vector<unsigned> source_joint_ids;
     std::vector<n64::Mesh> meshes;
     // Fighter JointPairs slot 0 is drawn in the parent matrix; slot 1 is
     // drawn after applying the current joint matrix.
@@ -52,6 +53,7 @@ struct Stage3D {
     Vec3 movie_player1{}, movie_player2{}, movie_player3{};
     std::array<Vec3,4> player_spawns{};
     std::vector<CollisionSegment> collision;
+    std::array<float,4> blast_bounds{5000,-4000,6000,-6000}; // top, bottom, right, left
 };
 
 // Builder pattern: converts reloc symbols into immutable renderable models.
@@ -91,6 +93,7 @@ public:
     [[nodiscard]] Model3D placed_at_joint(const Model3D& model, float model_frame,
                                           const Model3D& carrier, float carrier_frame,
                                           std::size_t carrier_joint);
+    [[nodiscard]] Vec3 joint_point(const Model3D& model, float frame, unsigned joint, Vec3 offset = {});
     [[nodiscard]] Vec3 fighter_position(const Model3D& model, float frame);
     void flush(RenderEngine& render);
     void end(RenderEngine& render);

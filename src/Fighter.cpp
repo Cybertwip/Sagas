@@ -199,4 +199,45 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     body.jump_pressed=false;
 }
 
+std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std::span<const AttackVolume> attacks) {
+    std::vector<FighterHit> hits;
+    for (const auto& hit:attacks) {
+        if (hit.owner>=bodies.size()) continue;
+        auto& attacker=bodies[hit.owner];
+        for (unsigned i=0;i<bodies.size();++i) {
+            auto& defender=bodies[i];
+            if (i==hit.owner || defender.stocks<=0 || defender.invincible || (attacker.hit_mask&(1U<<i))) continue;
+            // Capsule around the map collision body. Per-joint hurtboxes
+            // remain a separate fidelity task; attacks already follow joints.
+            const float y=std::clamp(hit.position.y,defender.position.y+defender.attr.width,
+                                    defender.position.y+std::max(defender.attr.height-defender.attr.width,defender.attr.width));
+            const float dx=hit.position.x-defender.position.x,dy=hit.position.y-y;
+            const float radius=hit.radius+defender.attr.width;
+            if (dx*dx+dy*dy>radius*radius) continue;
+            attacker.hit_mask|=1U<<i;
+            const int lag=hit.damage/3+4;
+            attacker.hitlag=defender.hitlag=lag;
+            const bool shield=defender.status==FighterStatus::Shield;
+            hits.push_back({hit.owner,i,shield});
+            if (shield) {
+                defender.shield=std::max(0.0f,defender.shield-hit.damage);
+                if (defender.shield>0) continue;
+            }
+            defender.damage+=hit.damage;
+            const float p=defender.damage;
+            const float component=hit.weight ? 1+hit.weight*.5f : p*.1f+p*hit.damage*.05f;
+            const float knockback=std::min(2500.0f,((component*defender.attr.weight*1.4f+18)*hit.growth*.01f)+hit.base);
+            const float degrees=hit.angle==361 ? (defender.grounded && knockback<32 ? 0.0f:45.0f) : static_cast<float>(hit.angle);
+            const float angle=degrees*.01745329252f;
+            defender.vel_air={std::cos(angle)*knockback*attacker.lr,std::sin(angle)*knockback,0};
+            defender.vel_ground=0; defender.grounded=false;
+            defender.position.y+=1;
+            defender.status=FighterStatus::Hitstun; defender.action_frame=0;
+            defender.hitstun=std::max(1,static_cast<int>(knockback/1.875f));
+            defender.fastfall=false;
+        }
+    }
+    return hits;
+}
+
 } // namespace sagas

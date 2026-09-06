@@ -65,6 +65,7 @@ struct FighterBody {
     bool attack_pressed{}, jump_pressed{}, shield_held{};
     unsigned hit_mask{};
     int stocks{3};
+    float shield{55};
 };
 
 struct CollisionSegment {
@@ -85,6 +86,19 @@ public:
     static void jump(FighterBody& body) noexcept;
     static void tick(FighterBody& body, float ground_y) noexcept;
     static void tick(FighterBody& body, std::span<const CollisionSegment> stage) noexcept;
+};
+
+struct AttackVolume {
+    unsigned owner{};
+    Vec3 position{};
+    float radius{};
+    int damage{}, angle{}, growth{}, weight{}, base{};
+};
+struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; };
+class FighterCombat final {
+public:
+    [[nodiscard]] static std::vector<FighterHit> resolve(std::span<FighterBody> bodies,
+                                                        std::span<const AttackVolume> attacks);
 };
 
 [[nodiscard]] constexpr std::string_view fighter_kind_name(FighterKind kind) {

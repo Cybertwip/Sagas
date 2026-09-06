@@ -64,6 +64,8 @@ InputState Application::poll_input() {
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
             input.accept_pressed |= event.key.key == SDLK_SPACE || event.key.key == SDLK_A;
             input.start_pressed |= event.key.key == SDLK_RETURN;
+            input.jump_pressed |= event.key.key == SDLK_X;
+            input.back_pressed |= event.key.key == SDLK_ESCAPE;
             input.cancel_pressed |= event.key.key == SDLK_ESCAPE || event.key.key == SDLK_B;
             input.skip_pressed |= event.key.key == SDLK_S;
             input.up_pressed |= event.key.key == SDLK_UP;
@@ -74,6 +76,7 @@ InputState Application::poll_input() {
         if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
             input.accept_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH;
             input.start_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_START;
+            input.jump_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH || event.gbutton.button == SDL_GAMEPAD_BUTTON_WEST;
             input.cancel_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST;
             input.up_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_UP;
             input.down_pressed |= event.gbutton.button == SDL_GAMEPAD_BUTTON_DPAD_DOWN;
@@ -83,12 +86,14 @@ InputState Application::poll_input() {
     }
     const bool* keys = SDL_GetKeyboardState(nullptr);
     if (keys) {
+        input.shield_held |= keys[SDL_SCANCODE_Z];
         input.up |= keys[SDL_SCANCODE_UP];
         input.down |= keys[SDL_SCANCODE_DOWN];
         input.left |= keys[SDL_SCANCODE_LEFT];
         input.right |= keys[SDL_SCANCODE_RIGHT];
     }
     if (gamepad_) {
+        input.shield_held |= SDL_GetGamepadButton(gamepad_, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
         input.up |= SDL_GetGamepadButton(gamepad_, SDL_GAMEPAD_BUTTON_DPAD_UP);
         input.down |= SDL_GetGamepadButton(gamepad_, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
         input.left |= SDL_GetGamepadButton(gamepad_, SDL_GAMEPAD_BUTTON_DPAD_LEFT);

@@ -1,5 +1,7 @@
 #include <sagas/Engine.hpp>
 #include <sagas/Fighter.hpp>
+#include <sagas/FighterSourceData.hpp>
+#include <numbers>
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
 
@@ -31,13 +33,15 @@ public:
         : stock_(stock), team_(team), one_player_(one_player) {
         slots_[0] = {SlotKind::Human, FighterKind::Mario, false};
         for (int i = 1; i < 4; ++i)
-            slots_[i] = {one_player_ ? SlotKind::None : SlotKind::None, FighterKind::Mario, false};
+            slots_[i] = {SlotKind::None, FighterKind::Mario, false};
         cursor_x_ = kPortraitX[1] + 22;
         cursor_y_ = kPortraitY[1] + 22;
     }
     void enter(Services& services) override {
-        loader_ = std::make_unique<Scene3DLoader>(services.resources.archive());
+        archive_=&services.resources.archive();
+        loader_ = std::make_unique<Scene3DLoader>(*archive_);
         renderer_ = std::make_unique<Scene3DRenderer>(services.resources.archive());
+        load_preview(slots_[0].fkind,0,false);
         if (services.assets.exists("audio/battle_select.sgpcm"))
             services.audio.play_music("audio/battle_select.sgpcm", 0.85f);
     }
@@ -45,30 +49,47 @@ public:
         ++tic_;
         cursor_x_ = std::clamp(cursor_x_ + input.stick_x / 20.0f, 0.0f, 280.0f);
         cursor_y_ = std::clamp(cursor_y_ - input.stick_y / 20.0f, 10.0f, 205.0f);
-        const int hover = portrait_at(cursor_x_, cursor_y_);
-        if (hover >= 0 && hover != hover_) {
-            hover_ = hover;
-            services.audio.play(AudioCue::MenuScroll);
-        } else if (hover >= 0) hover_ = hover;
-
-        if (input.accept_pressed && hover_ >= 0) {
-            auto& slot = slots_[0];
-            slot.kind = SlotKind::Human;
-            slot.fkind = kPortraitKind[static_cast<std::size_t>(hover_)];
-            slot.selected = true;
-            load_preview(slot.fkind);
-            services.audio.play(AudioCue::MenuSelect);
+        const int hover = portrait_at(cursor_x_,cursor_y_);
+        if (hover!=hover_) {
+            hover_=hover;
+            if (hover>=0 && !slots_[active_slot_].selected) {
+                slots_[active_slot_].fkind=kPortraitKind[hover];
+                load_preview(slots_[active_slot_].fkind,active_slot_,false);
+                services.audio.play(AudioCue::MenuScroll);
+            }
+        }
+        if (input.accept_pressed) {
+            if (cursor_y_>=195 && cursor_y_<214) {
+                const int slot=static_cast<int>((cursor_x_-22)/69);
+                if (slot>=0 && slot<(one_player_?1:4)) {
+                    active_slot_=slot;
+                    if (slot>0) slots_[slot].kind=slots_[slot].kind==SlotKind::None?SlotKind::Cpu:SlotKind::None;
+                    slots_[slot].selected=false;
+                    previews_[slot]={};
+                    services.audio.play(AudioCue::MenuSelect);
+                }
+            } else if (hover_>=0 && slots_[active_slot_].kind!=SlotKind::None) {
+                auto& slot=slots_[active_slot_];
+                slot.fkind=kPortraitKind[hover_];slot.selected=true;
+                load_preview(slot.fkind,active_slot_,true);
+                selected_tick_[active_slot_]=tic_;
+                services.audio.play_fgm(fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);
+            } else if (cursor_y_>=214 && cursor_x_<50) back_=true;
         }
         if (input.cancel_pressed) {
-            if (slots_[0].selected) { slots_[0].selected = false; preview_ = {}; }
-            else back_ = true;
+            if (slots_[active_slot_].selected) {
+                slots_[active_slot_].selected=false;
+                load_preview(slots_[active_slot_].fkind,active_slot_,false);
+            } else if (active_slot_!=0) active_slot_=0;
+            else back_=true;
         }
-        if ((input.start_pressed || input.skip_pressed) && slots_[0].selected) start_ = true;
+        if ((input.start_pressed || input.skip_pressed) && ready()) start_=true;
     }
+
     void draw(Services& services) override {
         auto& r = services.render;
         r.begin({0,0,0,255});
-        r.sprite_at("textures/MNSelectCommon/StoneBackground.png", {10,10});
+        r.sprite_rect("textures/MNSelectCommon/StoneBackground.png",0,0,320,240);
         if (one_player_)
             r.sprite_at("textures/MNPlayers1PMode/1PlayerGameText.png", {24,18});
         else {
@@ -91,8 +112,9 @@ public:
             "textures/MNPlayersCommon/3PPuck.png", "textures/MNPlayersCommon/4PPuck.png"};
         for (int player = 0; player < gates; ++player) {
             const float x = static_cast<float>(player * 69 + 22);
-            r.sprite_at(one_player_ ? "textures/MNPlayers1PMode/RedCard.png"
-                                    : "textures/MNPlayersCommon/GrayCard.png", {x, 131});
+            static constexpr std::array<const char*,4> cards{"RedCard.png","BlueCard.png","YellowCard.png","GreenCard.png"};
+            const std::string card=slots_[player].kind==SlotKind::None?"GrayCard.png":cards[player];
+            r.sprite_at("textures/MNPlayersCommon/"+card,{x,131});
             if (slots_[player].kind == SlotKind::None)
                 r.sprite_at("textures/MNPlayersCommon/NALabel.png", {x + 12, 201});
             else {
@@ -103,27 +125,32 @@ public:
                     r.sprite_at(std::string("textures/CharacterNames/") +
                                 std::string(fighter_kind_name(slots_[player].fkind)) + ".png",
                                 {x + 8, 134});
-                    r.sprite_at(pucks[static_cast<std::size_t>(player)], {x + 22, 168});
+                    const auto portrait=std::find(kPortraitKind.begin(),kPortraitKind.end(),slots_[player].fkind)-kPortraitKind.begin();
+                    r.sprite_at(pucks[player],{kPortraitX[portrait]+12,kPortraitY[portrait]+14});
                 }
             }
         }
 
-        if (slots_[0].selected && !preview_.nodes.empty()) {
-            renderer_->begin();
-            r.clear_depth();
-            r.scissor_game(22, 131, 64, 68);
-            Camera3D camera{{0, 40, 140},{0, 20, 0},{0,1,0},24.0f,8,2048};
-            auto model = preview_;
-            model.scale = {0.08f, 0.08f, 0.08f};
-            model.position = {};
-            renderer_->draw(r, model, camera, static_cast<float>(tic_ % 120),
-                            {255,255,255,255}, LightingSystem::opening_room());
-            renderer_->end(r);
-            r.reset_scissor();
+        renderer_->begin();
+        r.clear_depth();
+        Camera3D camera{{0,0,5000},{0,0,0},{0,1,0},30,100,20000};
+        // This is a UI camera: preserve its source layout across the wide
+        // canvas, so each preview stays inside its player's card.
+        camera.aspect=45.0f/44.0f;
+        for (int player=0;player<gates;++player) if (!previews_[player].nodes.empty() && slots_[player].kind!=SlotKind::None) {
+            auto model=previews_[player];
+            const float scale=fighter_source_data[static_cast<unsigned>(slots_[player].fkind)].select_scale;
+            model.scale={scale,scale,scale};
+            model.position={player*840.0f-1250,-850,0};
+            model.rotation.y=slots_[player].selected?0.0f:tic_*std::numbers::pi_v<float>/90;
+            renderer_->draw(r,model,camera,static_cast<float>(tic_-selected_tick_[player]));
         }
+        renderer_->end(r);
 
         r.sprite("textures/MNPlayersCommon/CursorHandPoint.png", {cursor_x_ + 12, cursor_y_ + 8});
-        if (slots_[0].selected) {
+        if (!slots_[active_slot_].selected && slots_[active_slot_].kind!=SlotKind::None)
+            r.sprite_at(pucks[active_slot_],{cursor_x_-6,cursor_y_-6});
+        if (ready()) {
             const auto pulse = static_cast<std::uint8_t>(180 + 75 * ((tic_ / 8) % 2));
             r.sprite("textures/MNPlayersCommon/ReadyToFightText.png", {160, 122}, {1,1},
                      {255,255,255,pulse});
@@ -146,16 +173,23 @@ private:
         }
         return -1;
     }
-    void load_preview(FighterKind kind) {
-        if (!loader_) return;
-        try {
-            const auto spec=fighter_model_spec(kind);
-            preview_ = loader_->fighter_model(spec.descriptor,
-                                              spec.joint_pairs ? GeometryLayout::JointPairs
-                                                               : GeometryLayout::Direct,
-                                              spec.setup_parts);
+    bool ready() const {
+        unsigned count=0;
+        for (const auto& slot:slots_) if (slot.kind!=SlotKind::None) {
+            if (!slot.selected) return false;
+            ++count;
         }
-        catch (const std::exception&) { preview_ = {}; }
+        return slots_[0].selected && count>=(one_player_?1U:2U);
+    }
+    void load_preview(FighterKind kind,unsigned player,bool selected) {
+        if (!loader_) return;
+        const auto spec=fighter_model_spec(kind);
+        auto preview=loader_->fighter_model(spec.descriptor,spec.joint_pairs?GeometryLayout::JointPairs:GeometryLayout::Direct,spec.setup_parts);
+        const auto& data=fighter_source_data[static_cast<unsigned>(kind)];
+        preview.animation=n64::AnimationDecoder(*archive_).table({selected?data.selected:data.idle,0},preview.nodes.size());
+        preview.fighter_animation=true;
+        previews_[player]=std::move(preview);
+        selected_tick_[player]=tic_;
     }
     int stock_{3};
     bool team_{};
@@ -166,7 +200,10 @@ private:
     bool back_{};
     bool start_{};
     std::array<Slot,4> slots_{};
-    Model3D preview_{};
+    std::array<Model3D,4> previews_{};
+    std::array<int,4> selected_tick_{};
+    unsigned active_slot_{};
+    n64::RelocArchive* archive_{};
     std::unique_ptr<Scene3DLoader> loader_;
     std::unique_ptr<Scene3DRenderer> renderer_;
 };
@@ -174,9 +211,10 @@ private:
 std::unique_ptr<Scene> CharacterSelectScene::next() {
     if (back_) return make_menu_scene();
     if (start_) {
-        const auto p1 = slots_[0].fkind;
-        const auto p2 = one_player_ ? FighterKind::Donkey : FighterKind::Fox;
-        return make_battle_scene(p1, p2, stock_);
+        std::vector<FighterKind> fighters;
+        for (const auto& slot:slots_) if (slot.kind!=SlotKind::None && slot.selected) fighters.push_back(slot.fkind);
+        if (one_player_) fighters.push_back(FighterKind::Donkey);
+        return make_battle_scene(std::move(fighters),stock_);
     }
     return {};
 }

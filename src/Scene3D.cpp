@@ -206,6 +206,7 @@ Stage3D Scene3DLoader::stage(std::string_view header) {
         return archive_.resolve({address->file,address->offset+offset});
     };
     Stage3D result;
+    for (unsigned i=0;i<4;++i) result.blast_bounds[i]=static_cast<float>(archive_.s16({address->file,address->offset+116+i*2}));
     const auto mask=archive_.u32({address->file,address->offset+68})>>24;
     for (unsigned i=0;i<4;++i) if (const auto desc=pointer(i*16))
         result.layers[i]=model(*desc,pointer(i*16+4),
@@ -324,6 +325,7 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
     for (std::size_t i=0;i<source_nodes.size();++i) {
         if (!enabled(i)) continue;
         model.nodes.push_back(source_nodes[i]);
+        model.source_joint_ids.push_back(static_cast<unsigned>(i)+4);
         model.materials.push_back(source_materials[i]);
     }
     model.meshes.resize(model.nodes.size());
@@ -408,6 +410,15 @@ Camera3D Scene3DLoader::camera(std::string_view animation, float frame, Camera3D
 void Scene3DRenderer::begin() {
     triangles_.clear();
     batching_ = true;
+}
+
+Vec3 Scene3DRenderer::joint_point(const Model3D& model,float frame,unsigned joint,Vec3 offset) {
+    const auto found=std::find(model.source_joint_ids.begin(),model.source_joint_ids.end(),joint);
+    if (found==model.source_joint_ids.end()) return model.position;
+    const auto matrices=world_matrices(animation_,model,frame);
+    const auto& matrix=matrices.world[static_cast<std::size_t>(found-model.source_joint_ids.begin())];
+    const auto point=transform(matrix,{offset.x,offset.y,offset.z});
+    return point;
 }
 
 Vec3 Scene3DRenderer::fighter_position(const Model3D& model, float frame) {

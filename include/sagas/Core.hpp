@@ -66,6 +66,7 @@ struct InputState {
     bool accept_pressed{}, cancel_pressed{}, skip_pressed{}, start_pressed{}, quit{};
     bool up_pressed{}, down_pressed{}, left_pressed{}, right_pressed{};
     bool up{}, down{}, left{}, right{};
+    bool jump_pressed{}, shield_held{}, back_pressed{};
     float stick_x{}, stick_y{};
     [[nodiscard]] bool pressed(Action action) const noexcept;
 };

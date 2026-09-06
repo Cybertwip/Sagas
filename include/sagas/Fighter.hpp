@@ -5,6 +5,8 @@
 #include <array>
 #include <cstdint>
 #include <string_view>
+#include <functional>
+#include <optional>
 
 namespace sagas {
 
@@ -80,6 +82,7 @@ struct CollisionSegment {
 
 class FighterPhysics final {
 public:
+    using JumpMotion=std::function<std::optional<Vec3>(const FighterBody&)>;
     static constexpr int kStickMin = 8;
     static void apply_gravity_clamp_tvel(FighterBody& body, float gravity, float tvel) noexcept;
     static void clamp_ground_vel(FighterBody& body, float clamp) noexcept;
@@ -89,7 +92,7 @@ public:
     static void apply_air_vel_drift(FighterBody& body) noexcept;
     static void jump(FighterBody& body) noexcept;
     static void tick(FighterBody& body, float ground_y) noexcept;
-    static void tick(FighterBody& body, std::span<const CollisionSegment> stage) noexcept;
+    static void tick(FighterBody& body, std::span<const CollisionSegment> stage, const JumpMotion& motion = {});
 };
 
 struct AttackVolume {

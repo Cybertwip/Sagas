@@ -44,6 +44,8 @@ public:
             if (i==0) {
                 body.stick_x=static_cast<int>(input.stick_x); body.stick_y=static_cast<int>(input.stick_y);
                 body.jump_pressed=input.jump_pressed || (body.stick_y>=44 && previous_stick_y_<44);
+                if (body.jump_pressed) body.jump_button=input.jump_pressed;
+                body.jump_released=input.jump_released;
                 body.shield_held=input.shield_held; attack=input.accept_pressed;
                 previous_stick_y_=body.stick_y;
             } else {
@@ -55,6 +57,7 @@ public:
                 body.stick_x=std::abs(dx)>260?(dx>0?60:-60):0; body.stick_y=0;
                 if (std::abs(dx)>1 && body.status!=FighterStatus::Attack) body.lr=dx>0?1:-1;
                 body.jump_pressed=body.grounded && dy>300 && tic_%40==0;
+                body.jump_button=true; body.jump_released=false;
                 attack=std::abs(dx)<420 && tic_%32==static_cast<int>(i)*3;
             }
             if (!body.hitlag) {
@@ -74,7 +77,21 @@ public:
                 }
                 if (body.status!=FighterStatus::Shield) body.shield=std::min(55.0f,body.shield+.05f);
             }
-            FighterPhysics::tick(body,stage_.collision);
+            FighterPhysics::tick(body,stage_.collision,[&](const FighterBody& jumping) -> std::optional<Vec3> {
+                const auto model=posed(jumping,true);
+                if (!model.fighter_root_animation) return {};
+                n64::AnimationDecoder decoder(*archive_);
+                float ended=-1;
+                const auto previous=decoder.sample16(*model.fighter_root_animation,jumping.jump_frames,
+                                                     decoder.pose(model.fighter_root),&ended);
+                if (ended>=0) return {};
+                const auto current=decoder.sample16(*model.fighter_root_animation,jumping.jump_frames+1,
+                                                    decoder.pose(model.fighter_root));
+                const float z=(current.tracks[6]-previous.tracks[6])*jumping.lr*jumping.attr.size;
+                const float y=(current.tracks[5]-previous.tracks[5])*jumping.attr.size;
+                const float angle=current.tracks[2];
+                return Vec3{z*std::cos(angle)-y*std::sin(angle),z*std::sin(angle)+y*std::cos(angle),0};
+            });
             const auto& bounds=stage_.blast_bounds;
             if (body.position.x<bounds[3] || body.position.x>bounds[2] || body.position.y<bounds[1] || body.position.y>bounds[0]) {
                 --body.stocks;
@@ -146,7 +163,11 @@ private:
         switch(body.status) {
             case FighterStatus::Walk:return data.walk;
             case FighterStatus::Dash:return data.run_clip;
-            case FighterStatus::Jump:return data.jump;
+            case FighterStatus::KneeBend:return data.kneebend_clip;
+            case FighterStatus::Jump:
+                if (!body.aerial_jump) return body.jump_backward?data.jump_back:data.jump;
+                if (data.multi_jump[0]) return data.multi_jump[std::clamp(body.jumps_used-2,0,4)];
+                return body.jump_backward?data.aerial_back:data.aerial_forward;
             case FighterStatus::Fall:return data.fall;
             case FighterStatus::Land:return data.landing;
             case FighterStatus::Attack:return data.jab;
@@ -154,16 +175,17 @@ private:
             default:return data.idle;
         }
     }
-    Model3D posed(const FighterBody& body) {
-        const unsigned clip=body.motion?body.motion:motion(body);
+    Model3D posed(const FighterBody& body,bool with_root=false) {
+        const unsigned clip=motion(body);
         const unsigned key=static_cast<unsigned>(body.kind)*4096+clip;
         if (!models_.contains(key)) {
-            const auto spec=fighter_model_spec(body.kind);
-            auto model=loader_->fighter_model(spec.descriptor,spec.joint_pairs?GeometryLayout::JointPairs:GeometryLayout::Direct,spec.setup_parts);
-            model.animation=n64::AnimationDecoder(*archive_).table({clip,0},model.nodes.size());
-            model.fighter_animation=true;models_.emplace(key,std::move(model));
+            const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+            const unsigned flags=(body.kind==FighterKind::Ness || body.kind==FighterKind::Yoshi) &&
+                (clip==data.aerial_forward || clip==data.aerial_back)?0x40000000U:0;
+            models_.emplace(key,loader_->fighter_motion(body.kind,clip,flags));
         }
         auto model=models_.at(key);
+        if (!with_root && model.fighter_wrapper==Model3D::FighterWrapper::TransN) model.fighter_root_animation.reset();
         model.position=body.position;model.rotation.y=body.lr*std::numbers::pi_v<float>/2;
         model.scale={body.attr.size,body.attr.size,body.attr.size};return model;
     }

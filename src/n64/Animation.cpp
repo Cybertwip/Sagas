@@ -260,7 +260,8 @@ MaterialPose AnimationDecoder::sample_material(Address script,float frame,Materi
     return initial;
 }
 
-JointPose AnimationDecoder::sample16(Address script, float frame, JointPose initial) {
+JointPose AnimationDecoder::sample16(Address script, float frame, JointPose initial, float* end_frame) {
+    if (end_frame) *end_frame=-1;
     enum class Kind { None, Step, Linear, Cubic };
     struct Track {
         Kind kind{Kind::None};
@@ -312,7 +313,7 @@ JointPose AnimationDecoder::sample16(Address script, float frame, JointPose init
         const unsigned flags = (word >> 1) & 0x3ffU;
         const bool toggle = (word & 1U) != 0;
         command.offset += 2;
-        if (opcode == 0) break;
+        if (opcode == 0) { if (end_frame) *end_frame=cursor; break; }
 
         if (opcode == 13) {
             // The loop offset is relative to its own 16-bit word and is

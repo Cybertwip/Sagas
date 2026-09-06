@@ -139,7 +139,7 @@ void FighterPhysics::tick(FighterBody& body,float ground_y) noexcept {
     tick(body,std::span<const CollisionSegment>(&floor,1));
 }
 
-void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> stage) noexcept {
+void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> stage,const JumpMotion& motion) {
     if (body.status==FighterStatus::KO) return;
     if (body.invincible>0) --body.invincible;
     if (body.hitlag>0) { --body.hitlag; return; }
@@ -183,10 +183,28 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         }
         body.vel_air.x=body.vel_ground*body.lr; body.vel_air.y=0;
     } else {
+        const bool authored=body.aerial_jump && body.status==FighterStatus::Jump &&
+                            (body.kind==FighterKind::Ness || body.kind==FighterKind::Yoshi) && motion;
+        const auto root_velocity=authored?motion(body):std::optional<Vec3>{};
         if (body.stick_y<-44 && body.vel_air.y<0) body.fastfall=true;
         if (body.status==FighterStatus::Hitstun) apply_gravity_clamp_tvel(body,body.attr.gravity,body.attr.tvel_base);
-        else apply_air_vel_drift(body);
-        if (body.vel_air.y<0 && body.status==FighterStatus::Jump) body.status=FighterStatus::Fall;
+        else {
+            const float saved_accel=body.attr.air_accel,saved_max=body.attr.air_speed_max_x;
+            if (body.aerial_jump && body.status==FighterStatus::Jump &&
+                (body.kind==FighterKind::Kirby || body.kind==FighterKind::Purin)) {
+                body.attr.air_accel*=.8f; body.attr.air_speed_max_x*=.8f;
+            }
+            apply_air_vel_drift(body);
+            body.attr.air_accel=saved_accel; body.attr.air_speed_max_x=saved_max;
+            if (root_velocity) {
+                body.vel_air.y=root_velocity->y;
+                // Ness adds authored horizontal drift to controlled velocity;
+                // Yoshi only uses the vertical/depth components.
+            } else if (authored) body.status=FighterStatus::Fall;
+        }
+        if (body.vel_air.y<0 && body.status==FighterStatus::Jump && !body.aerial_jump) body.status=FighterStatus::Fall;
+        if (root_velocity && body.kind==FighterKind::Ness) body.position.x+=root_velocity->x;
+        if (body.status==FighterStatus::Jump) ++body.jump_frames;
     }
     // ftMainProcPhysicsMap keeps knockback separate from controlled velocity.
     // Air knockback decays by 1.7 per tick; grounded knockback uses traction.

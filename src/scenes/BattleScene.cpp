@@ -5,6 +5,7 @@
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
 #include <sagas/OpeningMotionAudio.hpp>
+#include <sagas/BattleMotionAudio.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -41,6 +42,7 @@ public:
         for (unsigned i=0;i<bodies_.size();++i) {
             auto& body=bodies_[i];
             if (body.stocks<=0) continue;
+            const int old_x=body.stick_x,old_y=body.stick_y;
             bool attack=false;
             if (i==0) {
                 body.stick_x=static_cast<int>(input.stick_x); body.stick_y=static_cast<int>(input.stick_y);
@@ -61,13 +63,16 @@ public:
                 body.jump_button=true; body.jump_released=false;
                 attack=std::abs(dx)<420 && tic_%32==static_cast<int>(i)*3;
             }
+            body.tap_stick_x=std::abs(body.stick_x)>=56 && (std::abs(old_x)<56 || old_x*body.stick_x<0)?0:std::min(255,body.tap_stick_x+1);
+            body.tap_stick_y=std::abs(body.stick_y)>=53 && (std::abs(old_y)<53 || old_y*body.stick_y<0)?0:std::min(255,body.tap_stick_y+1);
             if (!body.hitlag) {
                 ++body.action_frame;
                 if (body.status==FighterStatus::Hitstun && --body.hitstun<=0)
                     body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
+                const bool smash=FighterCombat::start_smash(body,attack);
                 const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump) &&
                                   body.action_frame>=motion_length(body);
-                FighterCombat::advance_jab(body,attack,ended);
+                FighterCombat::advance_jab(body,attack && !smash,ended,i==0 && input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack) {
                     if (body.shield_held && body.grounded && body.shield>0) {
@@ -101,23 +106,32 @@ public:
             const unsigned clip=motion(body);
             if (body.motion!=clip) {body.motion=clip;body.action_frame=0;}
             if (!body.hitlag && !services.deterministic_clock)
-                for (const auto& sound:opening_motion_sounds)
-                    if (sound.motion==clip && sound.frame==static_cast<unsigned>(body.action_frame)) services.audio.play_fgm(sound.fgm);
+                for (const auto& sound:battle_motion_sounds)
+                    if (sound.motion==clip && sound.frame==static_cast<unsigned>(body.action_frame)) {
+                        const auto& voices=fighter_source_data[static_cast<unsigned>(body.kind)].smash_voices;
+                        unsigned fgm=sound.fgm==~0U?voices[(tic_+i)%3]:sound.fgm;
+                        if (body.kind==FighterKind::Luigi)
+                            for (unsigned v=0;v<3;++v)
+                                if (fgm==fighter_source_data[static_cast<unsigned>(FighterKind::Mario)].smash_voices[v]) {fgm=voices[v];break;}
+                        services.audio.play_fgm(fgm);
+                    }
         }
         std::vector<AttackVolume> volumes;
         for (unsigned i=0;i<bodies_.size();++i) {
-            const auto& body=bodies_[i];
+            auto& body=bodies_[i];
             if (body.status!=FighterStatus::Attack || body.hitlag || body.stocks<=0) continue;
             const auto model=posed(body);
             for (const auto& box:source_jab_hitboxes)
                 if (box.motion==body.motion && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
+                    if (body.attack_epoch!=box.epoch) {body.attack_epoch=box.epoch;body.hit_mask=0;}
                     const auto position=renderer_->joint_point(model,body.action_frame,box.joint,
                         {static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
-                    volumes.push_back({i,position,box.radius*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base});
+                    volumes.push_back({i,position,box.radius*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm});
                 }
         }
         const auto hits=FighterCombat::resolve(bodies_,volumes);
-        if (!hits.empty() && !services.deterministic_clock) services.audio.play_fgm(1,.35f);
+        if (!services.deterministic_clock)
+            for (const auto& hit:hits) if (!hit.shield) services.audio.play_fgm(hit.fgm);
         int alive=0;
         for (unsigned i=0;i<bodies_.size();++i) if (bodies_[i].stocks>0) {++alive;winner_=static_cast<int>(i);}
         if (alive>1) winner_=-1;
@@ -165,7 +179,10 @@ private:
                 return body.jump_backward?data.aerial_back:data.aerial_forward;
             case FighterStatus::Fall:return data.fall;
             case FighterStatus::Land:return data.landing;
-            case FighterStatus::Attack:return body.jab_stage==3?data.jab3:body.jab_stage==2?data.jab2:data.jab;
+            case FighterStatus::Attack:
+                if (body.attack_motion) return body.attack_motion;
+                if (body.jab_stage>=4) return data.rapid[body.jab_stage-4];
+                return body.jab_stage==3?data.jab3:body.jab_stage==2?data.jab2:data.jab;
             case FighterStatus::Hitstun:return data.damage;
             default:return data.idle;
         }

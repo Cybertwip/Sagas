@@ -358,6 +358,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             defender.vel_air={}; defender.vel_ground=0;
             if (defender.vel_damage.y>0) defender.grounded=false;
             defender.status=FighterStatus::Hitstun; defender.action_frame=0;
+            defender.attack_motion=0;defender.jab_stage=0;defender.jab_followup_left=0;defender.rapid_inputs=0;
             defender.hitstun=std::max(1,static_cast<int>(knockback/1.875f));
             defender.fastfall=false;
         }

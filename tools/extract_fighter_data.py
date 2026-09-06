@@ -6,7 +6,7 @@ ids={v['name']:int(v['id']) for v in csv.DictReader((r/'sagas/build/assets/reloc
 voices={v['name']:v['idx'] for v in json.loads((d/'build/us/src/audio/fgm.ucd.json').read_text())['entries']}
 names=['Luigi','Mario','Donkey','Link','Samus','Captain','Ness','Yoshi','Kirby','Fox','Pikachu','Purin']
 selected=[1,3,1,1,4,1,2,2,3,4,1,2]; scales=[1.21,1.25,1.,1.33,1.03,1.07,1.3,1.05,1.22,1.15,1.2,1.26]
-text='// US cartridge values from FTAttributes and scSubsys motion tables.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct FighterSourceData {\n float size,walk_mul,traction,dash,run,kneebend,jump_x,jump_mul,jump_base,air_accel,air_max,air_friction,gravity,terminal,fast,weight,height,width,select_scale,aerial_x,aerial_height,jab_window,cam_offset_y,camera_zoom;\n unsigned jumps,idle,walk,dash_clip,run_clip,jump,fall,landing,jab,damage,selected,announce,selected_flags,kneebend_clip,jump_back,aerial_forward,aerial_back,jab2,jab3;\n std::array<unsigned,5> multi_jump;\n std::array<unsigned,3> smash,rapid;\n};\ninline constexpr std::array<FighterSourceData,12> fighter_source_data{{\n'
+text='// US cartridge values from FTAttributes and scSubsys motion tables.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct FighterSourceData {\n float size,walk_mul,traction,dash,run,kneebend,jump_x,jump_mul,jump_base,air_accel,air_max,air_friction,gravity,terminal,fast,weight,height,width,select_scale,aerial_x,aerial_height,jab_window,cam_offset_y,camera_zoom;\n unsigned jumps,idle,walk,dash_clip,run_clip,jump,fall,landing,jab,damage,selected,announce,selected_flags,kneebend_clip,jump_back,aerial_forward,aerial_back,jab2,jab3;\n std::array<unsigned,5> multi_jump;\n std::array<unsigned,3> smash,rapid,smash_voices;\n};\ninline constexpr std::array<FighterSourceData,12> fighter_source_data{{\n'
 for idx,name in enumerate(names):
  p=next((d/'src/relocData').glob('[0-9]*_'+name+'Main.c'))
  src=re.search(r'FTAttributes\s+\w+\s*=\s*\{(.*?)\n\};',p.read_text(),re.S).group(1)
@@ -37,6 +37,7 @@ for idx,name in enumerate(names):
  multi=[clip('Jump'+str(i)) for i in range(2,7)] if name in ('Kirby','Purin') else [0]*5
  attacks=[clip('FSmash'),clip('USmash'),clip('DSmash')]
  rapid=[ids.get('FT'+name+'AnimJabLoop'+suffix,0) for suffix in ('Start','','End')]
+ smash_voices=[voices[name] for name in re.findall(r'nSYAudio\w+',vals['smash_sfx'])]
  flags=re.findall(r'^\s*(?:&ll\w+FileID|0x00000000),\s*[^,]+,\s*(0x[0-9A-Fa-f]+)',sub,re.M)[selected[idx]]
- text+='    {'+','.join(v+'f' if '.' in v else v+'.0f' for v in floats)+','+','.join(map(str,clips))+','+flags+'U,'+','.join(map(str,extra))+',{'+','.join(map(str,multi))+'},{'+','.join(map(str,attacks))+'},{'+','.join(map(str,rapid))+'}}, // '+name+'\n'
+ text+='    {'+','.join(v+'f' if '.' in v else v+'.0f' for v in floats)+','+','.join(map(str,clips))+','+flags+'U,'+','.join(map(str,extra))+',{'+','.join(map(str,multi))+'},{'+','.join(map(str,attacks))+'},{'+','.join(map(str,rapid))+'},{'+','.join(map(str,smash_voices))+'}}, // '+name+'\n'
 text+='}};\n}\n';out.write_text(text)

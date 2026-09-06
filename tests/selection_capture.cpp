@@ -50,10 +50,23 @@ int main(int argc,char** argv) {
             }
             sagas::InputState start; start.start_pressed=true;
             scene->update(services,start,1.f/60);
-            assert(scene->next()); // Chosen roster can proceed to a match.
+            auto battle=scene->next();
+            assert(battle); // Chosen roster can proceed to a match.
+            battle->enter(services);
+            for (int frame=0;frame<180;++frame) {
+                sagas::InputState input;
+                input.jump_pressed=frame==20 || frame==40 || frame==70;
+                input.accept_pressed=frame==120 || frame==125 || frame==135;
+                battle->update(services,input,1.f/60);
+                if (frame==45 || frame==75 || frame==150) {
+                    render.request_capture(output/(std::string(sagas::fighter_kind_name(static_cast<sagas::FighterKind>(fighter)))+
+                                                   "-battle-"+std::to_string(frame)+".png"));
+                    battle->draw(services);
+                }
+            }
             audio.stop();
         }
     }
     SDL_DestroyWindow(window); SDL_Quit();
-    std::cout<<"Captured all 12 selected poses at frames 0, 30 and 120\n";
+    std::cout<<"Captured selected poses and scripted jump/jab battle input for all 12 fighters\n";
 }

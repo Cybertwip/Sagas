@@ -1,5 +1,6 @@
 #include <sagas/Fighter.hpp>
 #include <sagas/FighterSourceData.hpp>
+#include <sagas/FighterAttackData.hpp>
 #include <limits>
 
 #include <algorithm>
@@ -146,7 +147,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     if (body.drop_frames>0) --body.drop_frames;
     const Vec3 before=body.position;
     const bool was_grounded=body.grounded;
-    if (body.jump_pressed && body.status!=FighterStatus::Hitstun) {
+    if (body.jump_pressed && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack) {
         if (body.grounded && body.status!=FighterStatus::KneeBend) {
             body.status=FighterStatus::KneeBend; body.jump_frames=0;
             body.short_hop=false; body.jump_force=body.stick_y;
@@ -186,23 +187,26 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         const bool authored=body.aerial_jump && body.status==FighterStatus::Jump &&
                             (body.kind==FighterKind::Ness || body.kind==FighterKind::Yoshi) && motion;
         const auto root_velocity=authored?motion(body):std::optional<Vec3>{};
-        if (body.stick_y<-44 && body.vel_air.y<0) body.fastfall=true;
+        if (!authored && body.stick_y<-44 && body.vel_air.y<0) body.fastfall=true;
         if (body.status==FighterStatus::Hitstun) apply_gravity_clamp_tvel(body,body.attr.gravity,body.attr.tvel_base);
         else {
-            const float saved_accel=body.attr.air_accel,saved_max=body.attr.air_speed_max_x;
             if (body.aerial_jump && body.status==FighterStatus::Jump &&
                 (body.kind==FighterKind::Kirby || body.kind==FighterKind::Purin)) {
-                body.attr.air_accel*=.8f; body.attr.air_speed_max_x*=.8f;
-            }
-            apply_air_vel_drift(body);
-            body.attr.air_accel=saved_accel; body.attr.air_speed_max_x=saved_max;
+                if (body.fastfall) body.vel_air.y=-body.attr.tvel_fast;
+                else apply_gravity_clamp_tvel(body,body.attr.gravity,body.attr.tvel_base);
+                if (std::abs(body.vel_air.x)>body.attr.air_speed_max_x)
+                    body.vel_air.x=std::copysign(std::max(body.attr.air_speed_max_x,std::abs(body.vel_air.x)-1),body.vel_air.x);
+                else if (std::abs(body.stick_x)>=kStickMin)
+                    body.vel_air.x=std::clamp(body.vel_air.x+body.stick_x*body.attr.air_accel*.8f,
+                                            -body.attr.air_speed_max_x*.8f,body.attr.air_speed_max_x*.8f);
+                apply_air_vel_x_friction(body);
+            } else apply_air_vel_drift(body);
             if (root_velocity) {
                 body.vel_air.y=root_velocity->y;
                 // Ness adds authored horizontal drift to controlled velocity;
                 // Yoshi only uses the vertical/depth components.
             } else if (authored) body.status=FighterStatus::Fall;
         }
-        if (body.vel_air.y<0 && body.status==FighterStatus::Jump && !body.aerial_jump) body.status=FighterStatus::Fall;
         if (root_velocity && body.kind==FighterKind::Ness) body.position.x+=root_velocity->x;
         if (body.status==FighterStatus::Jump) ++body.jump_frames;
     }
@@ -256,7 +260,33 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         }
     } else if (body.status==FighterStatus::Wait || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash)
         body.status=FighterStatus::Fall;
+    if (was_grounded && !body.grounded && body.jumps_used==0) body.jumps_used=1;
     body.jump_pressed=false;
+}
+
+void FighterCombat::advance_jab(FighterBody& body,bool pressed,bool animation_ended) {
+    if (body.hitlag) return;
+    const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+    const unsigned next=body.jab_stage==1 ? (body.kind==FighterKind::Pikachu?1:(data.jab2?2:0)) :
+                        body.jab_stage==2 && data.jab3?3:0;
+    const auto start=[&](unsigned stage) {
+        body.jab_stage=stage; body.jab_queued=false;
+        body.jab_followup_left=stage==1?static_cast<int>(data.jab_window):stage==2?24:0;
+        body.status=FighterStatus::Attack; body.action_frame=0; body.hit_mask=0; body.vel_ground=0;
+    };
+    if (body.status==FighterStatus::Attack) {
+        if (pressed && body.jab_followup_left>0 && next) body.jab_queued=true;
+        const unsigned clip=body.jab_stage==3?data.jab3:body.jab_stage==2?data.jab2:data.jab;
+        const auto flag=std::find_if(source_jab_followups.begin(),source_jab_followups.end(),
+                                   [&](const auto& event){return event.motion==clip;});
+        if (body.jab_queued && flag!=source_jab_followups.end() && flag->frame>=0 && body.action_frame>=flag->frame) {
+            start(next); return;
+        }
+        if (animation_ended) body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
+    } else if (pressed && body.grounded && body.status!=FighterStatus::Hitstun) {
+        start(body.jab_followup_left>0 && next?next:1); return;
+    }
+    if (body.jab_followup_left>0) --body.jab_followup_left;
 }
 
 std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std::span<const AttackVolume> attacks) {

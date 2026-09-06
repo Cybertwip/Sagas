@@ -503,5 +503,49 @@ int main() {
     sagas::FighterPhysics::tick(sliding,0);
     assert(sliding.position.x>landed_x);
     assert(std::abs(sliding.vel_damage.x-(landed_speed-sliding.attr.traction*.25f))<.001f);
+    sagas::FighterBody jumping;
+    jumping.attr=sagas::fighter_attributes(jumping.kind);
+    jumping.jump_button=true;
+    sagas::FighterPhysics::jump(jumping);
+    assert(std::abs(jumping.vel_air.y-(77*.7f+26))<.001f);
+    jumping.grounded=true; jumping.short_hop=true;
+    sagas::FighterPhysics::jump(jumping);
+    assert(std::abs(jumping.vel_air.y-(45*.7f+26))<.001f);
+    for (const auto kind:{sagas::FighterKind::Kirby,sagas::FighterKind::Purin}) {
+        jumping={};jumping.kind=kind;jumping.attr=sagas::fighter_attributes(kind);
+        sagas::FighterPhysics::jump(jumping);
+        sagas::FighterPhysics::jump(jumping);
+        assert(std::abs(jumping.vel_air.y-jumping.attr.jump_vel_y*jumping.attr.aerial_height)<.001f);
+        const std::array<float,4> expected=kind==sagas::FighterKind::Kirby?
+            std::array<float,4>{60,52,47,40}:std::array<float,4>{60,40,20,0};
+        for (const auto velocity:expected) {
+            sagas::FighterPhysics::jump(jumping); assert(jumping.vel_air.y==velocity);
+        }
+        assert(jumping.jumps_used==6);
+        sagas::FighterPhysics::jump(jumping); assert(jumping.jumps_used==6);
+    }
+    sagas::FighterBody combo;combo.attr=sagas::fighter_attributes(combo.kind);
+    sagas::FighterCombat::advance_jab(combo,true,false);
+    assert(combo.jab_stage==1 && combo.status==sagas::FighterStatus::Attack);
+    combo.action_frame=2;combo.hit_mask=2;
+    sagas::FighterCombat::advance_jab(combo,true,false);
+    assert(combo.jab_queued && combo.jab_stage==1);
+    combo.action_frame=10;
+    sagas::FighterCombat::advance_jab(combo,false,false);
+    assert(combo.jab_stage==2 && combo.action_frame==0 && combo.hit_mask==0);
+    combo.action_frame=8;
+    sagas::FighterCombat::advance_jab(combo,true,false);
+    assert(combo.jab_stage==3);
+    sagas::FighterCombat::advance_jab(combo,false,true);
+    assert(combo.status==sagas::FighterStatus::Wait);
+    sagas::BattleCamera camera;
+    sagas::Stage3D camera_stage;
+    std::array<sagas::FighterBody,2> camera_fighters{};
+    camera_fighters[0].position.x=-500;camera_fighters[1].position.x=500;
+    for (int frame=0;frame<300;++frame) camera.tick(camera_fighters,camera_stage);
+    const float close_z=camera.view().eye.z;
+    camera_fighters[0].position.x=-4000;camera_fighters[1].position.x=4000;
+    for (int frame=0;frame<300;++frame) camera.tick(camera_fighters,camera_stage);
+    assert(camera.view().eye.z>close_z && camera.view().near_plane==256);
     std::cout << "Sagas core tests passed\n";
 }

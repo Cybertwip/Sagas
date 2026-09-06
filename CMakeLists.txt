@@ -131,6 +131,7 @@ add_custom_target(sagas_scene_assets ALL DEPENDS "${SAGAS_OPENING_SCENE}")
 
 add_library(sagas_engine
     src/Application.cpp
+    src/BattleCamera.cpp
     src/Audio.cpp
     src/Core.cpp
     src/Fgm.cpp

@@ -32,6 +32,7 @@ public:
             body.status=FighterStatus::Fall;
         }
         services.audio.stop();
+        camera_.tick(bodies_,stage_);
     }
     void update(Services& services,const InputState& input,float) override {
         ++tic_;
@@ -43,7 +44,7 @@ public:
             bool attack=false;
             if (i==0) {
                 body.stick_x=static_cast<int>(input.stick_x); body.stick_y=static_cast<int>(input.stick_y);
-                body.jump_pressed=input.jump_pressed || (body.stick_y>=44 && previous_stick_y_<44);
+                body.jump_pressed=input.jump_pressed || (body.stick_y>=53 && previous_stick_y_<53);
                 if (body.jump_pressed) body.jump_button=input.jump_pressed;
                 body.jump_released=input.jump_released;
                 body.shield_held=input.shield_held; attack=input.accept_pressed;
@@ -64,16 +65,14 @@ public:
                 ++body.action_frame;
                 if (body.status==FighterStatus::Hitstun && --body.hitstun<=0)
                     body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
-                if (body.status==FighterStatus::Attack && body.action_frame>=30)
-                    body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
+                const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump) &&
+                                  body.action_frame>=motion_length(body);
+                FighterCombat::advance_jab(body,attack,ended);
+                if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack) {
                     if (body.shield_held && body.grounded && body.shield>0) {
                         body.status=FighterStatus::Shield; body.shield=std::max(0.0f,body.shield-.15f);
                     } else if (body.status==FighterStatus::Shield) body.status=FighterStatus::Wait;
-                    if (attack && body.grounded) {
-                        body.status=FighterStatus::Attack; body.action_frame=0; body.hit_mask=0;
-                        body.vel_ground=0;
-                    }
                 }
                 if (body.status!=FighterStatus::Shield) body.shield=std::min(55.0f,body.shield+.05f);
             }
@@ -122,17 +121,13 @@ public:
         int alive=0;
         for (unsigned i=0;i<bodies_.size();++i) if (bodies_[i].stocks>0) {++alive;winner_=static_cast<int>(i);}
         if (alive>1) winner_=-1;
+        camera_.tick(bodies_,stage_);
     }
     void draw(Services& services) override {
         auto& r=services.render; r.begin({100,150,220,255});
         r.sprite_rect("textures/StageDreamLand.png",0,0,320,240);
         renderer_->begin();
-        float left=0,right=0,top=800;
-        for (const auto& body:bodies_) if (body.stocks>0) {left=std::min(left,body.position.x);right=std::max(right,body.position.x);top=std::max(top,body.position.y+body.attr.height);}
-        const float center=std::clamp((left+right)*.5f,-1500.0f,1500.0f);
-        const float distance=std::clamp(std::max((right-left)*1.25f,top*2),3800.0f,8000.0f);
-        Camera3D camera{{center,top*.45f,distance},{center,top*.35f,0},{0,1,0},38,100,20000};
-        camera.viewport={0,0,320,240};
+        const auto& camera=camera_.view();
         for (const auto& layer:stage_.layers) renderer_->draw(r,layer,camera,static_cast<float>(tic_));
         for (const auto& body:bodies_) {
             if (body.stocks<=0 || (body.invincible && tic_%6<2)) continue;
@@ -170,10 +165,28 @@ private:
                 return body.jump_backward?data.aerial_back:data.aerial_forward;
             case FighterStatus::Fall:return data.fall;
             case FighterStatus::Land:return data.landing;
-            case FighterStatus::Attack:return data.jab;
+            case FighterStatus::Attack:return body.jab_stage==3?data.jab3:body.jab_stage==2?data.jab2:data.jab;
             case FighterStatus::Hitstun:return data.damage;
             default:return data.idle;
         }
+    }
+    float motion_length(const FighterBody& body) {
+        const unsigned clip=motion(body);
+        if (!lengths_.contains(clip)) {
+            const auto model=posed(body,true);
+            n64::AnimationDecoder decoder(*archive_);
+            float length=0;
+            auto scripts=model.animation;
+            scripts.push_back(model.fighter_root_animation);
+            for (const auto& script:scripts) if (script) {
+                float end=-1;
+                (void)decoder.sample16(*script,10000,{},&end);
+                if (end<0) {length=10000;break;}
+                length=std::max(length,end);
+            }
+            lengths_[clip]=length;
+        }
+        return lengths_.at(clip);
     }
     Model3D posed(const FighterBody& body,bool with_root=false) {
         const unsigned clip=motion(body);
@@ -193,8 +206,10 @@ private:
     bool done_{};
     std::vector<FighterBody> bodies_;
     Stage3D stage_;
+    BattleCamera camera_;
     n64::RelocArchive* archive_{};
     std::unordered_map<unsigned,Model3D> models_;
+    std::unordered_map<unsigned,float> lengths_;
     std::unique_ptr<Scene3DLoader> loader_;
     std::unique_ptr<Scene3DRenderer> renderer_;
 };

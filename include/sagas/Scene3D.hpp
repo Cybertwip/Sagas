@@ -54,6 +54,18 @@ struct Stage3D {
     std::array<Vec3,4> player_spawns{};
     std::vector<CollisionSegment> collision;
     std::array<float,4> blast_bounds{5000,-4000,6000,-6000}; // top, bottom, right, left
+    std::array<float,4> camera_bounds{4000,-3000,5000,-5000};
+    float camera_angle{};
+};
+
+// Default VS camera from gmCameraUpdateInterests/gmCameraDefaultFuncCamera.
+class BattleCamera {
+public:
+    void tick(std::span<const FighterBody> fighters,const Stage3D& stage);
+    [[nodiscard]] const Camera3D& view() const { return camera_; }
+private:
+    Camera3D camera_{{1500,0,0},{0,0,0},{0,1,0},38,256,39936,{0,0,320,240}};
+    float distance_{10000};
 };
 
 // Builder pattern: converts reloc symbols into immutable renderable models.

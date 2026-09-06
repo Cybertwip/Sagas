@@ -41,11 +41,12 @@ slots have a selection (at least two in VS). Selected previews use the source
 submotion flags, including Ness and Pikachu's extra XRotN animation track.
 
 In battle, arrows/stick move, X or upward stick jumps, A/Space performs the first
-jab, and Z shields. Controller equivalents are north/west for jump, south for
+jab, and Z shields. Tap A again to buffer the character's jab follow-up; release
+X during the first three jump-startup ticks for a short hop. Controller equivalents are north/west for jump, south for
 jab and right shoulder for shield. Escape returns to selection.
 
 Battle currently supports cartridge movement attributes, static stage collision,
-gravity, jumps, landing, platform drops, joint-bound first-jab hitboxes, damage,
+gravity, jumps, landing, platform drops, joint-bound jab-chain hitboxes, damage,
 hitlag, hitstun, knockback and stock respawns. Knockback decays separately from
 movement and survives landing. CPU movement uses the same physics/combat path.
 This is still a partial gameplay implementation: hurtboxes are body capsules;
@@ -53,6 +54,18 @@ the full move set, source action transitions, ledge grabs, moving platforms,
 collision responses, sound-event coverage and battle HUD remain unfinished.
 Ground knockback currently assumes normal floor friction. Opening fight scripts
 have not yet been connected to this simulation.
+
+Jump force follows `ftCommonJumpGetJumpForceButton` and per-character attributes.
+Kirby/Purin use their authored extra-jump velocity tables; Ness/Yoshi use TransN
+animation deltas. Aerial turning, jump armor and multi-jump interrupt gates remain
+to be ported. Jab follow-ups read script flag-1 timing and source input windows;
+animation termination replaces the previous universal 30-frame timeout. Rapid
+jabs are not implemented yet.
+
+The default battle camera follows `gmCameraUpdateInterests` and
+`gmCameraDefaultFuncCamera`: fighter offsets, facing margins, stage bounds,
+distance fitting, yaw/pitch and pan/zoom smoothing. Viewport fitting uses 16:9.
+Projectile, entry/death and stage-specific camera modes remain outstanding.
 
 Regression checks:
 

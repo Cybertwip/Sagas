@@ -206,7 +206,11 @@ Stage3D Scene3DLoader::stage(std::string_view header) {
         return archive_.resolve({address->file,address->offset+offset});
     };
     Stage3D result;
-    for (unsigned i=0;i<4;++i) result.blast_bounds[i]=static_cast<float>(archive_.s16({address->file,address->offset+116+i*2}));
+    for (unsigned i=0;i<4;++i) {
+        result.blast_bounds[i]=static_cast<float>(archive_.s16({address->file,address->offset+116+i*2}));
+        result.camera_bounds[i]=static_cast<float>(archive_.s16({address->file,address->offset+108+i*2}));
+    }
+    result.camera_angle=archive_.f32({address->file,address->offset+104});
     const auto mask=archive_.u32({address->file,address->offset+68})>>24;
     for (unsigned i=0;i<4;++i) if (const auto desc=pointer(i*16))
         result.layers[i]=model(*desc,pointer(i*16+4),

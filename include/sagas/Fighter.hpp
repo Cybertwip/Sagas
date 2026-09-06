@@ -61,6 +61,9 @@ struct FighterBody {
     int jump_frames{};
     bool jump_button{},jump_released{},short_hop{},jump_backward{},aerial_jump{};
     int jump_force{80};
+    unsigned jab_stage{};
+    int jab_followup_left{};
+    bool jab_queued{};
     int land_frames{};
     bool grounded{true};
     bool fastfall{};
@@ -104,6 +107,7 @@ struct AttackVolume {
 struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; };
 class FighterCombat final {
 public:
+    static void advance_jab(FighterBody& body,bool pressed,bool animation_ended);
     [[nodiscard]] static std::vector<FighterHit> resolve(std::span<FighterBody> bodies,
                                                         std::span<const AttackVolume> attacks);
 };

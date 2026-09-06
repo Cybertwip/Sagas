@@ -123,7 +123,8 @@ int Application::run() {
         }
         if (!options_.capture_path.empty() && options_.frame_limit > 0 && frames + 1 == options_.frame_limit)
             render_->request_capture(options_.capture_path);
-        scenes_->draw();
+        if (!options_.headless || !options_.capture_only || frames<60 || frames+1==options_.frame_limit)
+            scenes_->draw();
         ++frames;
         if (!options_.headless) SDL_Delay(1);
     }

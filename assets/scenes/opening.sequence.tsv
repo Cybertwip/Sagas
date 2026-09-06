@@ -9,12 +9,12 @@ yoshi	90	fighter_intro	MVOpeningPortraitsSet2/Yoshi.png	intro.yoshi	30	1	1	36	10
 kirby	90	fighter_intro	MVOpeningPortraitsSet2/Kirby.png	intro.kirby	30	1	1	141	76	92	255
 fox	90	fighter_intro	MVOpeningPortraitsSet1/Fox.png	intro.fox	30	1	1	74	77	94	255
 pikachu	105	fighter_intro	MVOpeningPortraitsSet1/Pikachu.png	intro.pikachu	30	1	1	139	113	32	255
-run	250	wallpaper	MVOpeningRun/Wallpaper.png	-	0	2	2	0	0	0	255
+run	250	run	MVOpeningRun/Wallpaper.png	run	120	2	2	0	0	0	255
 cliff	190	models	MVOpeningStandoffWallpaper.png	cliff	120	2	2	0	0	0	255
 yamabuki	190	models	MVOpeningYamabuki/Wallpaper.png	yamabuki	120	1	1	0	0	0	255
 jungle	350	jungle	-	jungle	120	1	1	22	67	32	255
 yoster	190	models	StageYoshi.png	yoster	120	1	1	0	0	0	255
 sector	190	models_cockpit	MVOpeningSectorWallpaper.png	sector	120	1	1	0	0	0	255
 standoff	365	models	MVOpeningStandoffWallpaper.png	standoff	120	2	2	0	0	0	255
-clash	180	clash	-	-	0	1	1	0	0	0	255
+clash	180	models	-	clash	120	1	1	0	0	0	255
 newcomers	40	newcomers	-	-	0	1	1	0	0	0	255

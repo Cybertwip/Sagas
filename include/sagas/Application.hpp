@@ -16,6 +16,7 @@ struct ApplicationOptions {
     bool start_at_menu{};
     bool headless{};
     int frame_limit{};
+    bool capture_only{};
     std::filesystem::path capture_path;
 };
 

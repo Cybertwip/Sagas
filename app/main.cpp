@@ -14,9 +14,10 @@ int main(int argc, char** argv) {
             else if (arg == "--menu") options.start_at_menu = true;
             else if (arg == "--headless") options.headless = true;
             else if (arg == "--frames" && i + 1 < argc) options.frame_limit = std::stoi(argv[++i]);
+            else if (arg == "--capture-only") options.capture_only = true;
             else if (arg == "--capture" && i + 1 < argc) options.capture_path = argv[++i];
             else if (arg == "--help") {
-                std::cout << "Sagas [--assets PATH] [--title|--menu] [--headless] [--frames N] [--capture PNG]\n";
+                std::cout << "Sagas [--assets PATH] [--title|--menu] [--headless] [--frames N] [--capture PNG] [--capture-only]\n";
                 return 0;
             } else throw std::runtime_error("unknown argument: " + std::string(arg));
         }

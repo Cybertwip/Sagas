@@ -86,6 +86,8 @@ public:
             portraits(r, local);
         } else if (segment.renderer == "fighter_intro") {
             fighter_intro(r,local,segment.name);
+        } else if (segment.renderer == "run") {
+            run(r,local);
         } else if (segment.renderer == "jungle") {
             jungle(r,local);
         } else if (segment.renderer == "fighter") {
@@ -93,7 +95,7 @@ public:
         } else if (segment.renderer == "wallpaper") {
             wallpaper(r, segment.argument, segment.scale);
         } else if (segment.renderer == "models" || segment.renderer == "models_cockpit") {
-            wallpaper(r, segment.argument, segment.scale);
+            if (!segment.argument.empty() && segment.argument!="-") wallpaper(r, segment.argument, segment.scale);
             for (const auto& cue : segment.cues) {
                 const auto camera = loader_->camera(cue.camera, static_cast<float>(local));
                 renderer_->draw(r, model(cue.resource), camera, static_cast<float>(local), cue.tint);
@@ -102,8 +104,7 @@ public:
                 renderer_->flush(r);
                 r.sprite("textures/MVOpeningSector/Cockpit.png", {160,120});
             }
-        } else if (segment.renderer == "clash") {
-            clash(r, local);
+
         } else if (segment.renderer == "newcomers") {
             newcomers(r, local);
         } else {
@@ -412,7 +413,7 @@ private:
         // Recorded button events select the actual cartridge clips. Full
         // fighter status/physics playback is tracked in OPENING_TASKS.md.
         if (name=="mario") {
-            if (time>=33) { motion=614; frame=time-33; }
+            if (time>=33) { motion=608; frame=time-33; }
             else if (time>=12) { motion=607; frame=time-12; }
         } else if (name=="donkey" && time>=4) { motion=943; frame=time-4; }
         else if (name=="fox") { fighter.rotation.y=-std::numbers::pi_v<float>/2; frame=std::fmod(time,13.0f); }
@@ -520,16 +521,32 @@ private:
         r.fill(10, 10, 300, 45, {0,0,0,120});
         r.fill(10, 185, 300, 45, {0,0,0,120});
     }
-    static void clash(RenderEngine& r, int local) {
-        static constexpr std::array<std::string_view, 8> names{
-            "MVOpeningPortraitsSet1/Mario.png", "MVOpeningPortraitsSet2/Donkey.png",
-            "MVOpeningPortraitsSet2/Link.png", "MVOpeningPortraitsSet1/Samus.png",
-            "MVOpeningPortraitsSet2/Yoshi.png", "MVOpeningPortraitsSet2/Kirby.png",
-            "MVOpeningPortraitsSet1/Fox.png", "MVOpeningPortraitsSet1/Pikachu.png"};
-        wallpaper(r, "MVOpeningStandoffWallpaper.png", {2,2});
-        const auto index = static_cast<std::size_t>(local / 20) % names.size();
-        r.sprite(std::string("textures/") + std::string(names[index]), {160,120}, {1,3});
-        if ((local % 20) < 3) r.fill(0,0,320,240,{255,255,255,220});
+    void run(RenderEngine& r,int local) {
+        const float scroll=std::fmod(local*30.0f,320.0f);
+        r.sprite_rect("textures/MVOpeningRun/Wallpaper.png",scroll-320,0,320,240);
+        r.sprite_rect("textures/MVOpeningRun/Wallpaper.png",scroll,0,320,240);
+        static constexpr std::array<std::string_view,8> names{
+            "Mario","Fox","Donkey","Samus","Link","Yoshi","Kirby","Pikachu"};
+        n64::AnimationDecoder decoder(resources_->archive());
+        const auto camera=loader_->camera("llMVOpeningRunMainCamAnimJoint",static_cast<float>(local));
+        for (const auto name:names) {
+            std::string key(name);
+            std::transform(key.begin(),key.end(),key.begin(),[](unsigned char c){ return std::tolower(c); });
+            auto actor=model("run."+key);
+            const auto proxy=resources_->archive().symbol("llMVOpeningRun"+std::string(name)+"AnimJoint");
+            if (!proxy) throw std::runtime_error("missing run proxy: "+key);
+            n64::Node placement{};
+            placement.scale={1,1,1};
+            n64::AnimationDecoder::apply(placement,decoder.sample(*proxy,static_cast<float>(local),decoder.pose(placement)));
+            actor.position={placement.translate[0],placement.translate[1],placement.translate[2]};
+            actor.rotation={placement.rotate[0],placement.rotate[1],placement.rotate[2]};
+            float frame=static_cast<float>(local);
+            if (key=="link" && local>=45) {
+                actor.animation=decoder.table({1125,0},actor.nodes.size());
+                frame-=45;
+            }
+            renderer_->draw(r,actor,camera,frame);
+        }
     }
     static void newcomers(RenderEngine& r, int local) {
         const std::array<std::string_view, 4> names{"Link", "Kirby", "Donkey", "Yoshi"};

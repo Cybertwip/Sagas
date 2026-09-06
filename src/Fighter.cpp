@@ -16,6 +16,8 @@ FighterAttributes fighter_attributes(FighterKind kind) {
     attr.air_speed_max_x=data.air_max; attr.height=data.height; attr.width=data.width;
     attr.jump_vel_x=data.jump_x; attr.size=data.size; attr.weight=data.weight;
     attr.knee_bend=static_cast<int>(data.kneebend); attr.jumps_max=static_cast<int>(data.jumps);
+    attr.jump_height_mul=data.jump_mul; attr.jump_height_base=data.jump_base;
+    attr.aerial_vel_x=data.aerial_x; attr.aerial_height=data.aerial_height;
     return attr;
 }
 
@@ -106,11 +108,30 @@ void FighterPhysics::apply_air_vel_drift(FighterBody& body) noexcept {
 
 void FighterPhysics::jump(FighterBody& body) noexcept {
     if (!body.grounded && body.jumps_used>=body.attr.jumps_max) return;
+    body.aerial_jump=!body.grounded;
+    body.jump_backward=body.stick_x*body.lr<-10;
+    float force=std::max(53,body.jump_force);
+    if (!body.aerial_jump && body.jump_button) {
+        const float x=std::min(80,std::abs(body.stick_x));
+        const float minimum=body.short_hop?36.f:63.f;
+        force=(body.short_hop?9.f:17.f)*std::sqrt(1-x*x/6400)+minimum;
+        if (x*x+force*force>6400) force=std::sqrt(6400-x*x);
+        force=std::min(77.f,std::max(minimum,force));
+        force=static_cast<int>(force);
+    }
+    float velocity=force*body.attr.jump_height_mul+body.attr.jump_height_base;
+    if (body.aerial_jump) {
+        velocity=body.attr.jump_vel_y*body.attr.aerial_height;
+        if (body.jumps_used>=2 && (body.kind==FighterKind::Kirby || body.kind==FighterKind::Purin)) {
+            constexpr std::array<float,4> kirby{60,52,47,40},purin{60,40,20,0};
+            velocity=(body.kind==FighterKind::Kirby?kirby:purin)[body.jumps_used-2];
+        }
+    }
     body.jumps_used=body.grounded ? 1 : body.jumps_used+1;
     body.grounded=false; body.fastfall=false;
-    body.vel_air.y=body.attr.jump_vel_y*(body.jumps_used>1?.9f:1.0f);
-    body.vel_air.x=body.stick_x*body.attr.jump_vel_x;
-    body.vel_ground=0; body.status=FighterStatus::Jump; body.jump_frames=0;
+    body.vel_air.y=velocity;
+    body.vel_air.x=body.stick_x*(body.aerial_jump?body.attr.aerial_vel_x:body.attr.jump_vel_x);
+    body.vel_ground=0; body.status=FighterStatus::Jump; body.jump_frames=0; body.action_frame=0;
 }
 
 void FighterPhysics::tick(FighterBody& body,float ground_y) noexcept {
@@ -128,6 +149,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     if (body.jump_pressed && body.status!=FighterStatus::Hitstun) {
         if (body.grounded && body.status!=FighterStatus::KneeBend) {
             body.status=FighterStatus::KneeBend; body.jump_frames=0;
+            body.short_hop=false; body.jump_force=body.stick_y;
         } else if (!body.grounded) jump(body);
     }
     if (body.grounded && body.stick_y<-44) {
@@ -140,7 +162,12 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             }
         }
     }
-    if (body.status==FighterStatus::KneeBend && ++body.jump_frames>=body.attr.knee_bend) jump(body);
+    if (body.status==FighterStatus::KneeBend) {
+        ++body.jump_frames;
+        if (body.jump_button && body.jump_released && body.jump_frames<=3) body.short_hop=true;
+        body.jump_force=std::max(body.jump_force,body.stick_y);
+        if (body.jump_frames>=body.attr.knee_bend) jump(body);
+    }
     if (body.grounded) {
         if (body.status==FighterStatus::Land && --body.land_frames<=0) body.status=FighterStatus::Wait;
         const bool locked=body.status==FighterStatus::KneeBend || body.status==FighterStatus::Attack ||

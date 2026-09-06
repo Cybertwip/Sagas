@@ -25,6 +25,7 @@ struct FighterAttributes {
     float width{150.0f};
     float run_speed{44}, jump_vel_x{.35f}, size{1.12f}, weight{1};
     int knee_bend{3}, jumps_max{2};
+    float jump_height_mul{.7f},jump_height_base{26},aerial_vel_x{.35f},aerial_height{.9f};
 };
 
 enum class FighterKind : std::uint8_t {
@@ -56,6 +57,8 @@ struct FighterBody {
     int stick_y{};
     int tap_stick_y{255};
     int jump_frames{};
+    bool jump_button{},jump_released{},short_hop{},jump_backward{},aerial_jump{};
+    int jump_force{80};
     int land_frames{};
     bool grounded{true};
     bool fastfall{};

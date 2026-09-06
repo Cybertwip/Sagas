@@ -56,6 +56,10 @@ InputState Application::poll_input() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT) input.quit = true;
+        if (event.type==SDL_EVENT_KEY_UP && event.key.key==SDLK_X) input.jump_released=true;
+        if (event.type==SDL_EVENT_GAMEPAD_BUTTON_UP &&
+            (event.gbutton.button==SDL_GAMEPAD_BUTTON_NORTH || event.gbutton.button==SDL_GAMEPAD_BUTTON_WEST))
+            input.jump_released=true;
         if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_)
             gamepad_ = SDL_OpenGamepad(event.gdevice.which);
         if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad_ &&

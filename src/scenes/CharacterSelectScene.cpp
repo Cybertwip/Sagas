@@ -43,12 +43,12 @@ public:
         renderer_ = std::make_unique<Scene3DRenderer>(services.resources.archive());
         load_preview(slots_[0].fkind,0,false);
         if (services.assets.exists("audio/battle_select.sgpcm"))
-            services.audio.play_music("audio/battle_select.sgpcm", 0.85f);
+            services.audio.play_music("audio/battle_select.sgpcm", 0.85f, true);
     }
     void update(Services& services, const InputState& input, float) override {
         ++tic_;
         cursor_x_ = std::clamp(cursor_x_ + input.stick_x / 20.0f, 0.0f, 280.0f);
-        cursor_y_ = std::clamp(cursor_y_ - input.stick_y / 20.0f, 10.0f, 205.0f);
+        cursor_y_ = std::clamp(cursor_y_ - input.stick_y / 20.0f, 10.0f, 230.0f);
         const int hover = portrait_at(cursor_x_,cursor_y_);
         if (hover!=hover_) {
             hover_=hover;
@@ -59,7 +59,19 @@ public:
             }
         }
         if (input.accept_pressed) {
-            if (cursor_y_>=195 && cursor_y_<214) {
+            int pickup=-1;
+            if (slots_[active_slot_].selected || slots_[active_slot_].kind==SlotKind::None)
+                for (unsigned i=0;i<slots_.size();++i) {
+                    const auto& slot=slots_[i];
+                    if (slot.selected && cursor_x_>=slot.puck.x && cursor_x_<=slot.puck.x+26 &&
+                        cursor_y_>=slot.puck.y && cursor_y_<=slot.puck.y+24) {pickup=static_cast<int>(i);break;}
+                }
+            if (pickup>=0) {
+                active_slot_=pickup;
+                slots_[pickup].selected=false;
+                load_preview(slots_[pickup].fkind,pickup,false);
+                services.audio.play(AudioCue::MenuSelect);
+            } else if (cursor_y_>=195 && cursor_y_<214) {
                 const int slot=static_cast<int>((cursor_x_-22)/69);
                 if (slot>=0 && slot<(one_player_?1:4)) {
                     active_slot_=slot;
@@ -68,9 +80,10 @@ public:
                     previews_[slot]={};
                     services.audio.play(AudioCue::MenuSelect);
                 }
-            } else if (hover_>=0 && slots_[active_slot_].kind!=SlotKind::None) {
+            } else if (hover_>=0 && slots_[active_slot_].kind!=SlotKind::None && !slots_[active_slot_].selected) {
                 auto& slot=slots_[active_slot_];
                 slot.fkind=kPortraitKind[hover_];slot.selected=true;
+                slot.puck={cursor_x_-6,cursor_y_-6};
                 load_preview(slot.fkind,active_slot_,true);
                 selected_tick_[active_slot_]=tic_;
                 services.audio.play_fgm(fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);
@@ -89,7 +102,11 @@ public:
     void draw(Services& services) override {
         auto& r = services.render;
         r.begin({0,0,0,255});
-        r.sprite_rect("textures/MNSelectCommon/StoneBackground.png",0,0,320,240);
+        // Source SObj wraps a 64x32 tile; stretching it magnifies one tile
+        // into the blocky background reported on the selection screen.
+        for (float y=-22;y<240;y+=32)
+            for (float x=-54;x<320;x+=64)
+                r.sprite_at("textures/MNSelectCommon/StoneBackground.png",{x,y});
         if (one_player_)
             r.sprite_at("textures/MNPlayers1PMode/1PlayerGameText.png", {24,18});
         else {
@@ -125,8 +142,7 @@ public:
                     r.sprite_at(std::string("textures/CharacterNames/") +
                                 std::string(fighter_kind_name(slots_[player].fkind)) + ".png",
                                 {x + 8, 134});
-                    const auto portrait=std::find(kPortraitKind.begin(),kPortraitKind.end(),slots_[player].fkind)-kPortraitKind.begin();
-                    r.sprite_at(pucks[player],{kPortraitX[portrait]+12,kPortraitY[portrait]+14});
+                    r.sprite_at(pucks[player],slots_[player].puck);
                 }
             }
         }
@@ -162,7 +178,7 @@ public:
     }
     std::unique_ptr<Scene> next() override;
 private:
-    struct Slot { SlotKind kind; FighterKind fkind; bool selected; };
+    struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{}; };
     [[nodiscard]] static int portrait_at(float x, float y) {
         for (int i = 0; i < 12; ++i) {
             if (x >= kPortraitX[static_cast<std::size_t>(i)] &&

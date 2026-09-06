@@ -179,6 +179,7 @@ AudioEngine::~AudioEngine() {
     if (music_stream_) SDL_DestroyAudioStream(music_stream_);
 }
 void AudioEngine::stop() {
+    music_loop_.clear();
     for (auto* stream:motion_streams_) SDL_DestroyAudioStream(stream);
     motion_streams_.clear();
     if (effect_stream_) SDL_ClearAudioStream(effect_stream_);
@@ -235,7 +236,14 @@ AudioEngine::PreparedAudio AudioEngine::synthesize_music(std::string logical, fl
                 (std::to_integer<std::uint16_t>((*bytes)[17 + i * 2]) << 8));
             samples[i] = static_cast<std::int16_t>(std::clamp(value * gain, -32768.0f, 32767.0f));
         }
-        return {std::move(samples), static_cast<int>(rate), static_cast<int>(channels)};
+        std::size_t loop_begin=0,loop_end=0;
+        const std::size_t tail=16+static_cast<std::size_t>(count)*2;
+        if (bytes->size()>=tail+12 && tag(bytes->data()+tail,"LOOP")) {
+            loop_begin=static_cast<std::size_t>(le32(bytes->data()+tail+4))*channels;
+            loop_end=static_cast<std::size_t>(le32(bytes->data()+tail+8))*channels;
+            if (loop_begin>=loop_end || loop_end>samples.size()) throw std::runtime_error("invalid PCM loop bounds");
+        }
+        return {std::move(samples), static_cast<int>(rate), static_cast<int>(channels),loop_begin,loop_end};
     }
     const auto package = load_music(*bytes);
     struct Channel { int program{}, volume{127}, pan{64}, bend{8192}, bend_range{200}; bool sustain{}; };
@@ -358,7 +366,7 @@ bool AudioEngine::music_ready(std::string_view logical) const {
            music_job_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 }
 
-void AudioEngine::play_music(std::string_view logical, float gain) {
+void AudioEngine::play_music(std::string_view logical, float gain, bool loop) {
     PreparedAudio prepared;
     if (music_job_.valid() && music_job_name_ == logical && music_job_gain_ == gain) {
         prepared = music_job_.get();
@@ -366,10 +374,26 @@ void AudioEngine::play_music(std::string_view logical, float gain) {
     } else {
         prepared = synthesize_music(std::string(logical), gain);
     }
+    music_loop_.clear();
+    if (loop) {
+        if (prepared.loop_end<=prepared.loop_begin) throw std::runtime_error("music has no authored loop data");
+        music_loop_.assign(prepared.samples.begin()+prepared.loop_begin,prepared.samples.begin()+prepared.loop_end);
+        prepared.samples.resize(prepared.loop_end);
+    }
     music_bytes_=prepared.samples.size()*sizeof(std::int16_t);
     music_bytes_per_second_=prepared.rate*prepared.channels*sizeof(std::int16_t);
     queue(music_stream_, prepared.samples, prepared.rate, prepared.channels);
     music_started_=std::chrono::steady_clock::now();
+}
+
+void AudioEngine::update() {
+    if (!music_stream_ || music_loop_.empty()) return;
+    // Queue ahead of the boundary, excluding the baked release/silence tail.
+    if (SDL_GetAudioStreamQueued(music_stream_)<music_bytes_per_second_*2) {
+        const auto bytes=music_loop_.size()*sizeof(std::int16_t);
+        if (!SDL_PutAudioStreamData(music_stream_,music_loop_.data(),static_cast<int>(bytes))) fail("music loop queue failed");
+        music_bytes_+=bytes;
+    }
 }
 
 double AudioEngine::music_seconds() const {

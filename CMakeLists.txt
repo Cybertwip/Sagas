@@ -101,7 +101,7 @@ add_custom_command(
     VERBATIM)
 add_custom_command(
     OUTPUT "${SAGAS_CSS_PCM}"
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_music.py"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/bake_music.py" --loop
             --input "${SAGAS_CSS_MUSIC}"
             --wave-root "${SAGAS_ASSET_ROOT}/audio/B1_sounds1"
             --output "${SAGAS_CSS_PCM}"

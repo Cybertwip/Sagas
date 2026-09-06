@@ -37,7 +37,7 @@ def aiff(path: pathlib.Path) -> tuple[int, list[int]]:
     return rate, mono
 
 
-def load_sgm(path: pathlib.Path):
+def load_sgm(path: pathlib.Path, looping=False):
     data = path.read_bytes()
     if data[:4] != b"SGM2":
         raise RuntimeError("music input is not SGM2")
@@ -48,13 +48,35 @@ def load_sgm(path: pathlib.Path):
         sounds.append(struct.unpack_from("<20i", data, at))
         at += 80
     events = []
+    tracks = []
     for _ in range(track_count):
-        _, _, _, count = struct.unpack_from("<IIII", data, at)
+        _, loop_start, loop_end, count = struct.unpack_from("<IIII", data, at)
+        track_events = []
         at += 16
         for _ in range(count):
             tick, kind, channel, a, b = struct.unpack_from("<IBBBB", data, at)
-            events.append([tick, 0, kind, channel, a, b])
+            track_events.append([tick, 0, kind, channel, a, b])
             at += 8
+        tracks.append((loop_start, loop_end, track_events))
+    loop_ticks = None
+    if looping:
+        lengths = {end-start for start,end,_ in tracks if end>start}
+        if len(lengths)!=1:
+            raise RuntimeError("PCM looping requires a common track loop period")
+        period = lengths.pop()
+        begin = max(end for _,end,_ in tracks)
+        loop_ticks = (begin, begin+period)
+    for start,end,track_events in tracks:
+        events.extend(track_events)
+        if loop_ticks and end>start:
+            for event in track_events:
+                if start<=event[0]<end:
+                    tick=event[0]+end-start
+                    while tick<loop_ticks[1]:
+                        events.append([tick,*event[1:]])
+                        tick+=end-start
+    if loop_ticks:
+        events.extend([[tick,0,255,0,0,0] for tick in loop_ticks])
     events.sort(key=lambda event: event[0])
     frame = 0.0
     previous = 0
@@ -71,11 +93,12 @@ def load_sgm(path: pathlib.Path):
             end += 1
         previous = tick
         index = end
-    return sounds, events
+    loop_frames = tuple(event[1] for event in events if event[2]==255)
+    return sounds, events, loop_frames
 
 
-def render(sgm: pathlib.Path, wave_root: pathlib.Path, gain: float) -> array.array:
-    sounds, events = load_sgm(sgm)
+def render(sgm: pathlib.Path, wave_root: pathlib.Path, gain: float, looping=False):
+    sounds, events, loop_frames = load_sgm(sgm, looping)
     channels = [{"program": 0, "volume": 127, "pan": 64, "bend": 8192,
                  "bend_range": 200, "sustain": False} for _ in range(16)]
     base = next((sound for sound in sounds if sound[0] == 0), None)
@@ -184,7 +207,7 @@ def render(sgm: pathlib.Path, wave_root: pathlib.Path, gain: float) -> array.arr
             voices = [voice for voice in voices if voice["samples"] is not None]
         output.append(round(min(32767, max(-32768, left))))
         output.append(round(min(32767, max(-32768, right))))
-    return output
+    return output, loop_frames
 
 
 def main() -> None:
@@ -193,13 +216,17 @@ def main() -> None:
     parser.add_argument("--wave-root", required=True, type=pathlib.Path)
     parser.add_argument("--output", required=True, type=pathlib.Path)
     parser.add_argument("--gain", type=float, default=1.0)
+    parser.add_argument("--loop", action="store_true")
     args = parser.parse_args()
-    samples = render(args.input, args.wave_root, args.gain)
+    samples, loop_frames = render(args.input, args.wave_root, args.gain, args.loop)
     if sys.byteorder != "little":
         samples.byteswap()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(struct.pack("<4sIII", b"SGPC", 32000, 2, len(samples)) + samples.tobytes())
-    print(f"Baked opening PCM: {len(samples) // 2} stereo frames")
+    if loop_frames:
+        with args.output.open("ab") as stream:
+            stream.write(struct.pack("<4sII",b"LOOP",*loop_frames))
+    print(f"Baked PCM: {len(samples) // 2} stereo frames")
 
 
 if __name__ == "__main__":

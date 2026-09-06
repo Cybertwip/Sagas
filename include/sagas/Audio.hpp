@@ -26,19 +26,23 @@ public:
     void play_fgm(unsigned id, float gain = 1.0f);
     void preload_music(std::string_view logical, float gain = 1.0f);
     [[nodiscard]] bool music_ready(std::string_view logical) const;
-    void play_music(std::string_view logical, float gain = 1.0f);
+    void play_music(std::string_view logical, float gain = 1.0f, bool loop = false);
+    void update();
+    [[nodiscard]] bool music_looping() const { return !music_loop_.empty(); }
     void stop();
     [[nodiscard]] double music_seconds() const;
 private:
     struct PreparedAudio {
         std::vector<std::int16_t> samples;
         int rate{}, channels{};
+        std::size_t loop_begin{},loop_end{};
     };
     [[nodiscard]] PreparedAudio synthesize_music(std::string logical, float gain);
     static void queue(SDL_AudioStream*& stream, std::span<const std::int16_t> samples,
                       int rate, int channels = 1);
     AssetRepository& assets_;
     SDL_AudioStream* music_stream_{};
+    std::vector<std::int16_t> music_loop_;
     SDL_AudioStream* effect_stream_{};
     std::vector<SDL_AudioStream*> motion_streams_;
     std::unordered_map<unsigned,PreparedAudio> motion_cache_;

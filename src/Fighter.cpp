@@ -264,26 +264,61 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     body.jump_pressed=false;
 }
 
-void FighterCombat::advance_jab(FighterBody& body,bool pressed,bool animation_ended) {
+bool FighterCombat::start_smash(FighterBody& body,bool pressed) {
+    if (!pressed || body.hitlag || !body.grounded || body.status==FighterStatus::Attack || body.status==FighterStatus::Hitstun) return false;
+    int direction=-1;
+    if (body.tap_stick_y<4 && body.stick_y>=53) direction=1;
+    else if (body.tap_stick_y<4 && body.stick_y<=-53) direction=2;
+    else if (body.tap_stick_x<3 && std::abs(body.stick_x)>=56) {direction=0;body.lr=body.stick_x>0?1:-1;}
+    if (direction<0) return false;
+    body.attack_motion=fighter_source_data[static_cast<unsigned>(body.kind)].smash[direction];
+    body.status=FighterStatus::Attack;body.action_frame=0;body.hit_mask=0;body.attack_epoch=~0U;
+    body.jab_stage=0;body.jab_followup_left=0;body.vel_ground=0;
+    return true;
+}
+
+void FighterCombat::advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released) {
     if (body.hitlag) return;
     const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+    if (body.attack_motion) {
+        if (animation_ended) {body.attack_motion=0;body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;}
+        return;
+    }
+    if (body.status==FighterStatus::Attack && (pressed || released)) {
+        ++body.rapid_inputs;body.rapid_continue=true;
+    }
     const unsigned next=body.jab_stage==1 ? (body.kind==FighterKind::Pikachu?1:(data.jab2?2:0)) :
                         body.jab_stage==2 && data.jab3?3:0;
     const auto start=[&](unsigned stage) {
         body.jab_stage=stage; body.jab_queued=false;
         body.jab_followup_left=stage==1?static_cast<int>(data.jab_window):stage==2?24:0;
-        body.status=FighterStatus::Attack; body.action_frame=0; body.hit_mask=0; body.vel_ground=0;
+        body.status=FighterStatus::Attack; body.action_frame=0; body.hit_mask=0; body.vel_ground=0;body.attack_epoch=~0U;
     };
+    if (body.status==FighterStatus::Attack && body.jab_stage>=4) {
+        if (animation_ended) {
+            if (body.jab_stage==4) start(5);
+            else if (body.jab_stage==5) {start(body.rapid_continue?5:6);body.rapid_continue=false;}
+            else {body.status=FighterStatus::Wait;body.jab_stage=0;body.rapid_inputs=0;}
+        }
+        return;
+    }
     if (body.status==FighterStatus::Attack) {
         if (pressed && body.jab_followup_left>0 && next) body.jab_queued=true;
         const unsigned clip=body.jab_stage==3?data.jab3:body.jab_stage==2?data.jab2:data.jab;
         const auto flag=std::find_if(source_jab_followups.begin(),source_jab_followups.end(),
                                    [&](const auto& event){return event.motion==clip;});
+        const unsigned rapid_stage=body.kind==FighterKind::Captain?3:2;
+        const int threshold=body.kind==FighterKind::Captain?6:body.kind==FighterKind::Link?5:4;
+        if (data.rapid[0] && body.jab_stage==rapid_stage && body.rapid_inputs>=threshold &&
+            flag!=source_jab_followups.end() && flag->frame>=0 && body.action_frame>=flag->frame) {
+            start(4);body.rapid_continue=false;return;
+        }
         if (body.jab_queued && flag!=source_jab_followups.end() && flag->frame>=0 && body.action_frame>=flag->frame) {
             start(next); return;
         }
         if (animation_ended) body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
     } else if (pressed && body.grounded && body.status!=FighterStatus::Hitstun) {
+        if (!body.jab_followup_left) body.rapid_inputs=0;
         start(body.jab_followup_left>0 && next?next:1); return;
     }
     if (body.jab_followup_left>0) --body.jab_followup_left;
@@ -308,7 +343,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             const int lag=hit.damage/3+4;
             attacker.hitlag=defender.hitlag=lag;
             const bool shield=defender.status==FighterStatus::Shield;
-            hits.push_back({hit.owner,i,shield});
+            hits.push_back({hit.owner,i,shield,hit.fgm});
             if (shield) {
                 defender.shield=std::max(0.0f,defender.shield-hit.damage);
                 if (defender.shield>0) continue;

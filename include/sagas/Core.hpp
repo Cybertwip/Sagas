@@ -68,6 +68,7 @@ struct InputState {
     bool up{}, down{}, left{}, right{};
     bool jump_pressed{}, shield_held{}, back_pressed{};
     bool jump_released{};
+    bool attack_released{};
     float stick_x{}, stick_y{};
     // Keep held controls between simulation ticks; consume edges once.
     void clear_edges() noexcept;

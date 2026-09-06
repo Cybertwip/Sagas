@@ -20,15 +20,29 @@ def extract(decomp, manifest):
         for name,body in re.findall(r'(\w+)\s*\[\s*\]\s*=\s*\{(.*?)\};',source,re.S):
             scripts[name]=re.findall(r'(ftMotion\w+)\(([^()]*)\)',body)
     mapping={}
-    for clip,script in re.findall(r'\{\s*&ll(\w+)FileID,\s*(\w+),',(decomp/'src/ft/ftdata.c').read_text()):
-        if clip in ids and script in scripts:mapping.setdefault(ids[clip],script)
+    for clip,script,offset in re.findall(r'\{\s*&ll(\w+)FileID,\s*(\w+)(?:\s*\+\s*(0x[0-9A-Fa-f]+))?,',(decomp/'src/ft/ftdata.c').read_text()):
+        if clip in ids and script in scripts:
+            if offset:
+                # Yoshi smash dispatch is three identical two-word Gotos.
+                if not all(c=='ftMotionCommandGoto' for c,_ in scripts[script]):continue
+                key=script+'@'+offset;scripts[key]=scripts[script][int(offset,0)//8:];script=key
+            mapping.setdefault(ids[clip],script)
     voices={r['name']:r['idx'] for r in json.loads((decomp/'build/us/src/audio/fgm.ucd.json').read_text())['entries']}
     hit_table=(decomp/'src/ft/ftmain.c').read_text().split('dFTMainHitCollisionFGMs')[1].split('};')[0]
     hit_sounds=[voices[name] for name in re.findall(r'nSYAudio\w+',hit_table)]
     def commands(name,depth=0):
         if depth>16:raise ValueError('recursive motion script')
-        for command,arg in scripts[name]:
+        index=0;loops=[];budget=10000
+        while index<len(scripts[name]) and budget:
+            budget-=1;command,arg=scripts[name][index];index+=1
             if command=='ftMotionCommandSubroutine':yield from commands(arg,depth+1)
+            elif command=='ftMotionCommandGoto':
+                yield from commands(arg,depth+1);break
+            elif command=='ftMotionCommandLoopBegin':loops.append([index,int(arg,0)])
+            elif command=='ftMotionCommandLoopEnd':
+                loops[-1][1]-=1
+                if loops[-1][1]:index=loops[-1][0]
+                else:loops.pop()
             elif command in ('ftMotionCommandReturn','ftMotionCommandEnd','ftMotionCommandPauseScript'):break
             else:yield command,arg
     hits=[]; followups=[]

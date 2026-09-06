@@ -64,6 +64,9 @@ struct FighterBody {
     unsigned jab_stage{};
     int jab_followup_left{};
     bool jab_queued{};
+    unsigned attack_motion{},attack_epoch{~0U};
+    int rapid_inputs{},tap_stick_x{255};
+    bool rapid_continue{};
     int land_frames{};
     bool grounded{true};
     bool fastfall{};
@@ -103,11 +106,13 @@ struct AttackVolume {
     Vec3 position{};
     float radius{};
     int damage{}, angle{}, growth{}, weight{}, base{};
+    unsigned fgm{};
 };
-struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; };
+struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; unsigned fgm{}; };
 class FighterCombat final {
 public:
-    static void advance_jab(FighterBody& body,bool pressed,bool animation_ended);
+    static void advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released=false);
+    static bool start_smash(FighterBody& body,bool pressed);
     [[nodiscard]] static std::vector<FighterHit> resolve(std::span<FighterBody> bodies,
                                                         std::span<const AttackVolume> attacks);
 };

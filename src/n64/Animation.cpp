@@ -318,6 +318,7 @@ JointPose AnimationDecoder::sample16(Address script, float frame, JointPose init
         if (opcode == 13) {
             // The loop offset is relative to its own 16-bit word and is
             // expressed in bytes by the original figatree evaluator.
+            if (end_frame && frame>=10000) { *end_frame=cursor;break; }
             const auto relative = archive_.s16(command);
             command.offset = static_cast<std::uint32_t>(static_cast<std::int64_t>(command.offset) + relative);
             continue;

@@ -38,6 +38,14 @@ int main() {
     assert(menu_select.voices[0].pitch[3].tick == 12);
     assert(std::abs(menu_select.voices[0].pitch[0].cents - -580) < 0.01f);
     assert(std::abs(menu_select.voices[0].pitch[3].cents - 1020) < 0.01f);
+    assert(sagas::fgm_pitch_cents(menu_select.voices[0],3)==menu_select.voices[0].pitch[0].cents);
+    assert(sagas::fgm_pitch_cents(menu_select.voices[0],4)==menu_select.voices[0].pitch[1].cents);
+    assert(sagas::fgm_pitch_cents(menu_select.voices[0],12)==1020);
+    sagas::FgmVoice envelope_voice;
+    envelope_voice.envelope={{0,0},{10,1},{20,0}};
+    assert(sagas::fgm_envelope(envelope_voice,5)==.5f);
+    assert(sagas::fgm_envelope(envelope_voice,15)==.5f);
+    assert(sagas::fgm_envelope(envelope_voice,25)==0);
     const auto menu_scroll = sagas::decode_fgm(assets, 164);
     assert(menu_scroll.end_tick == 24 && menu_scroll.voices.size() == 1);
     assert(menu_scroll.voices[0].wave == 10 && menu_scroll.voices[0].pitch[1].tick == 8);
@@ -478,11 +486,22 @@ int main() {
     const std::array<sagas::AttackVolume,1> attack{{{0,{0,160,0},160,8,45,100,0,10}}};
     auto hits=sagas::FighterCombat::resolve(fighters,attack);
     assert(hits.size()==1 && fighters[1].damage==8 && fighters[1].hitstun>0);
-    assert(fighters[1].vel_air.y>0 && fighters[0].hitlag==6);
+    assert(fighters[1].vel_damage.y>0 && fighters[0].hitlag==6);
     assert(sagas::FighterCombat::resolve(fighters,attack).empty());
     fighters[0].hit_mask=0; fighters[1].status=sagas::FighterStatus::Shield;
     const float damage=fighters[1].damage;
     hits=sagas::FighterCombat::resolve(fighters,attack);
     assert(hits.size()==1 && fighters[1].damage==damage && fighters[1].shield==47);
+    // Landing must preserve horizontal knockback independently of input.
+    auto& sliding=fighters[1];
+    sliding.hitlag=0; sliding.status=sagas::FighterStatus::Hitstun;
+    sliding.position={0,1,0}; sliding.grounded=false;
+    sliding.vel_air={}; sliding.vel_damage={20,-5,0};
+    sagas::FighterPhysics::tick(sliding,0);
+    assert(sliding.grounded && sliding.vel_damage.x>0);
+    const float landed_x=sliding.position.x,landed_speed=sliding.vel_damage.x;
+    sagas::FighterPhysics::tick(sliding,0);
+    assert(sliding.position.x>landed_x);
+    assert(std::abs(sliding.vel_damage.x-(landed_speed-sliding.attr.traction*.25f))<.001f);
     std::cout << "Sagas core tests passed\n";
 }

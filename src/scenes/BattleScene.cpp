@@ -79,7 +79,7 @@ public:
             if (body.position.x<bounds[3] || body.position.x>bounds[2] || body.position.y<bounds[1] || body.position.y>bounds[0]) {
                 --body.stocks;
                 if (!body.stocks) {body.status=FighterStatus::KO;continue;}
-                body.position={0,1500,0}; body.vel_air={}; body.damage=0; body.hitstun=body.hitlag=0;
+                body.position={0,1500,0}; body.vel_air={}; body.vel_damage={}; body.damage=0; body.hitstun=body.hitlag=0;
                 body.grounded=false; body.status=FighterStatus::Fall; body.invincible=180;
             }
             const unsigned clip=motion(body);

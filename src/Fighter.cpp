@@ -161,7 +161,22 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         else apply_air_vel_drift(body);
         if (body.vel_air.y<0 && body.status==FighterStatus::Jump) body.status=FighterStatus::Fall;
     }
-    body.position.x+=body.vel_air.x; body.position.y+=body.vel_air.y;
+    // ftMainProcPhysicsMap keeps knockback separate from controlled velocity.
+    // Air knockback decays by 1.7 per tick; grounded knockback uses traction.
+    if (body.grounded) {
+        const float speed=std::max(0.0f,std::abs(body.vel_damage.x)-body.attr.traction*.25f);
+        body.vel_damage.x=std::copysign(speed,body.vel_damage.x);
+        body.vel_damage.y=0;
+    } else {
+        const float speed=std::hypot(body.vel_damage.x,body.vel_damage.y);
+        if (speed>0) {
+            const float decay=std::max(0.0f,speed-1.7f)/speed;
+            body.vel_damage.x*=decay; body.vel_damage.y*=decay;
+        }
+    }
+    const float velocity_x=body.vel_air.x+body.vel_damage.x;
+    const float velocity_y=body.vel_air.y+body.vel_damage.y;
+    body.position.x+=velocity_x; body.position.y+=velocity_y;
     body.grounded=false;
     float floor=-std::numeric_limits<float>::infinity();
     for (const auto& line:stage) {
@@ -171,26 +186,26 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             if (x<std::min(line.a.x,line.b.x) || x>std::max(line.a.x,line.b.x)) continue;
             const float y=line.a.y+(line.b.y-line.a.y)*(x-line.a.x)/(line.b.x-line.a.x);
             const float old_y=line.a.y+(line.b.y-line.a.y)*(before.x-line.a.x)/(line.b.x-line.a.x);
-            if (body.vel_air.y<=0 && before.y>=old_y-2 &&
+            if (velocity_y<=0 && before.y>=old_y-2 &&
                 (body.position.y<=y || (was_grounded && std::abs(y-body.position.y)<100))) floor=std::max(floor,y);
         } else if (line.type==1 && std::abs(line.b.x-line.a.x)>.001f) {
             const float x=body.position.x;
             if (x<std::min(line.a.x,line.b.x) || x>std::max(line.a.x,line.b.x)) continue;
             const float y=line.a.y+(line.b.y-line.a.y)*(x-line.a.x)/(line.b.x-line.a.x);
-            if (body.vel_air.y>0 && before.y+body.attr.height<=y && body.position.y+body.attr.height>=y) {
-                body.position.y=y-body.attr.height; body.vel_air.y=0;
+            if (velocity_y>0 && before.y+body.attr.height<=y && body.position.y+body.attr.height>=y) {
+                body.position.y=y-body.attr.height; body.vel_air.y=body.vel_damage.y=0;
             }
         } else if (line.type>=2 && std::abs(line.b.y-line.a.y)>.001f) {
             if (body.position.y+body.attr.height<std::min(line.a.y,line.b.y) || body.position.y>std::max(line.a.y,line.b.y)) continue;
             const float x=line.a.x+(line.b.x-line.a.x)*(body.position.y-line.a.y)/(line.b.y-line.a.y);
-            const float side=body.vel_air.x>=0?body.attr.width:-body.attr.width;
+            const float side=velocity_x>=0?body.attr.width:-body.attr.width;
             if ((before.x+side-x)*(body.position.x+side-x)<=0) {
-                body.position.x=x-side; body.vel_air.x=body.vel_ground=0;
+                body.position.x=x-side; body.vel_air.x=body.vel_ground=body.vel_damage.x=0;
             }
         }
     }
     if (std::isfinite(floor)) {
-        body.position.y=floor; body.vel_air.y=0; body.grounded=true; body.fastfall=false; body.jumps_used=0;
+        body.position.y=floor; body.vel_air.y=body.vel_damage.y=0; body.grounded=true; body.fastfall=false; body.jumps_used=0;
         if (!was_grounded && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun) {
             body.status=FighterStatus::Land; body.land_frames=4;
         }
@@ -229,9 +244,9 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             const float knockback=std::min(2500.0f,((component*defender.attr.weight*1.4f+18)*hit.growth*.01f)+hit.base);
             const float degrees=hit.angle==361 ? (defender.grounded && knockback<32 ? 0.0f:45.0f) : static_cast<float>(hit.angle);
             const float angle=degrees*.01745329252f;
-            defender.vel_air={std::cos(angle)*knockback*attacker.lr,std::sin(angle)*knockback,0};
-            defender.vel_ground=0; defender.grounded=false;
-            defender.position.y+=1;
+            defender.vel_damage={std::cos(angle)*knockback*attacker.lr,std::sin(angle)*knockback,0};
+            defender.vel_air={}; defender.vel_ground=0;
+            if (defender.vel_damage.y>0) defender.grounded=false;
             defender.status=FighterStatus::Hitstun; defender.action_frame=0;
             defender.hitstun=std::max(1,static_cast<int>(knockback/1.875f));
             defender.fastfall=false;

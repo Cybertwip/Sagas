@@ -49,6 +49,7 @@ struct FighterBody {
     FighterAttributes attr{};
     Vec3 position{};
     Vec3 vel_air{};
+    Vec3 vel_damage{};
     float vel_ground{};
     int lr{1};
     int stick_x{};
@@ -70,7 +71,7 @@ struct FighterBody {
 
 struct CollisionSegment {
     Vec2 a{}, b{};
-    unsigned type{}, flags{}; // 0 floor, 1 ceiling, 2 left wall, 3 right wall
+    unsigned type{}, flags{}; // 0 floor, 1 ceiling, 2 right wall, 3 left wall
     bool pass_through{};
 };
 

@@ -21,13 +21,50 @@ Runtime options:
 ```text
 --assets PATH       use another external asset bundle
 --title             begin directly at the title scene
---headless          use SDL's dummy platform drivers
+--menu              begin directly at the main menu
+--select            begin directly at character selection
+--battle            begin a Mario/Fox battle on Dream Land
+--headless          hidden native graphics window, dummy audio, fixed clock
 --frames N          stop after N rendered frames
+--capture PNG       save the final frame
+--capture-only      skip intermediate drawing during headless captures
 ```
 
 Enter/Space/A or a controller's south/Start button accepts. Escape/B cancels;
 S skips. Startup accepts a skip after the original eight-frame lockout and each
 opening segment after its original ten-frame lockout.
+
+In character selection, move the puck with arrows or the left stick and press
+A/Space to select. Activate CPU slots by selecting their N/A label, then choose
+a fighter for that slot. B recalls the active puck; Enter starts once all enabled
+slots have a selection (at least two in VS). Selected previews use the source
+submotion flags, including Ness and Pikachu's extra XRotN animation track.
+
+In battle, arrows/stick move, X or upward stick jumps, A/Space performs the first
+jab, and Z shields. Controller equivalents are north/west for jump, south for
+jab and right shoulder for shield. Escape returns to selection.
+
+Battle currently supports cartridge movement attributes, static stage collision,
+gravity, jumps, landing, platform drops, joint-bound first-jab hitboxes, damage,
+hitlag, hitstun, knockback and stock respawns. Knockback decays separately from
+movement and survives landing. CPU movement uses the same physics/combat path.
+This is still a partial gameplay implementation: hurtboxes are body capsules;
+the full move set, source action transitions, ledge grabs, moving platforms,
+collision responses, sound-event coverage and battle HUD remain unfinished.
+Ground knockback currently assumes normal floor friction. Opening fight scripts
+have not yet been connected to this simulation.
+
+Regression checks:
+
+```sh
+ctest --test-dir sagas/build --output-on-failure
+PYTHONDONTWRITEBYTECODE=1 python3 sagas/tools/view_sequence.py --self-test
+# Requires a native graphics session; captures all 12 selected fighters.
+./sagas/build/sagas_selection_capture /tmp/sagas-selected
+```
+
+`tools/extract_fighter_data.py` regenerates the attributes, selected-motion flags
+and motion IDs from the local US decomp build and Sagas reloc manifest.
 
 ## Animation sequence viewer
 
@@ -58,11 +95,10 @@ formats, and per-joint MObjSub bindings.
 - `AnimationClip` supplies data-driven interpolation and `PhysicsWorld`
   provides deterministic fixed-step integration.
 
-The opening state follows all 19 original segments and their 3,650-tick
-timeline. Decoded sprite/wallpaper scenes use original PNG exports. Shots whose
-only source is an N64 display list currently retain their exact timeline and
-use a composed portrait/wallpaper presentation until the display-list and
-skeleton decoder is connected.
+The opening state schedules all 19 segments through source tick 4195. Geometry,
+skeletal clips and sprites are decoded from the original assets. Battle-driven
+choreography still uses partial scripted approximations; it is not yet a complete
+reproduction of the original opening.
 
 
 ## Opening room regression checks

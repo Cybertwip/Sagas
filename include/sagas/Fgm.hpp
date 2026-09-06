@@ -26,6 +26,9 @@ struct FgmCue {
     std::vector<FgmVoice> voices;
 };
 
+[[nodiscard]] float fgm_pitch_cents(const FgmVoice& voice, int tick) noexcept;
+[[nodiscard]] float fgm_envelope(const FgmVoice& voice, float tick) noexcept;
+
 // Decodes the original fgm.ucd voice script and its fgm.tbl articulation.
 [[nodiscard]] FgmCue decode_fgm(AssetRepository& assets, std::uint32_t voice_id);
 

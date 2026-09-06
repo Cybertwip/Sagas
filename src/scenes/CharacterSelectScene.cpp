@@ -112,7 +112,7 @@ public:
             "textures/MNPlayersCommon/3PPuck.png", "textures/MNPlayersCommon/4PPuck.png"};
         for (int player = 0; player < gates; ++player) {
             const float x = static_cast<float>(player * 69 + 22);
-            static constexpr std::array<const char*,4> cards{"RedCard.png","BlueCard.png","YellowCard.png","GreenCard.png"};
+            static constexpr std::array<const char*,4> cards{"RedCard.png","GrayCard.png","GrayCard.png","GrayCard.png"};
             const std::string card=slots_[player].kind==SlotKind::None?"GrayCard.png":cards[player];
             r.sprite_at("textures/MNPlayersCommon/"+card,{x,131});
             if (slots_[player].kind == SlotKind::None)

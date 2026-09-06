@@ -154,6 +154,25 @@ void decode_voice(Bytes ucd, Bytes table, std::uint32_t voice_id, int base_tick,
 
 } // namespace
 
+float fgm_pitch_cents(const FgmVoice& voice,int tick) noexcept {
+    float value=0;
+    for (const auto& point:voice.pitch) {if (point.tick>tick) break;value=point.cents;}
+    return value;
+}
+float fgm_envelope(const FgmVoice& voice,float tick) noexcept {
+    if (voice.envelope.empty()) return 1;
+    auto previous=voice.envelope.front();
+    for (const auto& point:voice.envelope) {
+        if (point.tick>tick) {
+            if (point.tick==previous.tick) return point.volume;
+            const float fraction=std::clamp((tick-previous.tick)/(point.tick-previous.tick),0.0f,1.0f);
+            return previous.volume+(point.volume-previous.volume)*fraction;
+        }
+        previous=point;
+    }
+    return previous.volume;
+}
+
 FgmCue decode_fgm(AssetRepository& assets, std::uint32_t voice_id) {
     const auto ucd = assets.blob("audio/fgm.ucd.bin");
     const auto table = assets.blob("audio/fgm.tbl.bin");

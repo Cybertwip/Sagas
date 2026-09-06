@@ -93,34 +93,30 @@ Pcm render_fgm(AssetRepository& assets, std::uint32_t voice_id, float gain) {
         }
         return waves.at(index);
     };
-    std::size_t count{};
-    for (const auto& voice : cue.voices) {
-        const auto& wave = wave_for(voice.wave);
-        const double step = std::pow(2.0, (voice.pitch.empty() ? 0 : voice.pitch.front().cents) / 1200.0) *
-                            wave.rate / output_rate;
-        count = std::max(count, static_cast<std::size_t>(std::ceil(wave.samples.size() / step)));
-    }
-    Pcm result{output_rate, std::vector<std::int16_t>(count)};
-    // REMIX_HOST routes an FGM event through audio_sdl.c instead of running
-    // the N64 voice script: every catalog wave starts once at its catalog
-    // pitch, with 0.75/sqrt(N) voice gain under the 0.55 mixer gain.
-    const double host_gain = cue.voices.empty() ? 0 : gain * 0.55 * 0.75 / std::sqrt(cue.voices.size());
-    for (std::size_t frame = 0; frame < result.samples.size(); ++frame) {
-        double mixed{};
-        for (const auto& voice : cue.voices) {
-            const auto& wave = wave_for(voice.wave);
-            const double step = std::pow(2.0, (voice.pitch.empty() ? 0 : voice.pitch.front().cents) / 1200.0) *
-                                wave.rate / output_rate;
-            const double position = frame * step;
-            if (position >= wave.samples.size()) continue;
-            const auto first = static_cast<std::size_t>(position);
-            const auto second = std::min(first + 1, wave.samples.size() - 1);
-            const double fraction = position - first;
-            const double sample = wave.samples[first] * (1.0 - fraction) + wave.samples[second] * fraction;
-            mixed += sample * host_gain;
+    // n_env.c schedules its FGM interpreter every 184 output samples.
+    // The extraction AIFF rate is metadata; native FGM playback advances
+    // the bank sample at the synthesizer rate times alCents2Ratio(pitch).
+    constexpr unsigned samples_per_tick=184;
+    const std::size_t count=static_cast<std::size_t>(std::max(cue.end_tick,1))*samples_per_tick;
+    std::vector<double> mixed(count);
+    for (const auto& voice:cue.voices) {
+        const auto& wave=wave_for(voice.wave);
+        const std::size_t begin=static_cast<std::size_t>(voice.start_tick)*samples_per_tick;
+        const std::size_t end=std::min(count,static_cast<std::size_t>(voice.end_tick)*samples_per_tick);
+        double phase=0;
+        for (std::size_t frame=begin;frame<end && phase<wave.samples.size();++frame) {
+            const float tick=static_cast<float>(frame-begin)/samples_per_tick;
+            const auto index=static_cast<std::size_t>(phase);
+            const double fraction=phase-index;
+            const auto next=std::min(index+1,wave.samples.size()-1);
+            const double sample=wave.samples[index]*(1-fraction)+wave.samples[next]*fraction;
+            mixed[frame]+=sample*voice.gain*fgm_envelope(voice,tick)*gain*.55;
+            phase+=std::pow(2.0,fgm_pitch_cents(voice,static_cast<int>(tick))/1200.0);
         }
-        result.samples[frame] = static_cast<std::int16_t>(std::clamp(mixed, -32768.0, 32767.0));
     }
+    Pcm result{output_rate,std::vector<std::int16_t>(count)};
+    for (std::size_t frame=0;frame<count;++frame)
+        result.samples[frame]=static_cast<std::int16_t>(std::clamp(mixed[frame],-32768.0,32767.0));
     return result;
 }
 

@@ -1,4 +1,5 @@
 #include <sagas/Application.hpp>
+#include <sagas/Fighter.hpp>
 
 #include <SDL3/SDL.h>
 
@@ -39,7 +40,8 @@ Application::Application(ApplicationOptions options) : options_(std::move(option
     audio_ = std::make_unique<AudioEngine>(*assets_);
     resources_ = std::make_unique<SceneResourceManager>(*assets_);
     services_ = std::make_unique<Services>(Services{*assets_, *render_, *audio_, physics_, *resources_, options_.headless});
-    auto first_scene = options_.start_at_menu ? make_menu_scene() :
+    auto first_scene = options_.start_at_battle ? make_battle_scene(FighterKind::Mario,FighterKind::Fox) :
+                       options_.start_at_select ? make_character_select_scene() : options_.start_at_menu ? make_menu_scene() :
                        (options_.start_at_title ? make_title_scene() : make_startup_scene());
     scenes_ = std::make_unique<SceneMachine>(std::move(first_scene), *services_);
 }

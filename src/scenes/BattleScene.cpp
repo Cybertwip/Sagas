@@ -55,7 +55,7 @@ public:
                 body.stick_x=std::abs(dx)>260?(dx>0?60:-60):0; body.stick_y=0;
                 if (std::abs(dx)>1 && body.status!=FighterStatus::Attack) body.lr=dx>0?1:-1;
                 body.jump_pressed=body.grounded && dy>300 && tic_%40==0;
-                attack=std::abs(dx)<420 && tic_%32==i*3;
+                attack=std::abs(dx)<420 && tic_%32==static_cast<int>(i)*3;
             }
             if (!body.hitlag) {
                 ++body.action_frame;

@@ -1,4 +1,5 @@
 #pragma once
+#include <sagas/Fighter.hpp>
 
 #include <sagas/N64.hpp>
 #include <sagas/Lighting.hpp>
@@ -49,6 +50,8 @@ struct Model3D {
 struct Stage3D {
     std::array<Model3D,4> layers;
     Vec3 movie_player1{}, movie_player2{}, movie_player3{};
+    std::array<Vec3,4> player_spawns{};
+    std::vector<CollisionSegment> collision;
 };
 
 // Builder pattern: converts reloc symbols into immutable renderable models.

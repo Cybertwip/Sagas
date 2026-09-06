@@ -1,44 +1,21 @@
 #include <sagas/Fighter.hpp>
+#include <sagas/FighterSourceData.hpp>
+#include <limits>
 
 #include <algorithm>
 #include <cmath>
 
 namespace sagas {
-namespace {
-
-void set_grounded(FighterBody& body, float ground_y) {
-    const float feet = body.position.y;
-    if (body.vel_air.y <= 0.0f && feet <= ground_y) {
-        body.position.y = ground_y;
-        body.vel_air.y = 0.0f;
-        body.vel_air.z = 0.0f;
-        if (!body.grounded) body.land_frames = 4;
-        body.grounded = true;
-        body.fastfall = false;
-        body.jump_frames = 0;
-        if (body.status == FighterStatus::Jump || body.status == FighterStatus::Fall)
-            body.status = body.land_frames ? FighterStatus::Land : FighterStatus::Wait;
-    } else if (feet > ground_y + 0.01f) {
-        body.grounded = false;
-        if (body.status == FighterStatus::Wait || body.status == FighterStatus::Walk ||
-            body.status == FighterStatus::Dash || body.status == FighterStatus::Land)
-            body.status = FighterStatus::Fall;
-    }
-}
-
-} // namespace
-
 FighterAttributes fighter_attributes(FighterKind kind) {
+    const auto& data=fighter_source_data.at(static_cast<std::size_t>(kind));
     FighterAttributes attr;
-    switch (kind) {
-        case FighterKind::Donkey: attr.gravity=0.095f; attr.tvel_base=1.92f; attr.walk_speed=1.2f; attr.dash_speed=1.8f; attr.height=26; attr.width=10; break;
-        case FighterKind::Fox: attr.gravity=0.13f; attr.tvel_base=2.05f; attr.tvel_fast=2.8f; attr.jump_vel_y=3.42f; attr.walk_speed=1.5f; attr.dash_speed=2.2f; attr.air_speed_max_x=0.83f; attr.height=16; break;
-        case FighterKind::Kirby: attr.gravity=0.08f; attr.tvel_base=1.33f; attr.jump_vel_y=2.5f; attr.walk_speed=1.1f; attr.height=12; attr.width=8; break;
-        case FighterKind::Pikachu: attr.gravity=0.11f; attr.tvel_base=1.62f; attr.jump_vel_y=3.0f; attr.walk_speed=1.24f; attr.dash_speed=1.8f; attr.height=14; break;
-        case FighterKind::Captain: attr.gravity=0.11f; attr.jump_vel_y=3.1f; attr.walk_speed=1.1f; attr.dash_speed=1.9f; attr.height=22; break;
-        case FighterKind::Samus: attr.gravity=0.066f; attr.tvel_base=1.4f; attr.jump_vel_y=2.5f; attr.walk_speed=1.0f; attr.height=22; break;
-        default: break;
-    }
+    attr.gravity=data.gravity; attr.tvel_base=data.terminal; attr.tvel_fast=data.fast;
+    attr.jump_vel_y=80*data.jump_mul+data.jump_base;
+    attr.walk_speed=80*data.walk_mul; attr.dash_speed=data.dash; attr.run_speed=data.run;
+    attr.traction=data.traction; attr.air_accel=data.air_accel; attr.air_friction=data.air_friction;
+    attr.air_speed_max_x=data.air_max; attr.height=data.height; attr.width=data.width;
+    attr.jump_vel_x=data.jump_x; attr.size=data.size; attr.weight=data.weight;
+    attr.knee_bend=static_cast<int>(data.kneebend); attr.jumps_max=static_cast<int>(data.jumps);
     return attr;
 }
 
@@ -128,51 +105,98 @@ void FighterPhysics::apply_air_vel_drift(FighterBody& body) noexcept {
 }
 
 void FighterPhysics::jump(FighterBody& body) noexcept {
-    if (!body.grounded && body.status != FighterStatus::KneeBend) return;
-    body.grounded = false;
-    body.fastfall = false;
-    body.vel_air.y = body.attr.jump_vel_y;
-    body.vel_air.x = body.vel_ground * body.lr * 0.25f + body.stick_x / 80.0f * 0.4f;
-    body.vel_ground = 0;
-    body.status = FighterStatus::Jump;
-    body.jump_frames = 1;
+    if (!body.grounded && body.jumps_used>=body.attr.jumps_max) return;
+    body.jumps_used=body.grounded ? 1 : body.jumps_used+1;
+    body.grounded=false; body.fastfall=false;
+    body.vel_air.y=body.attr.jump_vel_y*(body.jumps_used>1?.9f:1.0f);
+    body.vel_air.x=body.stick_x*body.attr.jump_vel_x;
+    body.vel_ground=0; body.status=FighterStatus::Jump; body.jump_frames=0;
 }
 
-void FighterPhysics::tick(FighterBody& body, float ground_y) noexcept {
-    if (body.tap_stick_y < 255) ++body.tap_stick_y;
-    if (body.stick_y <= -44 && body.vel_air.y < 0.0f && !body.grounded) body.fastfall = true;
+void FighterPhysics::tick(FighterBody& body,float ground_y) noexcept {
+    const CollisionSegment floor{{-1000000,ground_y},{1000000,ground_y},0,0,false};
+    tick(body,std::span<const CollisionSegment>(&floor,1));
+}
 
-    if (body.grounded && body.status == FighterStatus::KneeBend) {
-        if (++body.jump_frames >= 3) jump(body);
+void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> stage) noexcept {
+    if (body.status==FighterStatus::KO) return;
+    if (body.invincible>0) --body.invincible;
+    if (body.hitlag>0) { --body.hitlag; return; }
+    if (body.drop_frames>0) --body.drop_frames;
+    const Vec3 before=body.position;
+    const bool was_grounded=body.grounded;
+    if (body.jump_pressed && body.status!=FighterStatus::Hitstun) {
+        if (body.grounded && body.status!=FighterStatus::KneeBend) {
+            body.status=FighterStatus::KneeBend; body.jump_frames=0;
+        } else if (!body.grounded) jump(body);
     }
+    if (body.grounded && body.stick_y<-44) {
+        for (const auto& line:stage) if (line.type==0 && line.pass_through &&
+            body.position.x>=std::min(line.a.x,line.b.x) && body.position.x<=std::max(line.a.x,line.b.x)) {
+            const float y=line.a.y+(line.b.y-line.a.y)*(body.position.x-line.a.x)/(line.b.x-line.a.x);
+            if (std::abs(body.position.y-y)<2) {
+                body.grounded=false; body.drop_frames=12; body.position.y-=3; body.vel_air.y=-3;
+                break;
+            }
+        }
+    }
+    if (body.status==FighterStatus::KneeBend && ++body.jump_frames>=body.attr.knee_bend) jump(body);
     if (body.grounded) {
-        if (body.status == FighterStatus::Land) {
-            if (--body.land_frames <= 0) body.status = FighterStatus::Wait;
-            apply_ground_friction(body);
-        } else if (std::abs(body.stick_x) >= kStickMin) {
-            body.lr = body.stick_x >= 0 ? 1 : -1;
-            const float target = (std::abs(body.stick_x) >= 40 ? body.attr.dash_speed : body.attr.walk_speed) *
-                                 (std::abs(body.stick_x) / 80.0f);
-            if (body.vel_ground < target) body.vel_ground = target;
-            else apply_ground_friction(body);
-            clamp_ground_vel(body, body.attr.dash_speed);
-            body.status = std::abs(body.stick_x) >= 40 ? FighterStatus::Dash : FighterStatus::Walk;
-            body.vel_air.x = body.lr * body.vel_ground;
+        if (body.status==FighterStatus::Land && --body.land_frames<=0) body.status=FighterStatus::Wait;
+        const bool locked=body.status==FighterStatus::KneeBend || body.status==FighterStatus::Attack ||
+                          body.status==FighterStatus::Shield || body.status==FighterStatus::Hitstun || body.status==FighterStatus::Land;
+        if (!locked && std::abs(body.stick_x)>=kStickMin) {
+            body.lr=body.stick_x>0?1:-1;
+            body.vel_ground=std::abs(body.stick_x)>=56 ? body.attr.run_speed :
+                body.attr.walk_speed*std::abs(body.stick_x)/80.0f;
+            body.status=std::abs(body.stick_x)>=56?FighterStatus::Dash:FighterStatus::Walk;
         } else {
             apply_ground_friction(body);
-            body.vel_air.x = body.lr * body.vel_ground;
-            body.status = FighterStatus::Wait;
+            if (!locked) body.status=FighterStatus::Wait;
         }
-        body.vel_air.y = 0;
+        body.vel_air.x=body.vel_ground*body.lr; body.vel_air.y=0;
     } else {
-        apply_air_vel_drift(body);
-        if (body.vel_air.y < 0.0f) body.status = FighterStatus::Fall;
+        if (body.stick_y<-44 && body.vel_air.y<0) body.fastfall=true;
+        if (body.status==FighterStatus::Hitstun) apply_gravity_clamp_tvel(body,body.attr.gravity,body.attr.tvel_base);
+        else apply_air_vel_drift(body);
+        if (body.vel_air.y<0 && body.status==FighterStatus::Jump) body.status=FighterStatus::Fall;
     }
-
-    body.position.x += body.vel_air.x;
-    body.position.y += body.vel_air.y;
-    body.position.z += body.vel_air.z;
-    set_grounded(body, ground_y);
+    body.position.x+=body.vel_air.x; body.position.y+=body.vel_air.y;
+    body.grounded=false;
+    float floor=-std::numeric_limits<float>::infinity();
+    for (const auto& line:stage) {
+        if (line.type==0 && std::abs(line.b.x-line.a.x)>.001f) {
+            if (line.pass_through && body.drop_frames) continue;
+            const float x=body.position.x;
+            if (x<std::min(line.a.x,line.b.x) || x>std::max(line.a.x,line.b.x)) continue;
+            const float y=line.a.y+(line.b.y-line.a.y)*(x-line.a.x)/(line.b.x-line.a.x);
+            const float old_y=line.a.y+(line.b.y-line.a.y)*(before.x-line.a.x)/(line.b.x-line.a.x);
+            if (body.vel_air.y<=0 && before.y>=old_y-2 &&
+                (body.position.y<=y || (was_grounded && std::abs(y-body.position.y)<100))) floor=std::max(floor,y);
+        } else if (line.type==1 && std::abs(line.b.x-line.a.x)>.001f) {
+            const float x=body.position.x;
+            if (x<std::min(line.a.x,line.b.x) || x>std::max(line.a.x,line.b.x)) continue;
+            const float y=line.a.y+(line.b.y-line.a.y)*(x-line.a.x)/(line.b.x-line.a.x);
+            if (body.vel_air.y>0 && before.y+body.attr.height<=y && body.position.y+body.attr.height>=y) {
+                body.position.y=y-body.attr.height; body.vel_air.y=0;
+            }
+        } else if (line.type>=2 && std::abs(line.b.y-line.a.y)>.001f) {
+            if (body.position.y+body.attr.height<std::min(line.a.y,line.b.y) || body.position.y>std::max(line.a.y,line.b.y)) continue;
+            const float x=line.a.x+(line.b.x-line.a.x)*(body.position.y-line.a.y)/(line.b.y-line.a.y);
+            const float side=body.vel_air.x>=0?body.attr.width:-body.attr.width;
+            if ((before.x+side-x)*(body.position.x+side-x)<=0) {
+                body.position.x=x-side; body.vel_air.x=body.vel_ground=0;
+            }
+        }
+    }
+    if (std::isfinite(floor)) {
+        body.position.y=floor; body.vel_air.y=0; body.grounded=true; body.fastfall=false; body.jumps_used=0;
+        if (!was_grounded && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun) {
+            body.status=FighterStatus::Land; body.land_frames=4;
+        }
+    } else if (body.status==FighterStatus::Wait || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash)
+        body.status=FighterStatus::Fall;
+    body.jump_pressed=false;
 }
 
 } // namespace sagas

@@ -212,11 +212,40 @@ Stage3D Scene3DLoader::stage(std::string_view header) {
             mask&(1U<<i) ? GeometryLayout::DisplayListLinks : GeometryLayout::Direct,
             pointer(i*16+8),pointer(i*16+12));
     if (const auto geometry=pointer(64)) {
+        const auto field=[&](unsigned offset) { return archive_.resolve({geometry->file,geometry->offset+offset}); };
+        const auto vertices=field(4), indices=field(8), links=field(12), groups=field(16);
+        const unsigned group_count=static_cast<std::uint16_t>(archive_.s16(*geometry));
+        if (vertices && indices && links && groups) {
+            for (unsigned group=0;group<group_count;++group) for (unsigned type=0;type<4;++type) {
+                const auto group_offset=groups->offset+group*18+2+type*4;
+                const unsigned first=static_cast<std::uint16_t>(archive_.s16({groups->file,group_offset}));
+                const unsigned line_count=static_cast<std::uint16_t>(archive_.s16({groups->file,group_offset+2}));
+                for (unsigned line=first;line<first+line_count;++line) {
+                    const unsigned start=static_cast<std::uint16_t>(archive_.s16({links->file,links->offset+line*4}));
+                    const unsigned length=static_cast<std::uint16_t>(archive_.s16({links->file,links->offset+line*4+2}));
+                    const auto point=[&](unsigned index) {
+                        const unsigned id=static_cast<std::uint16_t>(archive_.s16({indices->file,indices->offset+index*2}));
+                        const auto at=vertices->offset+id*6;
+                        return std::pair{Vec2{static_cast<float>(archive_.s16({vertices->file,at})),
+                                             static_cast<float>(archive_.s16({vertices->file,at+2}))},
+                                         static_cast<unsigned>(static_cast<std::uint16_t>(archive_.s16({vertices->file,at+4})))};
+                    };
+                    for (unsigned i=1;i<length;++i) {
+                        const auto a=point(start+i-1),b=point(start+i);
+                        const unsigned flags=a.second|b.second;
+                        result.collision.push_back({a.first,b.first,type,flags,type==0 && (flags&0x800U)!=0});
+                    }
+                }
+            }
+        }
         const auto count=static_cast<std::uint16_t>(archive_.s16({geometry->file,geometry->offset+20}));
         if (const auto objects=archive_.resolve({geometry->file,geometry->offset+24}))
             for (unsigned i=0;i<count;++i) {
                 const n64::Address item{objects->file,objects->offset+i*6};
                 const auto kind=archive_.s16(item);
+                if (kind>=0 && kind<4)
+                    result.player_spawns[kind]={static_cast<float>(archive_.s16({item.file,item.offset+2})),
+                                               static_cast<float>(archive_.s16({item.file,item.offset+4})),0};
                 if (kind>=0x15 && kind<=0x17) {
                     auto& position=kind==0x15 ? result.movie_player1 :
                                    kind==0x16 ? result.movie_player2 : result.movie_player3;

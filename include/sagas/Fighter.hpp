@@ -9,7 +9,7 @@
 namespace sagas {
 
 // Remix ftphysics.c, without GObj: one 60 Hz tick is one call.  Units are
-// the original fighter/map units (Mario's walk speed is ~1.2).
+// the original fighter/map units (Mario's run speed is 44 per tick).
 struct FighterAttributes {
     float gravity{0.095f};
     float tvel_base{1.5f};
@@ -22,7 +22,9 @@ struct FighterAttributes {
     float air_friction{0.016f};
     float air_speed_max_x{0.83f};
     float height{18.0f};
-    float width{6.0f};
+    float width{150.0f};
+    float run_speed{44}, jump_vel_x{.35f}, size{1.12f}, weight{1};
+    int knee_bend{3}, jumps_max{2};
 };
 
 enum class FighterKind : std::uint8_t {
@@ -30,7 +32,7 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Walk, Dash, KneeBend, Jump, Fall, Land };
+enum class FighterStatus : std::uint8_t { Wait, Walk, Dash, KneeBend, Jump, Fall, Land, Attack, Hitstun, Shield, KO };
 
 struct FighterModelSpec {
     std::string_view descriptor;
@@ -58,6 +60,17 @@ struct FighterBody {
     bool fastfall{};
     FighterStatus status{FighterStatus::Wait};
     float damage{};
+    int jumps_used{}, action_frame{}, hitlag{}, hitstun{}, invincible{}, drop_frames{};
+    unsigned motion{};
+    bool attack_pressed{}, jump_pressed{}, shield_held{};
+    unsigned hit_mask{};
+    int stocks{3};
+};
+
+struct CollisionSegment {
+    Vec2 a{}, b{};
+    unsigned type{}, flags{}; // 0 floor, 1 ceiling, 2 left wall, 3 right wall
+    bool pass_through{};
 };
 
 class FighterPhysics final {
@@ -71,6 +84,7 @@ public:
     static void apply_air_vel_drift(FighterBody& body) noexcept;
     static void jump(FighterBody& body) noexcept;
     static void tick(FighterBody& body, float ground_y) noexcept;
+    static void tick(FighterBody& body, std::span<const CollisionSegment> stage) noexcept;
 };
 
 [[nodiscard]] constexpr std::string_view fighter_kind_name(FighterKind kind) {

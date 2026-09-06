@@ -171,7 +171,8 @@ class SceneTable:
             model = loader.display_list(resource.descriptor, resource.layout,
                                         resource.materials, resource.material_animation)
             if resource.animation:
-                model.animation[0] = loader.archive.require_symbol(resource.animation)
+                symbol = loader.archive.require_symbol(resource.animation.lstrip("@"))
+                model.animation[0] = loader.archive.resolve(symbol) if resource.animation.startswith("@") else symbol
         elif resource.kind == "fighter":
             model = loader.fighter_model(resource.descriptor, resource.layout, resource.setup_parts)
             loader.bind_fighter_animation(model, resource.animation_file, resource.wrapper)

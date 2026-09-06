@@ -3,6 +3,7 @@
 #include <sagas/Core.hpp>
 
 #include <future>
+#include <unordered_map>
 
 struct SDL_AudioStream;
 
@@ -22,6 +23,7 @@ public:
     AudioEngine& operator=(const AudioEngine&) = delete;
     void play(std::string_view logical, float gain = 1.0f);
     void play(AudioCue cue);
+    void play_fgm(unsigned id, float gain = 1.0f);
     void preload_music(std::string_view logical, float gain = 1.0f);
     [[nodiscard]] bool music_ready(std::string_view logical) const;
     void play_music(std::string_view logical, float gain = 1.0f);
@@ -38,6 +40,8 @@ private:
     AssetRepository& assets_;
     SDL_AudioStream* music_stream_{};
     SDL_AudioStream* effect_stream_{};
+    std::vector<SDL_AudioStream*> motion_streams_;
+    std::unordered_map<unsigned,PreparedAudio> motion_cache_;
     std::future<PreparedAudio> music_job_;
     std::string music_job_name_;
     float music_job_gain_{};

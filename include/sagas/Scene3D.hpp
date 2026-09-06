@@ -67,7 +67,8 @@ public:
     [[nodiscard]] Model3D fighter_model(std::string_view descriptor,
                                         GeometryLayout layout = GeometryLayout::Direct,
                                         std::array<std::uint32_t,2> setup_parts = {
-                                            0xffffffffU, 0xffffffffU});
+                                            0xffffffffU, 0xffffffffU},
+                                        std::uint32_t animation_flags = 0, unsigned costume = 0);
     [[nodiscard]] Model3D display_list(std::string_view symbol,
                                       GeometryLayout layout = GeometryLayout::Direct,
                                       std::string_view materials = {},

@@ -1,3 +1,4 @@
+#include <sagas/OpeningMotionAudio.hpp>
 #include <sagas/Engine.hpp>
 #include <sagas/Fighter.hpp>
 #include <sagas/N64.hpp>
@@ -147,6 +148,35 @@ int main() {
         assert(stance.animation==animation_decoder.table({intro.second,0},stance.nodes.size()));
         resources.release(bundle);
     }
+    // Every cinematic cast is loaded, including the final scene's eight fighters.
+    for (const auto* bundle:{"run","clash","cliff","yamabuki","yoster"}) {
+        resources.activate(bundle);
+        if (std::string_view(bundle)=="run" || std::string_view(bundle)=="clash")
+            for (const auto* name:{"mario","fox","donkey","samus","link","yoshi","kirby","pikachu"}) {
+                const auto& actor=resources.model(std::string(bundle)+"."+name);
+                assert(actor.is_fighter && !actor.animation.empty());
+                for (std::size_t node=0;node<actor.nodes.size();++node) if (actor.animation[node])
+                    (void)animation_decoder.sample16(*actor.animation[node],105,animation_decoder.pose(actor.nodes[node]));
+            }
+        resources.release(bundle);
+    }
+    const auto yoshi_spec=sagas::fighter_model_spec(sagas::FighterKind::Yoshi);
+    const auto yoshi_base=scene_loader.fighter_model(yoshi_spec.descriptor,sagas::GeometryLayout::JointPairs,yoshi_spec.setup_parts);
+    const auto yoshi_grab=scene_loader.fighter_model(yoshi_spec.descriptor,sagas::GeometryLayout::JointPairs,yoshi_spec.setup_parts,0x18000001);
+    assert(yoshi_grab.nodes.size()==yoshi_base.nodes.size()+2);
+    const auto grab_scripts=animation_decoder.table({1876,0},yoshi_grab.nodes.size());
+    for (std::size_t node=0;node<grab_scripts.size();++node) if (grab_scripts[node])
+        for (const int frame:{0,5,15,23}) {
+            const auto pose=animation_decoder.sample16(*grab_scripts[node],frame,animation_decoder.pose(yoshi_grab.nodes[node]));
+            for (const auto value:pose.tracks) assert(std::isfinite(value));
+        }
+    bool jab3_voice=false,jab3_swing=false;
+    for (const auto& event:sagas::opening_motion_sounds) {
+        assert(!sagas::decode_fgm(assets,event.fgm).voices.empty());
+        jab3_voice|=event.motion==608 && event.frame==0 && event.fgm==429;
+        jab3_swing|=event.motion==608 && event.frame==3 && event.fgm==42;
+    }
+    assert(jab3_voice && jab3_swing);
     resources.activate("jungle");
     resources.activate("standoff");
     for (const auto* key:{"jungle.donkey","jungle.samus","standoff.mario","standoff.kirby"}) {

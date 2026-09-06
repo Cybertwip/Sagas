@@ -1,4 +1,5 @@
 #include <sagas/Engine.hpp>
+#include <sagas/OpeningMotionAudio.hpp>
 #include <sagas/Fighter.hpp>
 #include <sagas/N64.hpp>
 #include <sagas/Scene3D.hpp>
@@ -32,6 +33,7 @@ public:
         // frames; the soundtrack remains the clock in a live presentation.
         while (tic_<std::min(target,total_duration_)) {
         ++tic_;
+        if (!services.deterministic_clock && tic_>=target-2) play_motion_sounds(services);
         // The room has source-scripted sub-scenes inside one timeline segment.
         if (tic_ == 250) services.resources.activate("room.action");
         if (tic_ == 900) services.resources.prefetch("room.transition");
@@ -96,7 +98,13 @@ public:
             wallpaper(r, segment.argument, segment.scale);
         } else if (segment.renderer == "models" || segment.renderer == "models_cockpit") {
             if (!segment.argument.empty() && segment.argument!="-") wallpaper(r, segment.argument, segment.scale);
+            std::string previous_camera;
             for (const auto& cue : segment.cues) {
+                if (!previous_camera.empty() && previous_camera!=cue.camera) {
+                    renderer_->flush(r);
+                    r.clear_depth();
+                }
+                previous_camera=cue.camera;
                 const auto camera = loader_->camera(cue.camera, static_cast<float>(local));
                 renderer_->draw(r, model(cue.resource), camera, static_cast<float>(local), cue.tint);
             }
@@ -114,6 +122,8 @@ public:
         } catch (const std::exception& error) {
             throw std::runtime_error("opening "+segment.name+" frame "+std::to_string(local)+": "+error.what());
         }
+        if (segment.name=="clash" && local>=144)
+            r.fill(10,10,300,220,{255,255,255,static_cast<std::uint8_t>(std::min(255,(local-143)*30))});
         if (segment.renderer=="room") {
             // Original room cameras use the 10,10–310,230 viewport.
             r.fill(0,0,320,10,{0,0,0,255});
@@ -125,6 +135,40 @@ public:
     }
     std::unique_ptr<Scene> next() override { return done_ ? make_title_scene() : nullptr; }
 private:
+    void play_motion_sounds(Services& services) {
+        const auto position=locate(tic_);
+        const auto& name=position.segment->name;
+        const int local=position.local;
+        const auto sound=[&](unsigned id) { services.audio.play_fgm(id); };
+        if (name=="run" && local==190) sound(1); // nSYAudioFGMExplodeL
+        if (name=="clash" && (local==15 || local==75 || local==90 || local==105)) sound(151);
+        const auto motion=[&](unsigned clip,int frame) {
+            if (frame<0) return;
+            for (const auto& event:opening_motion_sounds)
+                if (event.motion==clip && event.frame==static_cast<unsigned>(frame)) sound(event.fgm);
+        };
+        if (position.segment->renderer=="fighter_intro" && local>=15 && local<60) {
+            const int time=local-15;
+            if (name=="mario") motion(time>=33?608:time>=12?607:606,time-(time>=33?33:time>=12?12:0));
+            else if (name=="donkey") motion(time>=4?943:942,time-(time>=4?4:0));
+            else if (name=="link") motion(1188,time);
+            else if (name=="samus") motion(1015,time);
+            else if (name=="yoshi") motion(time>=21?1876:1821,time-(time>=21?21:0));
+            else if (name=="kirby") motion(time>=4?1387:1269,time-(time>=4?4:0));
+            else if (name=="fox") motion(779,time);
+            else if (name=="pikachu") motion(1957,time);
+        }
+        if (name=="jungle" && local<320) {
+            static constexpr std::array<std::pair<int,unsigned>,9> dk{{{0,942},{4,943},{32,944},{52,810},{82,806},{92,922},{154,806},{168,936},{320,0}}};
+            static constexpr std::array<std::pair<int,unsigned>,6> samus{{{0,958},{20,953},{95,1015},{96,959},{156,953},{320,0}}};
+            const auto emit=[&](const auto& phases) {
+                for (std::size_t i=0;i+1<phases.size();++i)
+                    if (local>=phases[i].first && local<phases[i+1].first)
+                        motion(phases[i].second,local-phases[i].first);
+            };
+            emit(dk); emit(samus);
+        }
+    }
     struct TimelinePosition { const SceneTimelineSegment* segment{}; int local{}; };
     [[nodiscard]] TimelinePosition locate(int tic) const {
         int start{};
@@ -416,13 +460,60 @@ private:
             if (time>=33) { motion=608; frame=time-33; }
             else if (time>=12) { motion=607; frame=time-12; }
         } else if (name=="donkey" && time>=4) { motion=943; frame=time-4; }
-        else if (name=="fox") { fighter.rotation.y=-std::numbers::pi_v<float>/2; frame=std::fmod(time,13.0f); }
-        else if (name=="yoshi" && time>=21) { motion=1876; frame=time-21; }
+        else if (name=="fox") { fighter.rotation.y=-std::numbers::pi_v<float>/2; frame=time; }
+        else if (name=="yoshi" && time>=21) {
+            motion=1876; frame=time-21;
+
+        }
         else if (name=="kirby" && time>=4) { motion=1387; frame=time-4; }
-        n64::AnimationDecoder decoder(resources_->archive());
-        fighter.animation=decoder.table({motion,0},fighter.nodes.size());
+        const auto placement=fighter.position;
+        const auto orientation=fighter.rotation;
+        fighter=motion_model(name,motion);
+        fighter.position=placement;
+        fighter.rotation=orientation;
+        if (name=="yoshi") fighter.position.x+=50.0f*std::min(time,21.0f);
+        if (name=="kirby" && time>=3) {
+            // ftCommonJumpSetStatus and ftPhysicsApplyAirVelDrift with
+            // the recorded (45,80) stick and Kirby's cartridge attributes.
+            float vx=45*.45f,vy=80*.6f+30;
+            for (int tick=3;tick<=time;++tick) {
+                vy=std::max(vy-2.4f,-48.0f);
+                vx=std::min(vx+45*.04f,28.0f)-.5f;
+                fighter.position.x+=vx;
+                fighter.position.y+=vy;
+            }
+        }
         renderer_->draw(r,fighter,camera,frame,{255,255,255,255},LightingSystem::opening_room());
         renderer_->flush(r);
+    }
+    Model3D motion_model(std::string_view name,unsigned clip) {
+        if (!motion_models_.contains(clip)) {
+            FighterKind kind=FighterKind::Mario;
+            if (name=="donkey") kind=FighterKind::Donkey;
+            else if (name=="samus") kind=FighterKind::Samus;
+            else if (name=="link") kind=FighterKind::Link;
+            else if (name=="yoshi") kind=FighterKind::Yoshi;
+            else if (name=="kirby") kind=FighterKind::Kirby;
+            else if (name=="fox") kind=FighterKind::Fox;
+            else if (name=="pikachu") kind=FighterKind::Pikachu;
+            const unsigned flags=clip==1876 ? 0x18000001U : clip==1015 ? 0x1ff80001U :
+                                 clip==922 ? 0x80000000U : 0U;
+            const auto spec=fighter_model_spec(kind);
+            auto actor=loader_->fighter_model(spec.descriptor,spec.joint_pairs ?
+                GeometryLayout::JointPairs : GeometryLayout::Direct,spec.setup_parts,flags);
+            n64::AnimationDecoder decoder(resources_->archive());
+            const bool wrapper=(flags&0xc0000000U)!=0;
+            auto scripts=decoder.table({clip,0},actor.nodes.size()+(wrapper?1:0));
+            if (wrapper) {
+                actor.fighter_root.scale={1,1,1};
+                actor.fighter_root_animation=scripts.front();
+                actor.fighter_wrapper=Model3D::FighterWrapper::XRotN;
+            }
+            actor.animation.assign(scripts.begin()+(wrapper?1:0),scripts.end());
+            actor.fighter_animation=true;
+            motion_models_.emplace(clip,std::move(actor));
+        }
+        return motion_models_.at(clip);
     }
     void jungle(RenderEngine& r,int local) {
         if (motion_stage_name_!="jungle") {
@@ -461,8 +552,12 @@ private:
         if (local>=95) { samus_motion=1015; samus_start=95; }
         if (local>=96) { samus_motion=959; samus_start=96; }
         if (local>=156) { samus_motion=953; samus_start=156; }
-        donkey.animation=decoder.table({dk_motion,0},donkey.nodes.size());
-        samus.animation=decoder.table({samus_motion,0},samus.nodes.size());
+        const auto dk_position=donkey.position, samus_position=samus.position;
+        const auto dk_rotation=donkey.rotation, samus_rotation=samus.rotation;
+        donkey=motion_model("donkey",dk_motion);
+        samus=motion_model("samus",samus_motion);
+        donkey.position=dk_position; donkey.rotation=dk_rotation;
+        samus.position=samus_position; samus.rotation=samus_rotation;
         renderer_->draw(r,donkey,camera,static_cast<float>(local-dk_start));
         renderer_->draw(r,samus,camera,static_cast<float>(local-samus_start));
     }
@@ -558,6 +653,7 @@ private:
     [[nodiscard]] const Model3D& model(std::string_view key) const {
         return resources_->model(key);
     }
+    std::unordered_map<unsigned,Model3D> motion_models_;
     Stage3D motion_stage_;
     std::string motion_stage_name_;
     int tic_{};

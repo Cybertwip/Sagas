@@ -68,7 +68,7 @@ yoster	yoster.yoshi0	fighter	llYoshiModelJointTreeDObjDesc	-	pairs	-	-	450	none	
 yoster	yoster.yoshi1	fighter	llYoshiModelJointTreeDObjDesc	-	pairs	-	-	451	none	-	0	0	lit	0	0	0	0xfbffffe0	0
 yoster	yoster.yoshi2	fighter	llYoshiModelJointTreeDObjDesc	-	pairs	-	-	452	none	-	0	0	lit	0	0	0	0xfbffffe0	0
 yoster	yoster.yoshi3	fighter	llYoshiModelJointTreeDObjDesc	-	pairs	-	-	453	none	-	0	0	lit	0	0	0	0xfbffffe0	0
-clash	clash.wallpaperLL	display	llMVOpeningClashWallpaperLLDisplayList	llMVOpeningClashWallpaperLLAnimJoint	direct	llMVOpeningClashWallpaperLLMObjSub	llMVOpeningClashWallpaperLLMatAnimJoint	0	none	-	0	0	unlit	0	0	0
-clash	clash.wallpaperLR	display	llMVOpeningClashWallpaperLRDisplayList	llMVOpeningClashWallpaperLRAnimJoint	direct	llMVOpeningClashWallpaperLRMObjSub	llMVOpeningClashWallpaperLRMatAnimJoint	0	none	-	0	0	unlit	0	0	0
-clash	clash.wallpaperUL	display	llMVOpeningClashWallpaperULDisplayList	llMVOpeningClashWallpaperULAnimJoint	direct	llMVOpeningClashWallpaperULMObjSub	llMVOpeningClashWallpaperULMatAnimJoint	0	none	-	0	0	unlit	0	0	0
-clash	clash.wallpaperUR	display	llMVOpeningClashWallpaperURDisplayList	llMVOpeningClashWallpaperURAnimJoint	direct	llMVOpeningClashWallpaperURMObjSub	llMVOpeningClashWallpaperURMatAnimJoint	0	none	-	0	0	unlit	0	0	0
+clash	clash.wallpaperLL	display	llMVOpeningClashWallpaperLLDisplayList	@llMVOpeningClashWallpaperLLAnimJoint	direct	llMVOpeningClashWallpaperLLMObjSub	llMVOpeningClashWallpaperLLMatAnimJoint	0	none	-	0	0	unlit	0	0	0
+clash	clash.wallpaperLR	display	llMVOpeningClashWallpaperLRDisplayList	@llMVOpeningClashWallpaperLRAnimJoint	direct	llMVOpeningClashWallpaperLRMObjSub	llMVOpeningClashWallpaperLRMatAnimJoint	0	none	-	0	0	unlit	0	0	0
+clash	clash.wallpaperUL	display	llMVOpeningClashWallpaperULDisplayList	@llMVOpeningClashWallpaperULAnimJoint	direct	llMVOpeningClashWallpaperULMObjSub	llMVOpeningClashWallpaperULMatAnimJoint	0	none	-	0	0	unlit	0	0	0
+clash	clash.wallpaperUR	display	llMVOpeningClashWallpaperURDisplayList	@llMVOpeningClashWallpaperURAnimJoint	direct	llMVOpeningClashWallpaperURMObjSub	llMVOpeningClashWallpaperURMatAnimJoint	0	none	-	0	0	unlit	0	0	0

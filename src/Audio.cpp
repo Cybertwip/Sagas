@@ -178,10 +178,13 @@ MusicPackage load_music(std::span<const std::byte> bytes) {
 AudioEngine::AudioEngine(AssetRepository& assets) : assets_(assets) {}
 AudioEngine::~AudioEngine() {
     if (music_job_.valid()) music_job_.wait();
+    for (auto* stream:motion_streams_) SDL_DestroyAudioStream(stream);
     if (effect_stream_) SDL_DestroyAudioStream(effect_stream_);
     if (music_stream_) SDL_DestroyAudioStream(music_stream_);
 }
 void AudioEngine::stop() {
+    for (auto* stream:motion_streams_) SDL_DestroyAudioStream(stream);
+    motion_streams_.clear();
     if (effect_stream_) SDL_ClearAudioStream(effect_stream_);
     if (music_stream_) SDL_ClearAudioStream(music_stream_);
 }
@@ -203,6 +206,23 @@ void AudioEngine::play(AudioCue cue) {
                           cue == AudioCue::MenuSelect ? 158U : 164U;
     auto pcm = render_fgm(assets_, voice_id, 1.0f);
     queue(effect_stream_, pcm.samples, pcm.rate);
+}
+void AudioEngine::play_fgm(unsigned id,float gain) {
+    std::erase_if(motion_streams_,[](SDL_AudioStream* stream) {
+        if (SDL_GetAudioStreamQueued(stream)>0) return false;
+        SDL_DestroyAudioStream(stream);
+        return true;
+    });
+    if (!motion_cache_.contains(id)) {
+        auto pcm=render_fgm(assets_,id,1.0f);
+        motion_cache_.emplace(id,PreparedAudio{std::move(pcm.samples),pcm.rate,1});
+    }
+    const auto& pcm=motion_cache_.at(id);
+    auto samples=pcm.samples;
+    for (auto& sample:samples) sample=static_cast<std::int16_t>(std::clamp(sample*gain,-32768.0f,32767.0f));
+    SDL_AudioStream* stream{};
+    queue(stream,samples,pcm.rate);
+    motion_streams_.push_back(stream);
 }
 AudioEngine::PreparedAudio AudioEngine::synthesize_music(std::string logical, float gain) {
     const auto bytes = assets_.blob(logical);

@@ -229,7 +229,8 @@ Stage3D Scene3DLoader::stage(std::string_view header) {
 }
 
 Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout layout,
-                                    std::array<std::uint32_t,2> setup_parts) {
+                                    std::array<std::uint32_t,2> setup_parts,
+                                    std::uint32_t animation_flags, unsigned costume) {
     const auto desc=archive_.symbol(descriptor);
     if (!desc) throw std::runtime_error("missing fighter descriptor symbol: "+std::string(descriptor));
     Model3D model;
@@ -247,6 +248,17 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
     };
     if (const auto entry=attributes.find(desc->file); entry!=attributes.end()) {
         const auto attr=entry->second;
+        // Motion descriptors enable auxiliary joints before the figatree is
+        // bound. Omitting these shifts every subsequent animation pointer.
+        if (const auto hidden=archive_.resolve({attr.file,attr.offset+0x2d0})) {
+            for (unsigned bit=3;bit<27;++bit) if (animation_flags&(0x80000000U>>bit)) {
+                const auto joint=archive_.u32({hidden->file,hidden->offset+bit*16});
+                if (joint>=4 && joint-4<source_nodes.size()) {
+                    const unsigned index=joint-4;
+                    setup_parts[index/32]|=0x80000000U>>(index%32);
+                }
+            }
+        }
         const auto parts=archive_.resolve({attr.file,attr.offset+0x2d4});
         const auto costumes=parts ? archive_.resolve({parts->file,parts->offset+8}) : std::nullopt;
         if (costumes) {
@@ -260,7 +272,7 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
                     initial.colors[0]=material.primitive;
                     if (material.light1) initial.colors[3]=*material.light1;
                     if (material.light2) initial.colors[4]=*material.light2;
-                    const auto pose=animation.sample_material(*scripts[i][j],0,initial);
+                    const auto pose=animation.sample_material(*scripts[i][j],static_cast<float>(costume),initial);
                     material.primitive=pose.colors[0];
                     if (material.light1) material.light1=pose.colors[3];
                     if (material.light2) material.light2=pose.colors[4];

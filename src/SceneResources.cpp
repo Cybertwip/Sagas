@@ -180,8 +180,11 @@ Model3D SceneResourceManager::build_model(
         model = loader_.display_list(descriptor.descriptor, descriptor.layout,
                                      descriptor.materials, descriptor.material_animation);
         if (!descriptor.animation.empty()) {
-            if (const auto animation = archive_.symbol(descriptor.animation)) model.animation[0] = animation;
-            else throw std::runtime_error("missing scene animation symbol: " + descriptor.animation);
+            const bool table=descriptor.animation.starts_with("@");
+            const auto symbol=table ? descriptor.animation.substr(1) : descriptor.animation;
+            if (const auto animation = archive_.symbol(symbol))
+                model.animation[0] = table ? archive_.resolve(*animation) : animation;
+            else throw std::runtime_error("missing scene animation symbol: " + symbol);
         }
     } else if (descriptor.kind == Kind::Fighter) {
         model = loader_.fighter_model(descriptor.descriptor, descriptor.layout,

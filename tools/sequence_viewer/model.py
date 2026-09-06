@@ -149,6 +149,8 @@ class ModelLoader:
         descriptor: str,
         layout: GeometryLayout = GeometryLayout.Direct,
         setup_parts: Optional[tuple[int, int]] = None,
+        animation_flags: int = 0,
+        costume: int = 0,
     ) -> Model3D:
         desc = self.archive.require_symbol(descriptor)
         setup_parts = setup_parts or FIGHTER_SETUP_PARTS.get(
@@ -166,6 +168,15 @@ class ModelLoader:
         }
         if desc.file in attributes:
             attr = Address(*attributes[desc.file])
+            hidden = self.archive.resolve(attr.shifted(0x2d0))
+            if hidden:
+                setup_parts = list(setup_parts)
+                for bit in range(3, 27):
+                    if animation_flags & (0x80000000 >> bit):
+                        joint = self.archive.u32(hidden.shifted(bit * 16))
+                        if 4 <= joint < len(source_nodes) + 4:
+                            index = joint - 4
+                            setup_parts[index // 32] |= 0x80000000 >> (index % 32)
             parts = self.archive.resolve(attr.shifted(0x2d4))
             costumes = self.archive.resolve(parts.shifted(8)) if parts else None
             if costumes:

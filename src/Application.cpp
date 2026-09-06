@@ -116,17 +116,19 @@ int Application::run() {
     std::chrono::duration<double> accumulator{};
     int frames{};
     bool running = true;
+    InputState pending;
     while (running && (options_.frame_limit <= 0 || frames < options_.frame_limit)) {
-        const auto input = poll_input();
+        auto input = poll_input();
+        input.latch_edges(pending);
+        pending=input;
         running = !input.quit;
         const auto now = clock::now();
         accumulator += options_.headless ? step : now - previous;
         previous = now;
-        bool first = true;
         while (accumulator >= step) {
-            scenes_->update(first ? input : InputState{}, static_cast<float>(step.count()));
+            scenes_->update(pending, static_cast<float>(step.count()));
+            pending.clear_edges();
             accumulator -= step;
-            first = false;
         }
         if (!options_.capture_path.empty() && options_.frame_limit > 0 && frames + 1 == options_.frame_limit)
             render_->request_capture(options_.capture_path);

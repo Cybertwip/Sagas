@@ -5,6 +5,18 @@
 #include <stdexcept>
 
 namespace sagas {
+void InputState::clear_edges() noexcept {
+    accept_pressed=cancel_pressed=skip_pressed=start_pressed=quit=false;
+    up_pressed=down_pressed=left_pressed=right_pressed=false;
+    jump_pressed=back_pressed=false;
+}
+void InputState::latch_edges(const InputState& previous) noexcept {
+    accept_pressed|=previous.accept_pressed; cancel_pressed|=previous.cancel_pressed;
+    skip_pressed|=previous.skip_pressed; start_pressed|=previous.start_pressed;
+    quit|=previous.quit; jump_pressed|=previous.jump_pressed; back_pressed|=previous.back_pressed;
+    up_pressed|=previous.up_pressed; down_pressed|=previous.down_pressed;
+    left_pressed|=previous.left_pressed; right_pressed|=previous.right_pressed;
+}
 
 AssetRepository::AssetRepository(std::filesystem::path root) : root_(std::move(root)) {
     if (!std::filesystem::exists(root_ / ".complete"))

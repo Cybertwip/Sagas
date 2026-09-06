@@ -183,11 +183,9 @@ private:
     }
     void load_preview(FighterKind kind,unsigned player,bool selected) {
         if (!loader_) return;
-        const auto spec=fighter_model_spec(kind);
-        auto preview=loader_->fighter_model(spec.descriptor,spec.joint_pairs?GeometryLayout::JointPairs:GeometryLayout::Direct,spec.setup_parts);
         const auto& data=fighter_source_data[static_cast<unsigned>(kind)];
-        preview.animation=n64::AnimationDecoder(*archive_).table({selected?data.selected:data.idle,0},preview.nodes.size());
-        preview.fighter_animation=true;
+        auto preview=loader_->fighter_motion(kind,selected?data.selected:data.idle,
+                                             selected?data.selected_flags:0);
         previews_[player]=std::move(preview);
         selected_tick_[player]=tic_;
     }

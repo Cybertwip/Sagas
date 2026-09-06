@@ -258,6 +258,23 @@ Stage3D Scene3DLoader::stage(std::string_view header) {
     return result;
 }
 
+Model3D Scene3DLoader::fighter_motion(FighterKind kind, unsigned clip, std::uint32_t flags) {
+    const auto spec=fighter_model_spec(kind);
+    auto actor=fighter_model(spec.descriptor,spec.joint_pairs ? GeometryLayout::JointPairs :
+                             GeometryLayout::Direct,spec.setup_parts,flags);
+    const bool wrapper=(flags&0xc0000000U)!=0;
+    const auto scripts=n64::AnimationDecoder(archive_).table({clip,0},actor.nodes.size()+(wrapper?1:0));
+    if (wrapper) {
+        actor.fighter_root.scale={1,1,1};
+        actor.fighter_root_animation=scripts.front();
+        actor.fighter_wrapper=(flags&0x80000000U) ? Model3D::FighterWrapper::XRotN :
+                                                               Model3D::FighterWrapper::TransN;
+    }
+    actor.animation.assign(scripts.begin()+(wrapper?1:0),scripts.end());
+    actor.fighter_animation=true;
+    return actor;
+}
+
 Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout layout,
                                     std::array<std::uint32_t,2> setup_parts,
                                     std::uint32_t animation_flags, unsigned costume) {

@@ -60,6 +60,8 @@ struct Stage3D {
 class Scene3DLoader final {
 public:
     explicit Scene3DLoader(n64::RelocArchive& archive) : archive_(archive) {}
+    [[nodiscard]] Model3D fighter_motion(FighterKind kind, unsigned clip,
+                                          std::uint32_t animation_flags = 0);
     [[nodiscard]] Model3D model(std::string_view descriptor, std::string_view animation = {},
                                 GeometryLayout layout = GeometryLayout::DisplayListLinks,
                                 std::string_view materials = {},

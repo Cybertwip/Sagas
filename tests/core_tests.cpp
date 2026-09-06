@@ -1,6 +1,7 @@
 #include <sagas/OpeningMotionAudio.hpp>
 #include <sagas/Engine.hpp>
 #include <sagas/Fighter.hpp>
+#include <sagas/FighterSourceData.hpp>
 #include <sagas/N64.hpp>
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
@@ -10,6 +11,13 @@
 #include <iostream>
 
 int main() {
+    sagas::InputState held;
+    held.right=true; held.stick_x=80; held.shield_held=true; held.jump_pressed=true;
+    sagas::InputState polled;
+    polled.latch_edges(held);
+    assert(polled.jump_pressed && !polled.right && polled.stick_x==0);
+    held.clear_edges();
+    assert(!held.jump_pressed && held.right && held.stick_x==80 && held.shield_held);
     const sagas::AnimationClip clip{{0, 4}, {2, 8}, {4, 0}};
     assert(std::abs(clip.sample(1) - 6) < 0.001f);
     assert(std::abs(clip.sample(3) - 4) < 0.001f);
@@ -62,6 +70,26 @@ int main() {
     for (const auto value : at_middle.tracks) assert(std::isfinite(value));
     assert(at_start.tracks != at_middle.tracks);
     sagas::Scene3DLoader scene_loader(archive);
+    // Selected animations for Ness/Pikachu include XRotN ahead of common
+    // joints. Verify the stream offset and world-space pose across the clip.
+    sagas::Scene3DRenderer pose_renderer(archive);
+    for (unsigned i=0;i<sagas::fighter_source_data.size();++i) {
+        const auto& data=sagas::fighter_source_data[i];
+        const auto selected=scene_loader.fighter_motion(static_cast<sagas::FighterKind>(i),
+                                                       data.selected,data.selected_flags);
+        const bool wrapper=i==static_cast<unsigned>(sagas::FighterKind::Ness) ||
+                           i==static_cast<unsigned>(sagas::FighterKind::Pikachu);
+        assert((selected.fighter_wrapper==sagas::Model3D::FighterWrapper::XRotN)==wrapper);
+        const auto raw=animation_decoder.table({data.selected,0},selected.nodes.size()+(wrapper?1:0));
+        assert(selected.animation.front()==raw[wrapper?1:0]);
+        if (wrapper) assert(selected.fighter_root_animation==raw.front());
+        for (float frame:{0.f,8.f,30.f,60.f,100.f,150.f})
+            for (auto joint:selected.source_joint_ids) {
+                const auto point=pose_renderer.joint_point(selected,frame,joint,{});
+                assert(std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z));
+                assert(std::abs(point.x)<3000 && std::abs(point.y)<3000 && std::abs(point.z)<3000);
+            }
+    }
     // The room beam is I8: intensity supplies alpha, including clear texels.
     const auto sunlight=scene_loader.display_list("llMVCommonRoomSunlightDisplayList",
                                                   sagas::GeometryLayout::DisplayListLinks);
@@ -423,5 +451,38 @@ int main() {
     assert(mario.grounded && mario.vel_ground > 0 && mario.lr == 1);
     sagas::FighterPhysics::jump(mario);
     assert(!mario.grounded && mario.vel_air.y > 1.0f);
+    mario.stick_x=0;
+    for (int frame=0;frame<180;++frame) sagas::FighterPhysics::tick(mario,0);
+    assert(mario.grounded && mario.position.y==0 && mario.jumps_used==0);
+    mario.jump_pressed=true;
+    sagas::FighterPhysics::tick(mario,0);
+    assert(mario.grounded && mario.status==sagas::FighterStatus::KneeBend);
+    for (int frame=1;frame<mario.attr.knee_bend;++frame) sagas::FighterPhysics::tick(mario,0);
+    assert(!mario.grounded && mario.vel_air.y>0);
+    const std::array<sagas::CollisionSegment,2> platforms{{
+        {{-1000,0},{1000,0},0,0,false},{{-100,500},{100,500},0,0,true}}};
+    mario.position={0,500,0}; mario.vel_air={}; mario.grounded=true;
+    mario.status=sagas::FighterStatus::Wait; mario.stick_y=-80;
+    sagas::FighterPhysics::tick(mario,platforms);
+    assert(!mario.grounded && mario.position.y<500);
+    mario.stick_y=0;
+    for (int frame=0;frame<100;++frame) sagas::FighterPhysics::tick(mario,platforms);
+    assert(mario.grounded && mario.position.y==0);
+    mario.position.x=999; mario.stick_x=80;
+    sagas::FighterPhysics::tick(mario,platforms);
+    assert(!mario.grounded);
+    sagas::FighterPhysics::tick(mario,platforms);
+    assert(mario.position.y<0);
+    std::array<sagas::FighterBody,2> fighters{};
+    for (auto& fighter:fighters) fighter.attr=sagas::fighter_attributes(sagas::FighterKind::Mario);
+    const std::array<sagas::AttackVolume,1> attack{{{0,{0,160,0},160,8,45,100,0,10}}};
+    auto hits=sagas::FighterCombat::resolve(fighters,attack);
+    assert(hits.size()==1 && fighters[1].damage==8 && fighters[1].hitstun>0);
+    assert(fighters[1].vel_air.y>0 && fighters[0].hitlag==6);
+    assert(sagas::FighterCombat::resolve(fighters,attack).empty());
+    fighters[0].hit_mask=0; fighters[1].status=sagas::FighterStatus::Shield;
+    const float damage=fighters[1].damage;
+    hits=sagas::FighterCombat::resolve(fighters,attack);
+    assert(hits.size()==1 && fighters[1].damage==damage && fighters[1].shield==47);
     std::cout << "Sagas core tests passed\n";
 }

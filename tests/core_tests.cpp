@@ -547,5 +547,48 @@ int main() {
     camera_fighters[0].position.x=-4000;camera_fighters[1].position.x=4000;
     for (int frame=0;frame<300;++frame) camera.tick(camera_fighters,camera_stage);
     assert(camera.view().eye.z>close_z && camera.view().near_plane==256);
+    // Smash input is a directional tap, not merely holding a direction.
+    combo={};combo.attr=sagas::fighter_attributes(combo.kind);combo.stick_x=80;combo.tap_stick_x=0;
+    assert(sagas::FighterCombat::start_smash(combo,true));
+    assert(combo.attack_motion==sagas::fighter_source_data[1].smash[0]);
+    sagas::FighterCombat::advance_jab(combo,false,true);
+    combo.tap_stick_x=4;
+    assert(!sagas::FighterCombat::start_smash(combo,true));
+    combo.stick_x=0;combo.stick_y=80;combo.tap_stick_y=0;
+    assert(sagas::FighterCombat::start_smash(combo,true));
+    assert(combo.attack_motion==sagas::fighter_source_data[1].smash[1]);
+    sagas::FighterBody rapid;rapid.kind=sagas::FighterKind::Fox;rapid.attr=sagas::fighter_attributes(rapid.kind);
+    sagas::FighterCombat::advance_jab(rapid,true,false);
+    for (int i=0;i<4;++i) {rapid.action_frame=2+i;sagas::FighterCombat::advance_jab(rapid,i%2==0,false,i%2!=0);}
+    rapid.action_frame=10;sagas::FighterCombat::advance_jab(rapid,false,false);
+    assert(rapid.jab_stage==2);
+    rapid.action_frame=10;sagas::FighterCombat::advance_jab(rapid,false,false);
+    assert(rapid.jab_stage==4);
+    sagas::FighterCombat::advance_jab(rapid,false,true);assert(rapid.jab_stage==5);
+    sagas::FighterCombat::advance_jab(rapid,true,false);
+    sagas::FighterCombat::advance_jab(rapid,false,true);assert(rapid.jab_stage==5);
+    sagas::FighterCombat::advance_jab(rapid,false,true);assert(rapid.jab_stage==6);
+    sagas::FighterCombat::advance_jab(rapid,false,true);assert(rapid.status==sagas::FighterStatus::Wait);
+    const std::array<sagas::CollisionSegment,1> ledge_floor{{{{0,0},{2000,0},0,0x8000,false,12}}};
+    std::array<sagas::FighterBody,2> ledge_fighters{};
+    auto& grabber=ledge_fighters[0];grabber.attr=sagas::fighter_attributes(grabber.kind);
+    grabber.grounded=false;grabber.status=sagas::FighterStatus::Fall;grabber.position={-200,-370,0};
+    assert(sagas::FighterPhysics::try_ledge(grabber,{-200,-350,0},ledge_floor,ledge_fighters));
+    assert(grabber.status==sagas::FighterStatus::CliffCatch && grabber.cliff_edge.x==0);
+    auto& second=ledge_fighters[1];second=grabber;second.status=sagas::FighterStatus::Fall;second.position={-200,-370,0};
+    assert(!sagas::FighterPhysics::try_ledge(second,{-200,-350,0},ledge_floor,ledge_fighters));
+    second.lr=-1;
+    assert(!sagas::FighterPhysics::try_ledge(second,{-200,-350,0},ledge_floor,{}));
+    for (unsigned kind=0;kind<12;++kind) {
+        const auto& data=sagas::fighter_source_data[kind];
+        for (auto clip:data.cliff) {
+            const auto actor=scene_loader.fighter_motion(static_cast<sagas::FighterKind>(kind),clip,0x40000000);
+            assert(actor.fighter_root_animation);
+            for (const auto joint:actor.source_joint_ids) {
+                const auto point=pose_renderer.joint_point(actor,10,joint,{});
+                assert(std::isfinite(point.x) && std::isfinite(point.y));
+            }
+        }
+    }
     std::cout << "Sagas core tests passed\n";
 }

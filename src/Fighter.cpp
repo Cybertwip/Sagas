@@ -175,14 +175,23 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         const bool locked=body.status==FighterStatus::KneeBend || body.status==FighterStatus::Attack ||
                           body.status==FighterStatus::Shield || body.status==FighterStatus::Hitstun || body.status==FighterStatus::Land;
         if (!locked && body.status==FighterStatus::Run && body.stick_x*body.lr<44) body.status=FighterStatus::RunBrake;
-        if (!locked && body.status==FighterStatus::RunBrake) {
+        if (!locked && body.status==FighterStatus::Dash) {
+            const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+            if (body.action_frame>=data.dash_to_run && body.stick_x*body.lr>=44) {
+                body.status=FighterStatus::Run;body.vel_ground=body.attr.run_speed;
+            } else if (body.action_frame>=7) body.vel_ground=std::max(0.f,body.vel_ground-data.dash_decel);
+        } else if (!locked && body.status==FighterStatus::RunBrake) {
             body.vel_ground=std::max(0.f,body.vel_ground-body.attr.traction*1.25f);
             if (body.vel_ground==0) body.status=FighterStatus::Wait;
         } else if (!locked && std::abs(body.stick_x)>=kStickMin) {
             body.lr=body.stick_x>0?1:-1;
-            body.vel_ground=std::abs(body.stick_x)>=56 ? body.attr.run_speed :
-                body.attr.walk_speed*std::abs(body.stick_x)/80.0f;
-            body.status=std::abs(body.stick_x)>=56?FighterStatus::Run:FighterStatus::Walk;
+            if (body.status==FighterStatus::Run) body.vel_ground=body.attr.run_speed;
+            else if (std::abs(body.stick_x)>=56 && body.tap_stick_x<3) {
+                body.status=FighterStatus::Dash;body.action_frame=0;body.vel_ground=body.attr.dash_speed;
+            } else {
+                body.vel_ground=body.attr.walk_speed*std::abs(body.stick_x)/80.0f;
+                body.status=FighterStatus::Walk;
+            }
         } else {
             apply_ground_friction(body);
             if (!locked) body.status=FighterStatus::Wait;

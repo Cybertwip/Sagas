@@ -72,10 +72,11 @@ public:
                 if (body.status==FighterStatus::Hitstun && --body.hitstun<=0)
                     body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
                 const bool smash=FighterCombat::start_smash(body,attack);
-                const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump) &&
+                const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump || body.status==FighterStatus::Dash) &&
                                   body.action_frame>=motion_length(body);
                 FighterCombat::advance_jab(body,attack && !smash,ended,i==0 && input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
+                if (body.status==FighterStatus::Dash && ended) {body.status=FighterStatus::Wait;body.vel_ground*=.75f;}
                 if (body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack) {
                     if (body.shield_held && body.grounded && body.shield>0) {
                         body.status=FighterStatus::Shield; body.shield=std::max(0.0f,body.shield-.15f);

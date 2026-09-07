@@ -65,7 +65,9 @@ public:
             }
             body.tap_stick_x=std::abs(body.stick_x)>=56 && (std::abs(old_x)<56 || old_x*body.stick_x<0)?0:std::min(255,body.tap_stick_x+1);
             body.tap_stick_y=std::abs(body.stick_y)>=53 && (std::abs(old_y)<53 || old_y*body.stick_y<0)?0:std::min(255,body.tap_stick_y+1);
-            if (!body.hitlag) {
+            const bool on_cliff=body.status==FighterStatus::CliffCatch || body.status==FighterStatus::CliffWait || body.status==FighterStatus::CliffClimb;
+            if (on_cliff) update_cliff(body);
+            if (!on_cliff && !body.hitlag) {
                 ++body.action_frame;
                 if (body.status==FighterStatus::Hitstun && --body.hitstun<=0)
                     body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
@@ -81,7 +83,8 @@ public:
                 }
                 if (body.status!=FighterStatus::Shield) body.shield=std::min(55.0f,body.shield+.05f);
             }
-            FighterPhysics::tick(body,stage_.collision,[&](const FighterBody& jumping) -> std::optional<Vec3> {
+            const auto before=body.position;
+            if (!on_cliff) FighterPhysics::tick(body,stage_.collision,[&](const FighterBody& jumping) -> std::optional<Vec3> {
                 const auto model=posed(jumping,true);
                 if (!model.fighter_root_animation) return {};
                 n64::AnimationDecoder decoder(*archive_);
@@ -96,6 +99,7 @@ public:
                 const float angle=current.tracks[2];
                 return Vec3{z*std::cos(angle)-y*std::sin(angle),z*std::sin(angle)+y*std::cos(angle),0};
             });
+            if (!on_cliff && FighterPhysics::try_ledge(body,before,stage_.collision,bodies_)) update_cliff(body,false);
             const auto& bounds=stage_.blast_bounds;
             if (body.position.x<bounds[3] || body.position.x>bounds[2] || body.position.y<bounds[1] || body.position.y>bounds[0]) {
                 --body.stocks;
@@ -167,11 +171,48 @@ public:
     }
     std::unique_ptr<Scene> next() override {return done_?make_character_select_scene(stock_,false):nullptr;}
 private:
+    void update_cliff(FighterBody& body,bool advance=true) {
+        if (body.hitlag) {--body.hitlag;return;}
+        if (advance) {++body.action_frame;if (body.invincible>0) --body.invincible;}
+        if (body.status==FighterStatus::CliffCatch && body.action_frame>=motion_length(body)) {
+            body.status=FighterStatus::CliffWait;body.action_frame=0;body.invincible=60;
+            body.cliff_wait=body.damage<100?1080:480;
+        } else if (body.status==FighterStatus::CliffClimb && body.action_frame>=motion_length(body)) {
+            if (++body.cliff_phase==3) {
+                body.status=FighterStatus::Wait;body.grounded=true;body.jumps_used=0;body.invincible=0;body.cliff_cooldown=30;
+                return;
+            }
+            body.action_frame=0;
+        }
+        if (body.status==FighterStatus::CliffWait) {
+            if (std::abs(body.stick_x)<20 && std::abs(body.stick_y)<20) body.cliff_neutral=true;
+            const bool input=std::abs(body.stick_x)>=20 || std::abs(body.stick_y)>=20;
+            if (--body.cliff_wait<=0 || (body.cliff_neutral && input &&
+                (body.stick_y<=-20 || body.stick_x*body.lr<=-20))) {
+                body.status=FighterStatus::Fall;body.cliff_cooldown=30;body.invincible=0;
+                body.position={body.cliff_edge.x-(body.attr.width+30)*body.lr,body.cliff_edge.y-body.attr.height*.5f,0};
+                return;
+            }
+            if (body.cliff_neutral && input) {body.status=FighterStatus::CliffClimb;body.cliff_phase=0;body.action_frame=0;}
+        }
+        const auto model=posed(body,true);
+        if (model.fighter_root_animation) {
+            n64::AnimationDecoder decoder(*archive_);
+            const auto pose=decoder.sample16(*model.fighter_root_animation,body.action_frame,decoder.pose(model.fighter_root));
+            body.position={body.cliff_edge.x+pose.tracks[6]*body.lr*body.attr.size,
+                           body.cliff_edge.y+pose.tracks[5]*body.attr.size,0};
+        }
+    }
     static unsigned motion(const FighterBody& body) {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
         switch(body.status) {
             case FighterStatus::Walk:return data.walk;
-            case FighterStatus::Dash:return data.run_clip;
+            case FighterStatus::Dash:return data.dash_clip;
+            case FighterStatus::Run:return data.run_clip;
+            case FighterStatus::RunBrake:return data.run_brake;
+            case FighterStatus::CliffCatch:return data.cliff[0];
+            case FighterStatus::CliffWait:return data.cliff[1];
+            case FighterStatus::CliffClimb:return data.cliff[(body.damage<100?2:5)+body.cliff_phase];
             case FighterStatus::KneeBend:return data.kneebend_clip;
             case FighterStatus::Jump:
                 if (!body.aerial_jump) return body.jump_backward?data.jump_back:data.jump;
@@ -210,8 +251,9 @@ private:
         const unsigned key=static_cast<unsigned>(body.kind)*4096+clip;
         if (!models_.contains(key)) {
             const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
-            const unsigned flags=(body.kind==FighterKind::Ness || body.kind==FighterKind::Yoshi) &&
-                (clip==data.aerial_forward || clip==data.aerial_back)?0x40000000U:0;
+            const unsigned flags=((body.kind==FighterKind::Ness || body.kind==FighterKind::Yoshi) &&
+                (clip==data.aerial_forward || clip==data.aerial_back)) ||
+                std::find(data.cliff.begin(),data.cliff.end(),clip)!=data.cliff.end()?0x40000000U:0;
             models_.emplace(key,loader_->fighter_motion(body.kind,clip,flags));
         }
         auto model=models_.at(key);

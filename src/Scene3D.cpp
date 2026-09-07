@@ -238,7 +238,7 @@ Stage3D Scene3DLoader::stage(std::string_view header) {
                     for (unsigned i=1;i<length;++i) {
                         const auto a=point(start+i-1),b=point(start+i);
                         const unsigned flags=a.second|b.second;
-                        result.collision.push_back({a.first,b.first,type,flags,type==0 && (flags&0x800U)!=0});
+                        result.collision.push_back({a.first,b.first,type,flags,type==0 && (flags&0x800U)!=0,line});
                     }
                 }
             }

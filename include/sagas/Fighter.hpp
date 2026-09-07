@@ -35,7 +35,7 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Walk, Dash, KneeBend, Jump, Fall, Land, Attack, Hitstun, Shield, KO };
+enum class FighterStatus : std::uint8_t { Wait, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Shield, CliffCatch, CliffWait, CliffClimb, KO };
 
 struct FighterModelSpec {
     std::string_view descriptor;
@@ -67,6 +67,10 @@ struct FighterBody {
     unsigned attack_motion{},attack_epoch{~0U};
     int rapid_inputs{},tap_stick_x{255};
     bool rapid_continue{};
+    Vec2 cliff_edge{};
+    unsigned cliff_line{};
+    int cliff_wait{},cliff_cooldown{},cliff_phase{};
+    bool cliff_neutral{};
     int land_frames{};
     bool grounded{true};
     bool fastfall{};
@@ -84,11 +88,14 @@ struct CollisionSegment {
     Vec2 a{}, b{};
     unsigned type{}, flags{}; // 0 floor, 1 ceiling, 2 right wall, 3 left wall
     bool pass_through{};
+    unsigned line_id{};
 };
 
 class FighterPhysics final {
 public:
     using JumpMotion=std::function<std::optional<Vec3>(const FighterBody&)>;
+    static bool try_ledge(FighterBody& body,Vec3 before,std::span<const CollisionSegment> stage,
+                          std::span<const FighterBody> others);
     static constexpr int kStickMin = 8;
     static void apply_gravity_clamp_tvel(FighterBody& body, float gravity, float tvel) noexcept;
     static void clamp_ground_vel(FighterBody& body, float clamp) noexcept;

@@ -144,6 +144,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     if (body.status==FighterStatus::KO) return;
     if (body.invincible>0) --body.invincible;
     if (body.hitlag>0) { --body.hitlag; return; }
+    if (body.cliff_cooldown>0) --body.cliff_cooldown;
     if (body.drop_frames>0) --body.drop_frames;
     const Vec3 before=body.position;
     const bool was_grounded=body.grounded;
@@ -173,11 +174,15 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         if (body.status==FighterStatus::Land && --body.land_frames<=0) body.status=FighterStatus::Wait;
         const bool locked=body.status==FighterStatus::KneeBend || body.status==FighterStatus::Attack ||
                           body.status==FighterStatus::Shield || body.status==FighterStatus::Hitstun || body.status==FighterStatus::Land;
-        if (!locked && std::abs(body.stick_x)>=kStickMin) {
+        if (!locked && body.status==FighterStatus::Run && body.stick_x*body.lr<44) body.status=FighterStatus::RunBrake;
+        if (!locked && body.status==FighterStatus::RunBrake) {
+            body.vel_ground=std::max(0.f,body.vel_ground-body.attr.traction*1.25f);
+            if (body.vel_ground==0) body.status=FighterStatus::Wait;
+        } else if (!locked && std::abs(body.stick_x)>=kStickMin) {
             body.lr=body.stick_x>0?1:-1;
             body.vel_ground=std::abs(body.stick_x)>=56 ? body.attr.run_speed :
                 body.attr.walk_speed*std::abs(body.stick_x)/80.0f;
-            body.status=std::abs(body.stick_x)>=56?FighterStatus::Dash:FighterStatus::Walk;
+            body.status=std::abs(body.stick_x)>=56?FighterStatus::Run:FighterStatus::Walk;
         } else {
             apply_ground_friction(body);
             if (!locked) body.status=FighterStatus::Wait;
@@ -258,10 +263,36 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         if (!was_grounded && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun) {
             body.status=FighterStatus::Land; body.land_frames=4;
         }
-    } else if (body.status==FighterStatus::Wait || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash)
+    } else if (body.status==FighterStatus::Wait || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash || body.status==FighterStatus::Run || body.status==FighterStatus::RunBrake)
         body.status=FighterStatus::Fall;
     if (was_grounded && !body.grounded && body.jumps_used==0) body.jumps_used=1;
     body.jump_pressed=false;
+}
+
+bool FighterPhysics::try_ledge(FighterBody& body,Vec3 before,std::span<const CollisionSegment> stage,std::span<const FighterBody> others) {
+    if (body.grounded || body.cliff_cooldown || body.status==FighterStatus::Hitstun || body.status==FighterStatus::Attack || body.position.y>=before.y) return false;
+    const auto& box=fighter_source_data[static_cast<unsigned>(body.kind)].cliff_box;
+    for (const auto& line:stage) {
+        if (line.type!=0 || !(line.flags&0x8000) || std::abs(line.b.x-line.a.x)<.001f) continue;
+        const float x=body.position.x+body.lr*box[0];
+        if (x<std::min(line.a.x,line.b.x) || x>std::max(line.a.x,line.b.x)) continue;
+        const float y=line.a.y+(line.b.y-line.a.y)*(x-line.a.x)/(line.b.x-line.a.x);
+        if (before.y+box[1]<y || body.position.y+box[1]>y) continue;
+        Vec2 edge=body.lr>0?(line.a.x<line.b.x?line.a:line.b):(line.a.x>line.b.x?line.a:line.b);
+        for (const auto& part:stage) if (part.type==0 && part.line_id==line.line_id)
+            for (const auto point:{part.a,part.b})
+                if ((body.lr>0 && point.x<edge.x) || (body.lr<0 && point.x>edge.x)) edge=point;
+        if ((x-edge.x)*body.lr>=800) continue;
+        bool occupied=false;
+        for (const auto& other:others) if (&other!=&body && other.cliff_line==line.line_id && other.lr==body.lr &&
+            (other.status==FighterStatus::CliffCatch || other.status==FighterStatus::CliffWait || other.status==FighterStatus::CliffClimb)) occupied=true;
+        if (occupied) continue;
+        body.cliff_edge=edge;body.cliff_line=line.line_id;body.status=FighterStatus::CliffCatch;
+        body.action_frame=0;body.vel_air={};body.vel_damage={};body.vel_ground=0;body.jumps_used=1;
+        body.fastfall=false;body.cliff_neutral=false;body.invincible=60;
+        return true;
+    }
+    return false;
 }
 
 bool FighterCombat::start_smash(FighterBody& body,bool pressed) {

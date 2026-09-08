@@ -10,6 +10,7 @@ int main(int argc, char** argv) {
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
             if (arg == "--assets" && i + 1 < argc) options.asset_root = argv[++i];
+            else if (arg == "--controls" && i + 1 < argc) options.controls_path = argv[++i];
             else if (arg == "--title") options.start_at_title = true;
             else if (arg == "--menu") options.start_at_menu = true;
             else if (arg == "--headless") options.headless = true;
@@ -19,7 +20,7 @@ int main(int argc, char** argv) {
             else if (arg == "--capture-only") options.capture_only = true;
             else if (arg == "--capture" && i + 1 < argc) options.capture_path = argv[++i];
             else if (arg == "--help") {
-                std::cout << "Sagas [--assets PATH] [--title|--menu|--select|--battle] [--headless] [--frames N] [--capture PNG] [--capture-only]\n";
+                std::cout << "Sagas [--assets PATH] [--controls PATH] [--title|--menu|--select|--battle] [--headless] [--frames N] [--capture PNG] [--capture-only]\n";
                 return 0;
             } else throw std::runtime_error("unknown argument: " + std::string(arg));
         }

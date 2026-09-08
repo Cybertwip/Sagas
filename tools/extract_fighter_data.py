@@ -6,7 +6,7 @@ ids={v['name']:int(v['id']) for v in csv.DictReader((r/'sagas/build/assets/reloc
 voices={v['name']:v['idx'] for v in json.loads((d/'build/us/src/audio/fgm.ucd.json').read_text())['entries']}
 names=['Luigi','Mario','Donkey','Link','Samus','Captain','Ness','Yoshi','Kirby','Fox','Pikachu','Purin']
 selected=[1,3,1,1,4,1,2,2,3,4,1,2]; scales=[1.21,1.25,1.,1.33,1.03,1.07,1.3,1.05,1.22,1.15,1.2,1.26]
-text='// US cartridge values from FTAttributes and scSubsys motion tables.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct FighterSourceData {\n float size,walk_mul,traction,dash,run,kneebend,jump_x,jump_mul,jump_base,air_accel,air_max,air_friction,gravity,terminal,fast,weight,height,width,select_scale,aerial_x,aerial_height,jab_window,cam_offset_y,camera_zoom,dash_decel,dash_to_run;\n unsigned jumps,idle,walk,dash_clip,run_clip,jump,fall,landing,jab,damage,selected,announce,selected_flags,kneebend_clip,jump_back,aerial_forward,aerial_back,jab2,jab3,run_brake;\n std::array<unsigned,5> multi_jump;\n std::array<unsigned,3> smash,rapid,smash_voices;\n std::array<unsigned,8> cliff;\n std::array<float,2> cliff_box;\n};\ninline constexpr std::array<FighterSourceData,12> fighter_source_data{{\n'
+text='// US cartridge values from FTAttributes and scSubsys motion tables.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct FighterSourceData {\n float size,walk_mul,traction,dash,run,kneebend,jump_x,jump_mul,jump_base,air_accel,air_max,air_friction,gravity,terminal,fast,weight,height,width,select_scale,aerial_x,aerial_height,jab_window,cam_offset_y,camera_zoom,dash_decel,dash_to_run;\n unsigned jumps,idle,walk,dash_clip,run_clip,jump,fall,landing,jab,damage,selected,announce,selected_flags,kneebend_clip,jump_back,aerial_forward,aerial_back,jab2,jab3,run_brake;\n std::array<unsigned,5> multi_jump;\n std::array<unsigned,3> smash,rapid,smash_voices;\n std::array<unsigned,5> attack_air,landing_air;\n std::array<unsigned,4> grab;\n std::array<unsigned,3> crouch;\n std::array<unsigned,8> cliff;\n std::array<float,2> cliff_box;\n};\ninline constexpr std::array<FighterSourceData,12> fighter_source_data{{\n'
 for idx,name in enumerate(names):
  p=next((d/'src/relocData').glob('[0-9]*_'+name+'Main.c'))
  src=re.search(r'FTAttributes\s+\w+\s*=\s*\{(.*?)\n\};',p.read_text(),re.S).group(1)
@@ -25,7 +25,7 @@ for idx,name in enumerate(names):
   for s in suffix:
    if 'FT'+name+'Anim'+s in ids:return ids['FT'+name+'Anim'+s]
   if name=='Purin' and suffix[0]=='LandingAirX':return 1281
-  if name=='Purin' and suffix[0].startswith('Cliff'):return ids['FTKirbyAnim'+suffix[0]]
+  if name=='Purin' and (suffix[0].startswith('Cliff') or suffix[0]=='Catch' or suffix[0].startswith('Crouch')):return ids['FTKirbyAnim'+suffix[0]]
   if name=='Luigi':
    for s in suffix:
     if 'FTMarioAnim'+s in ids:return ids['FTMarioAnim'+s]
@@ -40,7 +40,24 @@ for idx,name in enumerate(names):
  rapid=[ids.get('FT'+name+'AnimJabLoop'+suffix,0) for suffix in ('Start','','End')]
  smash_voices=[voices[name] for name in re.findall(r'nSYAudio\w+',vals['smash_sfx'])]
  cliff=[clip(s) for s in ('CliffCatch','CliffWait','CliffQuick','CliffClimbQuick1','CliffClimbQuick2','CliffSlow','CliffClimbSlow1','CliffClimbSlow2')]
+ air=[clip('AttackAir'+s) for s in 'NFBUD']
+ landing_air=[ids.get('FT'+('Mario' if name=='Luigi' else name)+'AnimLandingAir'+s,0) for s in 'NFBUD']
+ grab=[clip('Catch'),clip('CatchPull'),clip('ThrowF','ForwardThrow'),clip('ThrowB')]
+ crouch=[clip('Crouch'),clip('CrouchIdle'),clip('CrouchEnd')]
  cliff_box=re.findall(r'[-\d.]+',vals['cliffcatch_coll'])
  flags=re.findall(r'^\s*(?:&ll\w+FileID|0x00000000),\s*[^,]+,\s*(0x[0-9A-Fa-f]+)',sub,re.M)[selected[idx]]
- text+='    {'+','.join(v+'f' if '.' in v else v+'.0f' for v in floats)+','+','.join(map(str,clips))+','+flags+'U,'+','.join(map(str,extra))+',{'+','.join(map(str,multi))+'},{'+','.join(map(str,attacks))+'},{'+','.join(map(str,rapid))+'},{'+','.join(map(str,smash_voices))+'},{'+','.join(map(str,cliff))+'},{'+','.join(v+'f' for v in cliff_box)+'}}, // '+name+'\n'
-text+='}};\n}\n';out.write_text(text)
+ text+='    {'+','.join(v+'f' if '.' in v else v+'.0f' for v in floats)+','+','.join(map(str,clips))+','+flags+'U,'+','.join(map(str,extra))+',{'+','.join(map(str,multi))+'},{'+','.join(map(str,attacks))+'},{'+','.join(map(str,rapid))+'},{'+','.join(map(str,smash_voices))+'},{'+','.join(map(str,air))+'},{'+','.join(map(str,landing_air))+'},{'+','.join(map(str,grab))+'},{'+','.join(map(str,crouch))+'},{'+','.join(map(str,cliff))+'},{'+','.join(v+'f' for v in cliff_box)+'}}, // '+name+'\n'
+text+='}};\n'
+# Main-motion flags bind both wrapper tracks and auxiliary joints (e.g. grabs).
+macros={k:int(v,16) for k,v in re.findall(r'#define\s+(FTANIM_FLAG_\w+)\s+(0x[0-9A-Fa-f]+)',(d/'src/ft/ftdef.h').read_text())}
+motion_flags={}
+for name,flags in re.findall(r'\{\s*&ll(\w+)FileID,\s*[^,]+,\s*([^}]+)\}',(d/'src/ft/ftdata.c').read_text()):
+ if name not in ids:continue
+ value=0
+ for token in re.findall(r'FTANIM_FLAG_\w+|0x[0-9A-Fa-f]+',flags):value|=macros.get(token,0) if token.startswith('FT') else int(token,16)
+ motion_flags.setdefault(ids[name],value)
+text+='struct SourceAnimationFlags { unsigned motion,flags; };\n'
+text+=f'inline constexpr std::array<SourceAnimationFlags,{len(motion_flags)}> source_animation_flags{{{{\n'
+text+=''.join('    {'+str(clip)+','+hex(flags)+'U},\n' for clip,flags in sorted(motion_flags.items()))+'}};\n'
+text+='inline unsigned fighter_motion_flags(unsigned motion) { for (const auto& entry:source_animation_flags) if (entry.motion==motion) return entry.flags; return 0; }\n}\n'
+out.write_text(text)

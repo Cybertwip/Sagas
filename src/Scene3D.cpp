@@ -435,7 +435,12 @@ void Scene3DRenderer::begin() {
 
 Vec3 Scene3DRenderer::joint_point(const Model3D& model,float frame,unsigned joint,Vec3 offset) {
     const auto found=std::find(model.source_joint_ids.begin(),model.source_joint_ids.end(),joint);
-    if (found==model.source_joint_ids.end()) return model.position;
+    if (found==model.source_joint_ids.end()) {
+        // Joint 0 is TopN, outside the common-part descriptor tree.
+        const auto root=multiply(multiply(translation({model.position.x,model.position.y,model.position.z}),
+            rotation({model.rotation.x,model.rotation.y,model.rotation.z})),scale({model.scale.x,model.scale.y,model.scale.z}));
+        return transform(root,offset);
+    }
     const auto matrices=world_matrices(animation_,model,frame);
     const auto& matrix=matrices.world[static_cast<std::size_t>(found-model.source_joint_ids.begin())];
     const auto point=transform(matrix,{offset.x,offset.y,offset.z});

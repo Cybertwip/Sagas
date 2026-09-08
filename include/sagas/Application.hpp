@@ -19,6 +19,7 @@ struct ApplicationOptions {
     int frame_limit{};
     bool capture_only{};
     std::filesystem::path capture_path;
+    std::filesystem::path controls_path{"controls.cfg"};
 };
 
 class Application final {
@@ -30,6 +31,14 @@ public:
     int run();
 private:
     InputState poll_input();
+    void load_controls();
+    void save_controls();
+    void draw_controls();
+    struct Binding { int key{},button{-1}; };
+    std::array<Binding,8> bindings_{};
+    bool controls_open_{},binding_wait_{},tap_jump_{true};
+    int control_row_{};
+    std::string controls_error_;
     ApplicationOptions options_;
     SDL_Window* window_{};
     SDL_Gamepad* gamepad_{};

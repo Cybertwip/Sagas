@@ -35,7 +35,7 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Shield, CliffCatch, CliffWait, CliffClimb, KO };
+enum class FighterStatus : std::uint8_t { Wait, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
 
 struct FighterModelSpec {
     std::string_view descriptor;
@@ -54,6 +54,8 @@ struct FighterBody {
     Vec3 vel_air{};
     Vec3 vel_damage{};
     float vel_ground{};
+    float floor_friction{4};
+    Vec2 floor_tangent{1,0};
     int lr{1};
     int stick_x{};
     int stick_y{};
@@ -65,6 +67,11 @@ struct FighterBody {
     int jab_followup_left{};
     bool jab_queued{};
     unsigned attack_motion{},attack_epoch{~0U};
+    int aerial_attack{-1}, shield_tics{255};
+    unsigned landing_motion{};
+    float landing_speed{1};
+    int capture_target{-1}, captured_by{-1}, capture_tics{};
+    bool throw_backward{};
     int rapid_inputs{},tap_stick_x{255};
     bool rapid_continue{};
     Vec2 cliff_edge{};
@@ -80,6 +87,8 @@ struct FighterBody {
     unsigned motion{};
     bool attack_pressed{}, jump_pressed{}, shield_held{};
     unsigned hit_mask{};
+    std::array<unsigned,8> hit_group_masks{};
+    std::array<unsigned,8> hit_group_epochs{~0U,~0U,~0U,~0U,~0U,~0U,~0U,~0U};
     int stocks{3};
     float shield{55};
 };
@@ -114,11 +123,15 @@ struct AttackVolume {
     float radius{};
     int damage{}, angle{}, growth{}, weight{}, base{};
     unsigned fgm{};
+    bool grab{};
+    unsigned group{},epoch{~0U};
 };
 struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; unsigned fgm{}; };
 class FighterCombat final {
 public:
     static void advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released=false);
+    static bool start_aerial(FighterBody& body,bool pressed);
+    static bool start_grab(FighterBody& body,bool pressed);
     static bool start_smash(FighterBody& body,bool pressed);
     [[nodiscard]] static std::vector<FighterHit> resolve(std::span<FighterBody> bodies,
                                                         std::span<const AttackVolume> attacks);

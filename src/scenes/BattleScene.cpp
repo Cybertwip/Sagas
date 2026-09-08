@@ -2,6 +2,7 @@
 #include <sagas/Fighter.hpp>
 #include <sagas/FighterSourceData.hpp>
 #include <sagas/FighterAttackData.hpp>
+#include <sagas/FighterThrowData.hpp>
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
 #include <sagas/OpeningMotionAudio.hpp>
@@ -46,10 +47,11 @@ public:
             bool attack=false;
             if (i==0) {
                 body.stick_x=static_cast<int>(input.stick_x); body.stick_y=static_cast<int>(input.stick_y);
-                body.jump_pressed=input.jump_pressed || (body.stick_y>=53 && previous_stick_y_<53);
+                body.jump_pressed=input.jump_pressed || (input.tap_jump && body.stick_y>=53 && previous_stick_y_<53);
                 if (body.jump_pressed) body.jump_button=input.jump_pressed;
                 body.jump_released=input.jump_released;
-                body.shield_held=input.shield_held; attack=input.accept_pressed;
+                body.shield_held=input.shield_held; attack=input.attack_pressed;
+                body.shield_tics=input.shield_pressed?0:std::min(255,body.shield_tics+1);
                 previous_stick_y_=body.stick_y;
             } else {
                 // Deterministic CPU approach; the same body/attack/collision
@@ -67,17 +69,34 @@ public:
             body.tap_stick_y=std::abs(body.stick_y)>=53 && (std::abs(old_y)<53 || old_y*body.stick_y<0)?0:std::min(255,body.tap_stick_y+1);
             const bool on_cliff=body.status==FighterStatus::CliffCatch || body.status==FighterStatus::CliffWait || body.status==FighterStatus::CliffClimb;
             if (on_cliff) update_cliff(body);
-            if (!on_cliff && !body.hitlag) {
+            if (!on_cliff && !body.hitlag && body.status!=FighterStatus::Captured) {
                 ++body.action_frame;
                 if (body.status==FighterStatus::Hitstun && --body.hitstun<=0)
                     body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
-                const bool smash=FighterCombat::start_smash(body,attack);
+                if (body.status==FighterStatus::Crouch && body.action_frame>=motion_length(body)) {
+                    body.status=FighterStatus::CrouchWait;body.action_frame=0;
+                } else if (body.status==FighterStatus::CrouchEnd && body.action_frame>=motion_length(body)) {
+                    body.status=FighterStatus::Wait;body.action_frame=0;
+                }
+                const bool grab=FighterCombat::start_grab(body,(i==0 && input.grab_pressed) || (attack && body.shield_held));
+                const bool aerial=FighterCombat::start_aerial(body,attack && !grab);
+                const bool smash=FighterCombat::start_smash(body,attack && !grab && !aerial);
+                if (body.status==FighterStatus::Land && body.landing_motion && body.action_frame*body.landing_speed>=motion_length(body)) {
+                    body.landing_motion=0;body.status=FighterStatus::Wait;body.action_frame=0;
+                }
+                if (body.status==FighterStatus::Catch && body.action_frame>=motion_length(body)) body.status=FighterStatus::Wait;
+                if (body.status==FighterStatus::Throw && body.capture_target<0 && body.action_frame>=motion_length(body)) body.status=FighterStatus::Wait;
+                if (body.status==FighterStatus::CatchWait && body.action_frame>=motion_length(body) &&
+                    (++body.capture_tics>=60 || attack || (std::abs(body.stick_x)>=20 && (std::abs(old_x)<20 || old_x*body.stick_x<0)))) {
+                    body.throw_backward=!attack && body.capture_tics<60 && body.stick_x*body.lr<0;
+                    body.status=FighterStatus::Throw;body.action_frame=0;
+                }
                 const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump || body.status==FighterStatus::Dash) &&
                                   body.action_frame>=motion_length(body);
-                FighterCombat::advance_jab(body,attack && !smash,ended,i==0 && input.attack_released);
+                FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab,ended,i==0 && input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status==FighterStatus::Dash && ended) {body.status=FighterStatus::Wait;body.vel_ground*=.75f;}
-                if (body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack) {
+                if (body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
                     if (body.shield_held && body.grounded && body.shield>0) {
                         body.status=FighterStatus::Shield; body.shield=std::max(0.0f,body.shield-.15f);
                     } else if (body.status==FighterStatus::Shield) body.status=FighterStatus::Wait;
@@ -121,17 +140,47 @@ public:
                         services.audio.play_fgm(fgm);
                     }
         }
+        // Resolve capture links after both fighters have advanced, so player order
+        // cannot move the captive twice or leave a stale link after interruption.
+        for (unsigned i=0;i<bodies_.size();++i) {
+            auto& holder=bodies_[i];
+            if (holder.capture_target<0) continue;
+            auto& captive=bodies_[holder.capture_target];
+            const bool release=holder.stocks<=0 || !holder.grounded ||
+                (holder.status!=FighterStatus::CatchWait && holder.status!=FighterStatus::Throw) ||
+                (holder.status==FighterStatus::CatchWait && holder.capture_tics>180);
+            if (release) {
+                captive.captured_by=-1;captive.status=FighterStatus::Fall;captive.grounded=false;
+                holder.capture_target=-1;
+                if (holder.status==FighterStatus::CatchWait) holder.status=FighterStatus::Wait;
+                continue;
+            }
+            captive.position={holder.position.x+holder.lr*(holder.attr.width+captive.attr.width),holder.position.y,0};
+            captive.lr=-holder.lr;
+            const auto& damage=source_throws[static_cast<unsigned>(holder.kind)][holder.throw_backward?1:0];
+            if (holder.status==FighterStatus::Throw && holder.action_frame>=damage.frame) {
+                captive.captured_by=-1;captive.status=FighterStatus::Wait;captive.invincible=0;
+                // Reuse the damage/knockback path with only the captured target eligible.
+                const unsigned saved=holder.hit_mask;
+                holder.hit_mask=~(1U<<holder.capture_target);
+                const int facing=holder.lr;
+                if (holder.throw_backward) holder.lr=-holder.lr;
+                AttackVolume hit{i,{captive.position.x,captive.position.y+captive.attr.width,0},1,
+                    damage.damage,damage.angle,damage.growth,damage.weight,damage.base,0};
+                (void)FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&hit,1));
+                holder.lr=facing;holder.hit_mask=saved;holder.capture_target=-1;
+            }
+        }
         std::vector<AttackVolume> volumes;
         for (unsigned i=0;i<bodies_.size();++i) {
             auto& body=bodies_[i];
-            if (body.status!=FighterStatus::Attack || body.hitlag || body.stocks<=0) continue;
+            if ((body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch) || body.hitlag || body.stocks<=0) continue;
             const auto model=posed(body);
             for (const auto& box:source_jab_hitboxes)
-                if (box.motion==body.motion && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
-                    if (body.attack_epoch!=box.epoch) {body.attack_epoch=box.epoch;body.hit_mask=0;}
+                if (box.kind==static_cast<unsigned>(body.kind) && box.motion==body.motion && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
                     const auto position=renderer_->joint_point(model,body.action_frame,box.joint,
                         {static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
-                    volumes.push_back({i,position,box.radius*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm});
+                    volumes.push_back({i,position,box.radius*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm,body.status==FighterStatus::Catch,box.group,box.epoch});
                 }
         }
         const auto hits=FighterCombat::resolve(bodies_,volumes);
@@ -151,7 +200,7 @@ public:
         for (const auto& body:bodies_) {
             if (body.stocks<=0 || (body.invincible && tic_%6<2)) continue;
             const auto model=posed(body);
-            renderer_->draw(r,model,camera,static_cast<float>(body.action_frame),
+            renderer_->draw(r,model,camera,body.action_frame*(body.status==FighterStatus::Land?body.landing_speed:1.f),
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
         }
         renderer_->end(r);
@@ -207,6 +256,9 @@ private:
     static unsigned motion(const FighterBody& body) {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
         switch(body.status) {
+            case FighterStatus::Crouch:return data.crouch[0];
+            case FighterStatus::CrouchWait:return data.crouch[1];
+            case FighterStatus::CrouchEnd:return data.crouch[2];
             case FighterStatus::Walk:return data.walk;
             case FighterStatus::Dash:return data.dash_clip;
             case FighterStatus::Run:return data.run_clip;
@@ -220,7 +272,11 @@ private:
                 if (data.multi_jump[0]) return data.multi_jump[std::clamp(body.jumps_used-2,0,4)];
                 return body.jump_backward?data.aerial_back:data.aerial_forward;
             case FighterStatus::Fall:return data.fall;
-            case FighterStatus::Land:return data.landing;
+            case FighterStatus::Land:return body.landing_motion?body.landing_motion:data.landing;
+            case FighterStatus::Catch:return data.grab[0];
+            case FighterStatus::CatchWait:return data.grab[1];
+            case FighterStatus::Captured:return data.damage;
+            case FighterStatus::Throw:return data.grab[body.throw_backward?3:2];
             case FighterStatus::Attack:
                 if (body.attack_motion) return body.attack_motion;
                 if (body.jab_stage>=4) return data.rapid[body.jab_stage-4];
@@ -252,9 +308,7 @@ private:
         const unsigned key=static_cast<unsigned>(body.kind)*4096+clip;
         if (!models_.contains(key)) {
             const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
-            const unsigned flags=((body.kind==FighterKind::Ness || body.kind==FighterKind::Yoshi) &&
-                (clip==data.aerial_forward || clip==data.aerial_back)) ||
-                std::find(data.cliff.begin(),data.cliff.end(),clip)!=data.cliff.end()?0x40000000U:0;
+            const unsigned flags=fighter_motion_flags(clip);
             models_.emplace(key,loader_->fighter_motion(body.kind,clip,flags));
         }
         auto model=models_.at(key);

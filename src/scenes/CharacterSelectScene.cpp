@@ -36,6 +36,7 @@ public:
             slots_[i] = {SlotKind::None, FighterKind::Mario, false};
         cursor_x_ = kPortraitX[1] + 22;
         cursor_y_ = kPortraitY[1] + 22;
+        slots_[0].puck={cursor_x_-6,cursor_y_-6};
     }
     void enter(Services& services) override {
         archive_=&services.resources.archive();
@@ -47,53 +48,68 @@ public:
     }
     void update(Services& services, const InputState& input, float) override {
         ++tic_;
+        for (unsigned i=0;i<slots_.size();++i)
+            door_offset_[i]=std::clamp(door_offset_[i]+(slots_[i].kind==SlotKind::None?2.f:-2.f),0.f,41.f);
         cursor_x_ = std::clamp(cursor_x_ + input.stick_x / 20.0f, 0.0f, 280.0f);
         cursor_y_ = std::clamp(cursor_y_ - input.stick_y / 20.0f, 10.0f, 230.0f);
+        if (input.pointer_moved || input.pointer_pressed || input.pointer_released) {
+            cursor_x_=std::clamp(input.pointer_x,0.f,300.f);
+            cursor_y_=std::clamp(input.pointer_y,10.f,230.f);
+        }
+        if (held_slot_>=0) slots_[held_slot_].puck={cursor_x_-6,cursor_y_-6};
         const int hover = portrait_at(cursor_x_,cursor_y_);
         if (hover!=hover_) {
             hover_=hover;
-            if (hover>=0 && !slots_[active_slot_].selected) {
+            if (hover>=0 && held_slot_>=0) {
                 slots_[active_slot_].fkind=kPortraitKind[hover];
                 load_preview(slots_[active_slot_].fkind,active_slot_,false);
                 services.audio.play(AudioCue::MenuScroll);
             }
         }
-        if (input.accept_pressed) {
+        const auto place=[&] {
+            if (held_slot_<0 || hover_<0) return;
+            auto& slot=slots_[held_slot_];
+            slot.fkind=kPortraitKind[hover_];slot.selected=true;
+            load_preview(slot.fkind,held_slot_,true);
+            selected_tick_[held_slot_]=tic_;
+            services.audio.play_fgm(fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);
+            held_slot_=-1;
+        };
+        if (input.accept_pressed || input.pointer_pressed) {
             int pickup=-1;
-            if (slots_[active_slot_].selected || slots_[active_slot_].kind==SlotKind::None)
+            if (held_slot_<0)
                 for (unsigned i=0;i<slots_.size();++i) {
                     const auto& slot=slots_[i];
                     if (slot.selected && cursor_x_>=slot.puck.x && cursor_x_<=slot.puck.x+26 &&
                         cursor_y_>=slot.puck.y && cursor_y_<=slot.puck.y+24) {pickup=static_cast<int>(i);break;}
                 }
             if (pickup>=0) {
-                active_slot_=pickup;
+                active_slot_=pickup;held_slot_=pickup;
                 slots_[pickup].selected=false;
+                slots_[pickup].puck={cursor_x_-6,cursor_y_-6};
                 load_preview(slots_[pickup].fkind,pickup,false);
                 services.audio.play(AudioCue::MenuSelect);
-            } else if (cursor_y_>=195 && cursor_y_<214) {
+            } else if ((one_player_?(cursor_y_>=195 && cursor_y_<214):(cursor_y_>=128 && cursor_y_<143)) && cursor_x_>=22) {
                 const int slot=static_cast<int>((cursor_x_-22)/69);
                 if (slot>=0 && slot<(one_player_?1:4)) {
+                    if (held_slot_>=0 && held_slot_!=slot) slots_[held_slot_].selected=false;
                     active_slot_=slot;
                     if (slot>0) slots_[slot].kind=slots_[slot].kind==SlotKind::None?SlotKind::Cpu:SlotKind::None;
-                    slots_[slot].selected=false;
-                    previews_[slot]={};
+                    slots_[slot].selected=false;previews_[slot]={};
+                    held_slot_=slots_[slot].kind==SlotKind::None?-1:slot;
+                    hover_=-1;
                     services.audio.play(AudioCue::MenuSelect);
                 }
-            } else if (hover_>=0 && slots_[active_slot_].kind!=SlotKind::None && !slots_[active_slot_].selected) {
-                auto& slot=slots_[active_slot_];
-                slot.fkind=kPortraitKind[hover_];slot.selected=true;
-                slot.puck={cursor_x_-6,cursor_y_-6};
-                load_preview(slot.fkind,active_slot_,true);
-                selected_tick_[active_slot_]=tic_;
-                services.audio.play_fgm(fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);
-            } else if (cursor_y_>=214 && cursor_x_<50) back_=true;
+            } else if (input.accept_pressed) place();
+            if (one_player_?(cursor_y_>=214 && cursor_x_<50):(cursor_y_>=16 && cursor_y_<30 && cursor_x_>=244)) back_=true;
         }
+        if (input.pointer_released) place();
         if (input.cancel_pressed) {
             if (slots_[active_slot_].selected) {
-                slots_[active_slot_].selected=false;
+                slots_[active_slot_].selected=false;held_slot_=static_cast<int>(active_slot_);
+                slots_[active_slot_].puck={cursor_x_-6,cursor_y_-6};
                 load_preview(slots_[active_slot_].fkind,active_slot_,false);
-            } else if (active_slot_!=0) active_slot_=0;
+            } else if (active_slot_!=0) {active_slot_=0;held_slot_=slots_[0].selected?-1:0;}
             else back_=true;
         }
         if ((input.start_pressed || input.skip_pressed) && ready()) start_=true;
@@ -102,16 +118,17 @@ public:
     void draw(Services& services) override {
         auto& r = services.render;
         r.begin({0,0,0,255});
-        // Source SObj wraps a 64x32 tile; stretching it magnifies one tile
-        // into the blocky background reported on the selection screen.
-        for (float y=-22;y<240;y+=32)
-            for (float x=-54;x<320;x+=64)
+        // mnPlayers1PGameMakeWallpaper: 64x32 wrap, anchored at (10,10).
+        r.scissor_game(10,10,300,220);
+        for (float y=10;y<230;y+=32)
+            for (float x=10;x<310;x+=64)
                 r.sprite_at("textures/MNSelectCommon/StoneBackground.png",{x,y});
+        r.reset_scissor();
         if (one_player_)
             r.sprite_at("textures/MNPlayers1PMode/1PlayerGameText.png", {24,18});
         else {
             r.sprite_at("textures/MNPlayersGameModes/FreeForAllText.png", {24,18}, {1,1},
-                        team_ ? Color{180,180,180,255} : Color{255,255,255,255});
+                        team_ ? Color{180,180,180,255} : Color{227,172,4,255});
             if (team_) r.sprite_at("textures/MNPlayersGameModes/TeamBattleText.png", {140,18});
         }
 
@@ -131,19 +148,11 @@ public:
             const float x = static_cast<float>(player * 69 + 22);
             static constexpr std::array<const char*,4> cards{"RedCard.png","GrayCard.png","GrayCard.png","GrayCard.png"};
             const std::string card=slots_[player].kind==SlotKind::None?"GrayCard.png":cards[player];
-            r.sprite_at("textures/MNPlayersCommon/"+card,{x,131});
-            if (slots_[player].kind == SlotKind::None)
-                r.sprite_at("textures/MNPlayersCommon/NALabel.png", {x + 12, 201});
-            else {
-                r.sprite_at(slots_[player].kind == SlotKind::Cpu
-                            ? "textures/MNPlayersCommon/CPLabel.png"
-                            : "textures/MNPlayersCommon/HmnLabel.png", {x + 8, 201});
-                if (slots_[player].selected) {
-                    r.sprite_at(std::string("textures/CharacterNames/") +
-                                std::string(fighter_kind_name(slots_[player].fkind)) + ".png",
-                                {x + 8, 134});
-                    r.sprite_at(pucks[player],slots_[player].puck);
-                }
+            r.sprite_at("textures/MNPlayersCommon/"+card,{x,one_player_?131.f:126.f});
+            if (slots_[player].selected) {
+                r.sprite_at(std::string("textures/CharacterNames/") +
+                            std::string(fighter_kind_name(slots_[player].fkind)) + ".png",{x+8,146});
+                r.sprite_at(pucks[player],slots_[player].puck);
             }
         }
 
@@ -163,9 +172,27 @@ public:
         }
         renderer_->end(r);
 
-        r.sprite("textures/MNPlayersCommon/CursorHandPoint.png", {cursor_x_ + 12, cursor_y_ + 8});
-        if (!slots_[active_slot_].selected && slots_[active_slot_].kind!=SlotKind::None)
-            r.sprite_at(pucks[active_slot_],{cursor_x_-6,cursor_y_-6});
+        for (int player=0;player<gates;++player) {
+            const float x=22+player*69.f;
+            if (!one_player_ && door_offset_[player]>0) {
+                r.scissor_game(x,126,66,91);
+                r.sprite_at("textures/MNPlayersCommon/SmashLogoCardLeft.png",{x-41+door_offset_[player],126});
+                r.sprite_at("textures/MNPlayersCommon/SmashLogoCardRight.png",{x+66-door_offset_[player],126});
+                r.reset_scissor();
+            }
+            const auto label=slots_[player].kind==SlotKind::None?"NALabel.png":slots_[player].kind==SlotKind::Cpu?"CPLabel.png":"HmnLabel.png";
+            r.sprite_at("textures/MNPlayersCommon/"+std::string(label),{x+(one_player_?8.f:42.f),one_player_?201.f:131.f});
+        }
+        // Pucks render beneath the hand in both held and placed states.
+        if (held_slot_>=0) r.sprite_at(pucks[held_slot_],slots_[held_slot_].puck);
+        const bool portrait_band=cursor_y_>=38 && cursor_y_<=124;
+        const int hand=portrait_band?(held_slot_>=0?1:2):0;
+        constexpr std::array<const char*,3> hands{"CursorHandPoint.png","CursorHandGrab.png","CursorHandHover.png"};
+        constexpr std::array<Vec2,3> label_offset{{{7,15},{9,10},{9,15}}};
+        const Vec2 hand_pos{cursor_x_-17,cursor_y_+8};
+        r.sprite_at("textures/MNPlayersCommon/"+std::string(hands[hand]),hand_pos);
+        r.sprite_at("textures/MNPlayersCommon/1PTextGradient.png",
+                    {hand_pos.x+label_offset[hand].x,hand_pos.y+label_offset[hand].y},{1,1},{224,21,21,255});
         if (ready()) {
             const auto pulse = static_cast<std::uint8_t>(180 + 75 * ((tic_ / 8) % 2));
             r.sprite("textures/MNPlayersCommon/ReadyToFightText.png", {160, 122}, {1,1},
@@ -173,7 +200,7 @@ public:
             r.sprite("textures/MNPlayersCommon/PressText.png", {118, 14});
             r.sprite("textures/MNPlayersCommon/StartText.png", {168, 14});
         }
-        r.sprite_at("textures/MNPlayersCommon/BackButton.png", {12, 214});
+        r.sprite_at("textures/MNPlayersCommon/BackButton.png",one_player_?Vec2{12,214}:Vec2{244,16});
         r.end();
     }
     std::unique_ptr<Scene> next() override;
@@ -214,9 +241,11 @@ private:
     bool back_{};
     bool start_{};
     std::array<Slot,4> slots_{};
+    std::array<float,4> door_offset_{41,41,41,41};
     std::array<Model3D,4> previews_{};
     std::array<int,4> selected_tick_{};
     unsigned active_slot_{};
+    int held_slot_{0};
     n64::RelocArchive* archive_{};
     std::unique_ptr<Scene3DLoader> loader_;
     std::unique_ptr<Scene3DRenderer> renderer_;

@@ -2,6 +2,7 @@
 #include <sagas/Engine.hpp>
 #include <sagas/Fighter.hpp>
 #include <sagas/FighterSourceData.hpp>
+#include <sagas/FighterAttackData.hpp>
 #include <sagas/N64.hpp>
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
@@ -470,7 +471,7 @@ int main() {
     const std::array<sagas::CollisionSegment,2> platforms{{
         {{-1000,0},{1000,0},0,0,false},{{-100,500},{100,500},0,0,true}}};
     mario.position={0,500,0}; mario.vel_air={}; mario.grounded=true;
-    mario.status=sagas::FighterStatus::Wait; mario.stick_y=-80;
+    mario.status=sagas::FighterStatus::Wait; mario.stick_y=-80; mario.tap_stick_y=0;
     sagas::FighterPhysics::tick(mario,platforms);
     assert(!mario.grounded && mario.position.y<500);
     mario.stick_y=0;
@@ -502,7 +503,7 @@ int main() {
     const float landed_x=sliding.position.x,landed_speed=sliding.vel_damage.x;
     sagas::FighterPhysics::tick(sliding,0);
     assert(sliding.position.x>landed_x);
-    assert(std::abs(sliding.vel_damage.x-(landed_speed-sliding.attr.traction*.25f))<.001f);
+    assert(std::abs(sliding.vel_damage.x-(landed_speed-sliding.floor_friction*sliding.attr.traction*.25f))<.001f);
     sagas::FighterBody jumping;
     jumping.attr=sagas::fighter_attributes(jumping.kind);
     jumping.jump_button=true;
@@ -523,6 +524,133 @@ int main() {
         }
         assert(jumping.jumps_used==6);
         sagas::FighterPhysics::jump(jumping); assert(jumping.jumps_used==6);
+    }
+    // Source normal-floor material (4) versus slippery material (1).
+    sagas::FighterBody friction_body;friction_body.attr=sagas::fighter_attributes(friction_body.kind);
+    friction_body.vel_ground=40;
+    for (const float speed:{34.f,28.f,22.f,16.f,10.f,4.f,0.f}) {
+        sagas::FighterPhysics::tick(friction_body,0);
+        assert(std::abs(friction_body.vel_ground-speed)<.001f);
+    }
+    const sagas::CollisionSegment slippery{{-1000,0},{1000,0},0,3,false};
+    friction_body.vel_ground=40;
+    sagas::FighterPhysics::tick(friction_body,std::span<const sagas::CollisionSegment>(&slippery,1));
+    assert(std::abs(friction_body.vel_ground-38.5f)<.001f);
+    // Sloped ground velocity follows the tangent, retaining its magnitude.
+    const sagas::CollisionSegment slope{{-1000,-500},{1000,500},0,0,false};
+    friction_body={};friction_body.attr=sagas::fighter_attributes(friction_body.kind);
+    friction_body.status=sagas::FighterStatus::Run;friction_body.stick_x=80;
+    sagas::FighterPhysics::tick(friction_body,std::span<const sagas::CollisionSegment>(&slope,1));
+    assert(friction_body.grounded && std::abs(friction_body.position.y-friction_body.position.x*.5f)<.001f);
+    assert(std::abs(std::hypot(friction_body.position.x,friction_body.position.y)-44.f)<.001f);
+    // Down held through the apex cannot trigger fast-fall; a new tap can.
+    sagas::FighterBody fastfall_body;fastfall_body.attr=sagas::fighter_attributes(fastfall_body.kind);
+    fastfall_body.position.y=1000;fastfall_body.grounded=false;fastfall_body.status=sagas::FighterStatus::Fall;
+    fastfall_body.vel_air.y=-1;fastfall_body.stick_y=-80;fastfall_body.tap_stick_y=10;
+    sagas::FighterPhysics::tick(fastfall_body,0);assert(!fastfall_body.fastfall);
+    fastfall_body.tap_stick_y=0;sagas::FighterPhysics::tick(fastfall_body,0);
+    assert(fastfall_body.fastfall && fastfall_body.vel_air.y==-70 && fastfall_body.tap_stick_y==255);
+    // Every roster member exposes all five aerials and source hitbox windows.
+    for (unsigned kind=0;kind<12;++kind) for (int direction=0;direction<5;++direction) {
+        sagas::FighterBody air;air.kind=static_cast<sagas::FighterKind>(kind);air.attr=sagas::fighter_attributes(air.kind);
+        air.position.y=1000;air.grounded=false;air.status=sagas::FighterStatus::Fall;air.lr=-1;
+        air.stick_x=direction==1?-80:direction==2?80:0;air.stick_y=direction==3?80:direction==4?-80:0;
+        assert(sagas::FighterCombat::start_aerial(air,true));
+        assert(air.aerial_attack==direction && air.lr==-1);
+        assert(std::any_of(sagas::source_jab_hitboxes.begin(),sagas::source_jab_hitboxes.end(),[&](const auto& box){return box.kind==kind && box.motion==air.attack_motion;}));
+        assert(!sagas::FighterCombat::start_aerial(air,true));
+        sagas::FighterCombat::advance_jab(air,false,true);
+        assert(air.status==sagas::FighterStatus::Fall && air.attack_motion==0);
+    }
+    // An active fair lands into its authored landing clip, unless Z-cancelled.
+    for (const bool cancel:{false,true}) {
+        sagas::FighterBody air;air.attr=sagas::fighter_attributes(air.kind);air.grounded=false;
+        air.status=sagas::FighterStatus::Fall;air.stick_x=80;
+        assert(sagas::FighterCombat::start_aerial(air,true));
+        air.action_frame=11;air.shield_tics=cancel?0:255;air.position.y=1;air.vel_air={20,-10,0};
+        sagas::FighterPhysics::tick(air,0);
+        assert(air.grounded && air.status==sagas::FighterStatus::Land && air.attack_motion==0);
+        assert(cancel?air.landing_motion==0:air.landing_motion==627);
+        assert(air.vel_ground>0); // landing no longer restores an old dash velocity
+    }
+    // Grabs bypass a shield, create reciprocal capture links, and deal no jab damage.
+    std::array<sagas::FighterBody,2> grabbing{};
+    for (auto& body:grabbing) body.attr=sagas::fighter_attributes(body.kind);
+    grabbing[1].status=sagas::FighterStatus::Shield;
+    assert(sagas::FighterCombat::start_grab(grabbing[0],true));
+    sagas::AttackVolume grab{0,{0,160,0},160,1,361,100,0,0,0,true};
+    assert(sagas::FighterCombat::resolve(grabbing,std::span<const sagas::AttackVolume>(&grab,1)).size()==1);
+    assert(grabbing[0].capture_target==1 && grabbing[1].captured_by==0);
+    assert(grabbing[1].status==sagas::FighterStatus::Captured && grabbing[1].damage==0 && grabbing[1].shield==55);
+    sagas::FighterCombat::advance_jab(grabbing[0],true,false);
+    assert(grabbing[0].status==sagas::FighterStatus::CatchWait);
+    sagas::InputState edges;edges.attack_pressed=edges.grab_pressed=edges.shield_pressed=edges.pointer_released=true;
+    sagas::InputState latched;latched.latch_edges(edges);latched.clear_edges();
+    assert(!latched.attack_pressed && !latched.grab_pressed && !latched.shield_pressed && !latched.pointer_released);
+    // Ground crouch holds its facing and blocks walking until released.
+    sagas::FighterBody crouching;crouching.attr=sagas::fighter_attributes(crouching.kind);
+    crouching.stick_y=-53;crouching.stick_x=80;
+    sagas::FighterPhysics::tick(crouching,0);
+    assert(crouching.status==sagas::FighterStatus::Crouch && crouching.position.x==0);
+    crouching.status=sagas::FighterStatus::CrouchWait;crouching.stick_y=-50;
+    sagas::FighterPhysics::tick(crouching,0);assert(crouching.status==sagas::FighterStatus::CrouchWait);
+    crouching.stick_y=-49;sagas::FighterPhysics::tick(crouching,0);
+    assert(crouching.status==sagas::FighterStatus::CrouchEnd);
+    // Fox up-air's group change must reconnect after the 2-damage setup hit.
+    const auto fox_uair=sagas::fighter_source_data[9].attack_air[3];
+    std::array<sagas::FighterBody,2> multi{};
+    for (auto& body:multi) body.attr=sagas::fighter_attributes(body.kind);
+    unsigned first_epoch=0;
+    for (const unsigned frame:{6U,12U}) {
+        unsigned contacts=0;
+        for (const auto& box:sagas::source_jab_hitboxes) if (box.motion==fox_uair && box.begin<=frame && frame<box.end) {
+            if (frame==6) first_epoch=box.epoch;
+            else assert(first_epoch!=box.epoch);
+            sagas::AttackVolume volume{0,{0,160,0},160,box.damage,box.angle,box.growth,box.weight,box.base,0,false,box.group,box.epoch};
+            contacts+=sagas::FighterCombat::resolve(multi,std::span<const sagas::AttackVolume>(&volume,1)).size();
+        }
+        assert(contacts==1); // paired hitboxes cannot deal the same hit twice
+        multi[0].hitlag=multi[1].hitlag=0;
+    }
+    assert(multi[1].damage==15);
+    // Explicit record refreshes split Fox's drill into seven reconnect windows.
+    std::vector<unsigned> drill_epochs;
+    for (const auto& box:sagas::source_jab_hitboxes) if (box.motion==sagas::fighter_source_data[9].attack_air[4] && box.id==0)
+        drill_epochs.push_back(box.epoch);
+    assert(drill_epochs.size()==7);
+    assert(std::adjacent_find(drill_epochs.begin(),drill_epochs.end())==drill_epochs.end());
+    for (unsigned kind=0;kind<12;++kind) {
+        const auto& data=sagas::fighter_source_data[kind];
+        for (const unsigned clip:{data.attack_air[0],data.attack_air[1],data.grab[0]}) {
+            const auto actor=scene_loader.fighter_motion(static_cast<sagas::FighterKind>(kind),clip,sagas::fighter_motion_flags(clip));
+            if (kind==2 && clip!=data.grab[0]) {
+                assert(actor.fighter_wrapper==sagas::Model3D::FighterWrapper::XRotN);
+                const auto raw=animation_decoder.table({clip,0},actor.nodes.size()+1);
+                assert(actor.animation.front()==raw[1]);
+            }
+            for (const auto& box:sagas::source_jab_hitboxes) if (box.kind==kind && box.motion==clip) {
+                const bool present=box.joint==0 || std::find(actor.source_joint_ids.begin(),actor.source_joint_ids.end(),box.joint)!=actor.source_joint_ids.end();
+                if (!present) std::cerr<<"Missing source hitbox joint: kind "<<kind<<" clip "<<clip<<" joint "<<box.joint<<'\n';
+                assert(present);
+            }
+        }
+    }
+    // Actual Mario grab geometry: auxiliary joint 28 is enabled by motion flags.
+    {
+        const unsigned clip=sagas::fighter_source_data[1].grab[0];
+        auto actor=scene_loader.fighter_motion(sagas::FighterKind::Mario,clip,sagas::fighter_motion_flags(clip));
+        actor.rotation.y=1.57079632679f;actor.scale={1.12f,1.12f,1.12f};
+        std::array<sagas::FighterBody,2> bodies{};
+        for (auto& body:bodies) body.attr=sagas::fighter_attributes(body.kind);
+        bodies[1].position.x=220;assert(sagas::FighterCombat::start_grab(bodies[0],true));
+        std::vector<sagas::AttackVolume> volumes;
+        for (const auto& box:sagas::source_jab_hitboxes) if (box.kind==1 && box.motion==clip && box.begin==6) {
+            auto point=pose_renderer.joint_point(actor,6,box.joint,{static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
+            volumes.push_back({0,point,box.radius*.5f*1.12f,1,361,100,0,0,0,true,box.group,box.epoch});
+        }
+        assert(!volumes.empty());
+        assert(sagas::FighterCombat::resolve(bodies,volumes).size()==1);
+        assert(bodies[1].status==sagas::FighterStatus::Captured);
     }
     sagas::FighterBody combo;combo.attr=sagas::fighter_attributes(combo.kind);
     sagas::FighterCombat::advance_jab(combo,true,false);

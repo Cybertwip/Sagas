@@ -818,6 +818,40 @@ int main() {
         assert(fox.special_phase==1);
         fox.special_held=false;sagas::FighterCombat::advance_special(fox,false,false);assert(fox.special_phase==2);
     }
+    for (auto status:{sagas::FighterStatus::Run,sagas::FighterStatus::RunBrake,sagas::FighterStatus::KneeBend}) {
+        sagas::FighterBody runner;runner.status=status;runner.stick_y=80;runner.tap_stick_y=0;
+        sagas::FighterCombat::buffer_smash(runner,true);
+        assert(sagas::FighterCombat::start_smash(runner,false));
+        assert(runner.attack_motion==sagas::fighter_source_data[1].smash[1]);
+    }
+    {
+        sagas::FighterBody jump;jump.kind=sagas::FighterKind::Fox;jump.attr=sagas::fighter_attributes(jump.kind);
+        jump.status=sagas::FighterStatus::KneeBend;
+        sagas::FighterCombat::buffer_aerial(jump,true);
+        assert(!sagas::FighterCombat::start_aerial(jump,false));
+        jump.grounded=false;jump.status=sagas::FighterStatus::Jump;
+        sagas::FighterCombat::buffer_aerial(jump,false);
+        assert(sagas::FighterCombat::start_aerial(jump,false) && jump.aerial_buffer==0);
+    }
+    for (auto kind:{sagas::FighterKind::Fox,sagas::FighterKind::Captain,sagas::FighterKind::Pikachu}) {
+        sagas::FighterBody neutral;neutral.kind=kind;neutral.attr=sagas::fighter_attributes(kind);neutral.grounded=false;neutral.status=sagas::FighterStatus::Fall;
+        assert(sagas::FighterCombat::start_special(neutral,true));
+        neutral.special_projectile=true;neutral.action_frame=20;neutral.position.y=1;neutral.vel_air.y=-10;
+        sagas::FighterPhysics::tick(neutral,0);
+        assert(neutral.status==sagas::FighterStatus::Special && neutral.special_index==0 && neutral.action_frame>=20);
+        assert(neutral.special_projectile && neutral.special_motion==sagas::fighter_source_data[static_cast<unsigned>(kind)].special_start[0]);
+    }
+    {
+        sagas::FighterBody pika;pika.kind=sagas::FighterKind::Pikachu;pika.attr=sagas::fighter_attributes(pika.kind);pika.stick_y=80;
+        assert(sagas::FighterCombat::start_special(pika,true));
+        for(int frame=0;frame<20;++frame) sagas::FighterCombat::advance_special(pika,false,true);
+        assert(pika.special_phase==3 && pika.special_velocity.y>329);
+        pika.action_frame=5;sagas::FighterCombat::advance_special(pika,false,false);
+        assert(pika.special_phase==2);
+        pika.stick_x=80;pika.stick_y=0;pika.action_frame=20;
+        sagas::FighterCombat::advance_special(pika,false,false);
+        assert(pika.special_second && pika.special_phase==3 && pika.special_velocity.x>296);
+    }
     {
         sagas::FighterBody queued;queued.attr=sagas::fighter_attributes(queued.kind);queued.status=sagas::FighterStatus::Land;
         queued.stick_x=80;queued.tap_stick_x=0;sagas::FighterCombat::buffer_smash(queued,true);

@@ -115,8 +115,8 @@ public:
                 }
                 const bool grab=FighterCombat::start_grab(body,(human && player_input.grab_pressed) || (attack && body.shield_held));
                 const bool aerial=FighterCombat::start_aerial(body,attack && !grab);
-                const bool dash_attack=FighterCombat::start_dash_attack(body,attack && !grab && !aerial && body.smash_buffer<=0);
-                const bool smash=FighterCombat::start_smash(body,attack && !grab && !aerial && !dash_attack);
+                const bool dash_attack=FighterCombat::start_dash_attack(body,attack && body.aerial_buffer<=0 && !grab && !aerial && body.smash_buffer<=0);
+                const bool smash=FighterCombat::start_smash(body,attack && body.aerial_buffer<=0 && !grab && !aerial && !dash_attack);
                 if (body.status==FighterStatus::Land && body.landing_motion && body.action_frame*body.landing_speed>=motion_length(body)) {
                     body.landing_motion=0;body.status=FighterStatus::Wait;body.action_frame=0;
                 }
@@ -127,7 +127,7 @@ public:
                     body.throw_backward=!attack && body.capture_tics<60 && body.stick_x*body.lr<0;
                     body.status=FighterStatus::Throw;body.action_frame=0;
                 }
-                const bool tilt=FighterCombat::start_tilt(body,attack && !grab && !aerial && !smash);
+                const bool tilt=FighterCombat::start_tilt(body,attack && body.aerial_buffer<=0 && !grab && !aerial && !smash);
                 const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump || body.status==FighterStatus::Dash) &&
                                   body.action_frame>=motion_length(body);
                 FighterCombat::advance_jab(body,attack && !body.jump_pressed && body.aerial_buffer<=0 && !smash && !aerial && !grab && !tilt && !dash_attack,ended,human && player_input.attack_released);
@@ -212,7 +212,7 @@ public:
                     }
             }
             body.recovery_invulnerable=false;
-            if (fighter_is_down(body.status) || body.status==FighterStatus::ShieldRoll) {
+            if (fighter_is_down(body.status) || body.status==FighterStatus::ShieldRoll || body.status==FighterStatus::Special) {
                 unsigned hit_status=1;
                 for (const auto& event:source_hit_status)
                     if (event.kind==static_cast<unsigned>(body.kind) && event.motion==clip && event.frame<=static_cast<unsigned>(body.action_frame)) hit_status=event.status;
@@ -339,8 +339,9 @@ public:
             }
             if (shot.life<=0) continue;
             const auto& a=weapon_source_data[shot.weapon];
-            AttackVolume contact{shot.owner,shot.position,a.size*.5f,a.damage,a.angle,a.growth,a.weight,a.base,static_cast<unsigned>(a.sfx),false,0,~0U,static_cast<unsigned>(a.element),true,shot.facing};
+            AttackVolume contact{shot.owner,shot.position,a.size*.5f,a.damage,a.angle,a.growth,a.weight,a.base,static_cast<unsigned>(a.sfx),false,0,~0U,static_cast<unsigned>(a.element),true,shot.facing,shot.hit_mask};
             auto contacts=FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&contact,1));
+            for (const auto& contact_hit:contacts) shot.hit_mask|=1U<<contact_hit.defender;
             if (!contacts.empty()) {if (shot.weapon!=7) shot.life=0;hits.insert(hits.end(),contacts.begin(),contacts.end());}
             const Color color=a.element==2?Color{130,200,255,255}:shot.weapon==2?Color{255,80,80,255}:Color{255,160,55,255};
             particles_.push_back({shot.position,{},color,0,3,shot.weapon==2?50.f:90.f,true});
@@ -502,7 +503,7 @@ private:
             model.rotation.z=body.lr*std::numbers::pi_v<float>/2-std::atan2(body.special_velocity.x,body.special_velocity.y);
         model.scale={body.attr.size,body.attr.size,body.attr.size};return model;
     }
-    struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity; };
+    struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity;unsigned hit_mask{}; };
     std::vector<Projectile> projectiles_;
     void spawn_projectile(unsigned owner,const FighterBody& body) {
         if (body.kind==FighterKind::Pikachu && body.special_index%3==2) {

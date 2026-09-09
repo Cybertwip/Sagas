@@ -147,6 +147,7 @@ struct AttackVolume {
     unsigned group{},epoch{~0U},element{};
     bool projectile{};
     int facing{};
+    unsigned excluded_mask{};
 };
 struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; unsigned fgm{},element{}; };
 class FighterCombat final {

@@ -371,6 +371,10 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         body.status=FighterStatus::Fall;body.action_frame=0;
         body.vel_air.x=std::clamp(body.vel_air.x,-body.attr.air_speed_max_x,body.attr.air_speed_max_x);
     }
+    if (was_grounded && !body.grounded && body.status==FighterStatus::Special && body.special_index%3!=1) {
+        const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];body.special_index=body.special_index%3+3;
+        body.special_motion=body.special_phase==0?data.special_start[body.special_index]:body.special_phase==1?data.special_loop[body.special_index]:body.special_phase==4?data.special_hit[body.special_index]:data.special_end[body.special_index];
+    }
     if (was_grounded && !body.grounded && body.jumps_used==0) body.jumps_used=1;
     body.jump_pressed=false;
 }
@@ -689,7 +693,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
         auto& attacker=bodies[hit.owner];
         if (attacker.status==FighterStatus::Captured || attacker.status==FighterStatus::KO) continue;
         const unsigned group=std::min(7U,hit.group);
-        unsigned projectile_mask=0;
+        unsigned projectile_mask=hit.excluded_mask;
         unsigned& mask=hit.projectile?projectile_mask:hit.epoch==~0U?attacker.hit_mask:attacker.hit_group_masks[group];
         if (!hit.projectile && hit.epoch!=~0U && attacker.hit_group_epochs[group]!=hit.epoch) {
             attacker.hit_group_epochs[group]=hit.epoch;mask=0;

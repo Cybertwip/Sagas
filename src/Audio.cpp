@@ -102,7 +102,8 @@ Pcm render_fgm(AssetRepository& assets, std::uint32_t voice_id, float gain) {
     for (const auto& voice:cue.voices) {
         const auto& wave=wave_for(voice.wave);
         const std::size_t begin=static_cast<std::size_t>(voice.start_tick)*samples_per_tick;
-        const std::size_t end=std::min(count,static_cast<std::size_t>(voice.end_tick)*samples_per_tick);
+        const int stop=voice.articulation_end>=0?std::min(voice.end_tick,voice.start_tick+voice.articulation_end+1):voice.end_tick;
+        const std::size_t end=std::min(count,static_cast<std::size_t>(stop)*samples_per_tick);
         double phase=0;
         for (std::size_t frame=begin;frame<end && phase<wave.samples.size();++frame) {
             const float tick=static_cast<float>(frame-begin)/samples_per_tick;

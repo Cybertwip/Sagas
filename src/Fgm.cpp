@@ -40,7 +40,7 @@ Bytes entry(Bytes file, std::uint32_t index) {
 }
 
 struct Articulation {
-    int wave{-1}, pitch{}, duration{};
+    int wave{-1}, pitch{}, duration{-1};
     std::vector<FgmEnvelopePoint> envelope{{0, 1}};
     std::vector<FgmPitchPoint> pitch_events;
 };
@@ -86,7 +86,6 @@ Articulation decode_articulation(Bytes table, int index) {
         }
         tick += wait;
     }
-    result.duration = tick;
     return result;
 }
 
@@ -119,7 +118,7 @@ void decode_voice(Bytes ucd, Bytes table, std::uint32_t voice_id, int base_tick,
                     const auto art = decode_articulation(table, articulation);
                     if (art.wave >= 0) {
                         cue.voices.push_back({art.wave, tick, 0, volume / 255.0f,
-                                             art.envelope, {{0, note_pitch}}, art.pitch_events});
+                                             art.envelope, {{0, note_pitch}}, art.pitch_events, art.duration});
                         active_voice = cue.voices.size() - 1;
 
                     }

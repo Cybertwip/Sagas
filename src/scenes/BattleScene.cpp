@@ -470,6 +470,7 @@ private:
             if (body.ko_tics==180) {
                 --body.stocks;
                 emit(body.position,{255,255,255,255},20,true);
+                if (body.ko_mode==1) particles_.push_back({body.position,{},{255,255,255,255},0,30,700,true,false,10});
                 if (!services.deterministic_clock) services.audio.play_fgm(body.ko_mode==1?dead_star_sfx:dead_explode_sfx);
             }
         }
@@ -612,13 +613,14 @@ private:
             const float size=p.size*factor*(p.spark?1.f:1.f+p.age*.05f);
             auto color=p.color;color.a=static_cast<std::uint8_t>(color.a*(1.f-float(p.age)/p.life));
             std::vector<TriangleVertex> shape;shape.reserve(48);
-            Color edge=color;edge.a=p.ring?220:0;
+            Color edge=color;edge.a=p.sides==10?color.a:p.ring?220:0;
             if (p.ring) color.a=35;
             for (int segment=0;segment<p.sides;++segment) {
                 const float a=segment*2*std::numbers::pi_v<float>/p.sides,b=(segment+1)*2*std::numbers::pi_v<float>/p.sides;
                 shape.push_back({{x,y},color,{}});
-                shape.push_back({{x+std::cos(a)*size*.75f,y+std::sin(a)*size},edge,{}});
-                shape.push_back({{x+std::cos(b)*size*.75f,y+std::sin(b)*size},edge,{}});
+                const float ra=p.sides==10 && segment%2?.35f:1.f,rb=p.sides==10 && (segment+1)%2?.35f:1.f;
+                shape.push_back({{x+std::cos(a)*size*.75f*ra,y+std::sin(a)*size*ra},edge,{}});
+                shape.push_back({{x+std::cos(b)*size*.75f*rb,y+std::sin(b)*size*rb},edge,{}});
             }
             r.triangles(shape);
             if (p.spark && p.color.b>p.color.r && p.color.b>200) {

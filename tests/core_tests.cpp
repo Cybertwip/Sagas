@@ -120,6 +120,20 @@ int main() {
         has_partial_texel|=beam.texture->rgba[i+3]>0 && beam.texture->rgba[i+3]<255;
     }
     assert(has_clear_texel && has_partial_texel);
+    {
+        const auto stage=scene_loader.stage("llGRPupupuMapMapHeader");
+        bool platform=false,solid=false;
+        for (const auto& line:stage.collision) if (line.type==0) {
+            assert(line.pass_through==((line.flags&0x4000)!=0));
+            if (line.pass_through) platform=true;else solid=true;
+            sagas::FighterBody drop;drop.attr=sagas::fighter_attributes(drop.kind);drop.stick_y=-80;drop.tap_stick_y=0;
+            drop.position={(line.a.x+line.b.x)*.5f,(line.a.y+line.b.y)*.5f,0};
+            sagas::FighterPhysics::tick(drop,std::span<const sagas::CollisionSegment>(&line,1));
+            if (line.pass_through) assert(!drop.grounded && drop.drop_frames>0);
+            else assert(drop.grounded);
+        }
+        assert(platform && solid);
+    }
     for (const auto* name:{"Castle","Jungle","Hyrule","Zebes","Yoster","Pupupu","Sector","Yamabuki"}) {
         const auto stage=scene_loader.stage(std::string("llGR")+name+"MapMapHeader");
         for (const auto& layer:stage.layers)

@@ -20,6 +20,7 @@ struct FgmVoice {
     std::vector<FgmEnvelopePoint> envelope;
     std::vector<FgmPitchPoint> pitch;
     std::vector<FgmPitchPoint> articulation_pitch;
+    int articulation_end{-1};
 };
 
 struct FgmCue {

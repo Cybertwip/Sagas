@@ -127,6 +127,7 @@ class Handler(BaseHTTPRequestHandler):
         url=urlsplit(self.path);root=self.server.asset_root
         try:
             if url.path=='/': return self.reply(200,Path(__file__).with_name('index.html').read_bytes(),'text/html; charset=utf-8')
+            if url.path=='/api/packages': return self.reply(200,[json.loads(p.read_text()) for p in sorted((root/'mods/characters').glob('*/character.json'))])
             if url.path=='/api/roster':
                 file=root/'mods/roster.json';return self.reply(200,json.loads(file.read_text()) if file.exists() else initial())
             if url.path=='/api/project': return self.reply(200,json.loads(project_file(root,parse_qs(url.query)['id'][0]).read_text()))
@@ -145,6 +146,15 @@ class Handler(BaseHTTPRequestHandler):
             request=json.loads(self.rfile.read(length));root=self.server.asset_root
             if self.path=='/api/roster': save_roster(root,request);result={'saved':True}
             elif self.path=='/api/import': result=import_character(root,request)
+            elif self.path=='/api/upload-directory':
+                with tempfile.TemporaryDirectory(prefix='sagas-upload-') as temporary:
+                    folder=Path(temporary)
+                    for item in request['files']:
+                        relative=Path(item['name'])
+                        if relative.is_absolute() or '..' in relative.parts: raise ValueError('Invalid upload path')
+                        if any(part.lower() in {'stellarexport','converted','.git'} for part in relative.parts): continue
+                        target=folder/relative;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(base64.b64decode(item['data'],validate=True))
+                    result=import_directory(root,folder)
             elif self.path=='/api/import-directory': result=import_directory(root,request['path'])
             elif self.path=='/api/preview': result=preview(root,request)
             elif self.path=='/api/project':

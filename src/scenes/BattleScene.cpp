@@ -164,7 +164,7 @@ public:
                                                     decoder.pose(model.fighter_root));
                 const float z=(current.tracks[6]-previous.tracks[6])*jumping.lr*jumping.attr.size;
                 const float y=(current.tracks[5]-previous.tracks[5])*jumping.attr.size;
-                if (jumping.grounded) return Vec3{z,0,-(current.tracks[4]-previous.tracks[4])*jumping.lr*jumping.attr.size};
+                if (jumping.grounded) return Vec3{z,jumping.status==FighterStatus::Special?y:0,-(current.tracks[4]-previous.tracks[4])*jumping.lr*jumping.attr.size};
                 const float angle=current.tracks[2];
                 return Vec3{z*std::cos(angle)-y*std::sin(angle),z*std::sin(angle)+y*std::cos(angle),0};
             });
@@ -197,6 +197,8 @@ public:
                 else body.action_frame=0;
                 body.motion=clip;
             }
+            if (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_index%3==1 && tic_%3==0)
+                emit({body.position.x,body.position.y+body.attr.height*.5f,0},{255,160,60,220},3,true);
             if (body.status==FighterStatus::Special && !body.special_projectile) {
                 for (const auto& flag:source_special_flags)
                     if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==clip && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(body.action_frame)) {
@@ -296,6 +298,14 @@ public:
                 }
             }
             if (shot.weapon==4 && shot.life<80) shot.velocity.x+=(bodies_[shot.owner].position.x>shot.position.x?3.f:-3.f);
+            for (unsigned target=0;target<bodies_.size();++target) {
+                const auto& reflector=bodies_[target];
+                if (target==shot.owner || reflector.kind!=FighterKind::Fox || reflector.status!=FighterStatus::Special || reflector.special_index%3!=2) continue;
+                if (std::hypot(shot.position.x-reflector.position.x,shot.position.y-reflector.position.y-reflector.attr.height*.5f)<reflector.attr.height*.6f) {
+                    shot.owner=target;shot.velocity.x=-shot.velocity.x;shot.velocity.y=-shot.velocity.y;shot.facing=-shot.facing;
+                    emit(shot.position,{120,210,255,255},10,true);break;
+                }
+            }
             const auto& a=weapon_source_data[shot.weapon];
             AttackVolume contact{shot.owner,shot.position,a.size*.5f,a.damage,a.angle,a.growth,a.weight,a.base,static_cast<unsigned>(a.sfx),false,0,~0U,static_cast<unsigned>(a.element),true,shot.facing};
             auto contacts=FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&contact,1));

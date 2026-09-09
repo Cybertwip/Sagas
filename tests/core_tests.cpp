@@ -760,6 +760,43 @@ int main() {
         auto actor=scene_loader.fighter_motion(special.kind,special.special_motion,sagas::fighter_motion_flags(special.special_motion));
         assert(!actor.animation.empty());
     }
+    // Ground tech accepts a Z edge less than 20 ticks before impact, choosing
+    // neutral or directional source motions; an expired edge still knocks down.
+    for (int elapsed:{0,19,20}) for (int x:{-80,0,80}) {
+        sagas::FighterBody tech;tech.attr=sagas::fighter_attributes(tech.kind);tech.grounded=false;
+        tech.status=sagas::FighterStatus::Hitstun;tech.damage_tumble=true;tech.hitstun=40;
+        tech.shield_tics=elapsed;tech.stick_x=x;tech.position.y=1;tech.vel_air.y=-10;
+        sagas::FighterPhysics::tick(tech,0);
+        if (elapsed==20) assert(tech.status==sagas::FighterStatus::DownBounce);
+        else {
+            assert(tech.status==(x?sagas::FighterStatus::DownRoll:sagas::FighterStatus::DownStand));
+            assert(tech.down_motion==sagas::fighter_source_data[1].tech[x<0?2:x>0?1:0]);
+        }
+    }
+    {
+        sagas::FighterBody fox;fox.kind=sagas::FighterKind::Fox;fox.attr=sagas::fighter_attributes(fox.kind);fox.stick_y=80;
+        assert(sagas::FighterCombat::start_special(fox,true));
+        for (int frame=0;frame<35;++frame) sagas::FighterCombat::advance_special(fox,false,frame==8);
+        assert(!fox.grounded && fox.special_phase==3 && fox.special_motion==sagas::fighter_source_data[9].special_active[4]);
+        sagas::FighterPhysics::tick(fox,-10000);assert(fox.vel_air.y>110);
+        fox.action_frame=30;sagas::FighterCombat::advance_special(fox,false,false);
+        assert(fox.special_phase==2);
+        fox={};fox.kind=sagas::FighterKind::Fox;fox.attr=sagas::fighter_attributes(fox.kind);fox.stick_y=-80;fox.special_held=true;
+        assert(sagas::FighterCombat::start_special(fox,true));
+        sagas::FighterCombat::advance_special(fox,false,true);
+        assert(fox.special_phase==1);
+        for (int frame=0;frame<20;++frame) sagas::FighterCombat::advance_special(fox,false,false);
+        assert(fox.special_phase==1);
+        fox.special_held=false;sagas::FighterCombat::advance_special(fox,false,false);assert(fox.special_phase==2);
+    }
+    {
+        sagas::FighterBody queued;queued.attr=sagas::fighter_attributes(queued.kind);queued.status=sagas::FighterStatus::Land;
+        queued.stick_x=80;queued.tap_stick_x=0;sagas::FighterCombat::buffer_smash(queued,true);
+        assert(!sagas::FighterCombat::start_smash(queued,false));
+        queued.stick_x=0;queued.tap_stick_x=255;queued.status=sagas::FighterStatus::Wait;
+        sagas::FighterCombat::buffer_smash(queued,false);assert(sagas::FighterCombat::start_smash(queued,false));
+        assert(queued.attack_motion==sagas::fighter_source_data[1].smash[0]);
+    }
     // Fox forward-smash TransN displacement belongs to physics, in either facing.
     const auto fox_smash=sagas::fighter_source_data[9].smash[0];
     const auto fox_motion=scene_loader.fighter_motion(sagas::FighterKind::Fox,fox_smash,sagas::fighter_motion_flags(fox_smash));

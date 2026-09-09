@@ -236,10 +236,13 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         }
         body.vel_air.z=0;
         if ((body.status==FighterStatus::Attack || body.status==FighterStatus::Special || body.status==FighterStatus::CatchWait || body.status==FighterStatus::Throw || body.status==FighterStatus::DownRoll || body.status==FighterStatus::DownAttack) && motion) {
-            if (const auto authored=motion(body)) {body.vel_ground=authored->x*body.lr;body.vel_air.z=authored->z;}
+            if (const auto authored=motion(body)) {
+                body.vel_ground=authored->x*body.lr;body.vel_air.z=authored->z;
+                if (body.status==FighterStatus::Special && authored->y>0) {body.grounded=false;body.vel_air.y=authored->y;body.jumps_used=std::max(1,body.jumps_used);}
+            }
         }
         body.vel_air.x=body.vel_ground*body.lr*body.floor_tangent.x;
-        body.vel_air.y=body.vel_ground*body.lr*body.floor_tangent.y;
+        if (body.grounded) body.vel_air.y=body.vel_ground*body.lr*body.floor_tangent.y;
     } else {
 
         const bool authored=body.aerial_jump && body.status==FighterStatus::Jump &&

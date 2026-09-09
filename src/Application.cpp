@@ -180,8 +180,9 @@ InputState Application::poll_input() {
             if (i==9) input.taunt_pressed|=down;
         }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-            input.accept_pressed |= event.key.key == SDLK_SPACE || event.key.key == SDLK_A;
+            input.accept_pressed |= event.key.key == SDLK_SPACE || event.key.scancode == bindings_[0].key;
             input.start_pressed |= event.key.key == SDLK_RETURN;
+            if (bindings_[2].key==SDL_SCANCODE_LSHIFT && (event.key.key==SDLK_U || event.key.key==SDLK_Z)) input.shield_pressed=true;
             input.back_pressed |= event.key.key == SDLK_ESCAPE;
             input.cancel_pressed |= event.key.key == SDLK_ESCAPE || event.key.key == SDLK_B;
             input.skip_pressed |= event.key.key == SDLK_S;
@@ -222,7 +223,7 @@ InputState Application::poll_input() {
         held[i]=(keys && keys[bindings_[i].key]) || (gamepad_ && bindings_[i].button>=0 &&
             SDL_GetGamepadButton(gamepad_,static_cast<SDL_GamepadButton>(bindings_[i].button)));
     }
-    input.shield_held=held[2];input.special_held=held[8];
+    input.shield_held=held[2] || (bindings_[2].key==SDL_SCANCODE_LSHIFT && keys && (keys[SDL_SCANCODE_U] || keys[SDL_SCANCODE_Z]));input.special_held=held[8];
     for (unsigned slot=0;slot<4;++slot) {
         auto* pad=slot==0?gamepad_:extra_gamepads_[slot-1];
         if (!pad) {trigger_held_[slot]=c_jump_held_[slot]=false;continue;}

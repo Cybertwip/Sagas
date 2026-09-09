@@ -42,6 +42,8 @@ int main(int argc,char** argv) {
             select.accept_pressed=false;
             for (auto& c:select.controllers) c.attack=true;
             versus->update(services,select,1.f/60);
+            for (auto& c:select.controllers) c.attack=false;
+            for (int frame=0;frame<30;++frame) versus->update(services,select,1.f/60);
             render.request_capture(output/"four-player-select.png");versus->draw(services);
             sagas::InputState start;start.start_pressed=true;
             versus->update(services,start,1.f/60);assert(versus->next());
@@ -56,6 +58,18 @@ int main(int argc,char** argv) {
                 if (battle->next()) {returned=true;break;}
             }
             assert(returned);
+        }
+        for (int direction=0;direction<3;++direction) {
+            auto battle=sagas::make_battle_scene(sagas::FighterKind::Fox,sagas::FighterKind::Donkey,3);battle->enter(services);
+            for (int frame=0;frame<190;++frame) {
+                sagas::InputState input;input.shield_held=frame>=50 && frame<70;
+                input.special_pressed=frame==90;input.special_held=frame>=90 && frame<150;
+                input.stick_y=frame>=90 && frame<150?(direction==1?80:direction==2?-80:0):0;
+                battle->update(services,input,1.f/60);
+                if (frame==60 || frame==95 || frame==135 || frame==155) {
+                    render.request_capture(output/("fox-special-"+std::to_string(direction)+"-"+std::to_string(frame)+".png"));battle->draw(services);
+                }
+            }
         }
         // Mouse pickup must invalidate readiness; release places the puck and
         // moving away must leave the deposited selection ready to start.

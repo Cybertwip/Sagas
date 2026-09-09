@@ -472,7 +472,7 @@ int main() {
     mario.jump_pressed=true;
     sagas::FighterPhysics::tick(mario,0);
     assert(mario.grounded && mario.status==sagas::FighterStatus::KneeBend);
-    for (int frame=1;frame<mario.attr.knee_bend;++frame) sagas::FighterPhysics::tick(mario,0);
+    for (int frame=0;frame<mario.attr.knee_bend;++frame) sagas::FighterPhysics::tick(mario,0);
     assert(!mario.grounded && mario.vel_air.y>0);
     const std::array<sagas::CollisionSegment,2> platforms{{
         {{-1000,0},{1000,0},0,0,false},{{-100,500},{100,500},0,0,true}}};
@@ -726,6 +726,21 @@ int main() {
             }
             sagas::FighterCombat::advance_down(action,false,false,true);
             assert(action.status==sagas::FighterStatus::Wait);
+        }
+    }
+    // Release within all three source startup ticks produces a lower jump.
+    for (unsigned kind=0;kind<12;++kind) {
+        float full{};
+        for (int release=0;release<=3;++release) {
+            sagas::FighterBody jumper;jumper.kind=static_cast<sagas::FighterKind>(kind);jumper.attr=sagas::fighter_attributes(jumper.kind);
+            jumper.jump_button=true;jumper.jump_pressed=true;
+            sagas::FighterPhysics::tick(jumper,0);
+            for (int frame=1;frame<=jumper.attr.knee_bend;++frame) {
+                jumper.jump_released=frame==release;
+                sagas::FighterPhysics::tick(jumper,0);
+            }
+            assert(!jumper.grounded);
+            if (!release) full=jumper.vel_air.y;else assert(jumper.vel_air.y<full);
         }
     }
     // Fox forward-smash TransN displacement belongs to physics, in either facing.

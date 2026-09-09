@@ -161,8 +161,10 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     }
     const Vec3 before=body.position;
     const bool was_grounded=body.grounded;
+    bool began_kneebend=false;
     if (body.jump_pressed && !fighter_is_down(body.status) && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Special && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
         if (body.grounded && body.status!=FighterStatus::KneeBend) {
+            began_kneebend=true;
             body.status=FighterStatus::KneeBend; body.jump_frames=0;
             body.short_hop=false; body.jump_force=body.stick_y;
         } else if (!body.grounded) jump(body);
@@ -186,7 +188,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         body.status=FighterStatus::CrouchEnd;body.action_frame=0;
     }
     if (body.status==FighterStatus::KneeBend) {
-        ++body.jump_frames;
+        if (!began_kneebend) ++body.jump_frames;
         if (body.jump_button && body.jump_released && body.jump_frames<=3) body.short_hop=true;
         body.jump_force=std::max(body.jump_force,body.stick_y);
         if (body.jump_frames>=body.attr.knee_bend) jump(body);

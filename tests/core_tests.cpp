@@ -652,6 +652,37 @@ int main() {
         assert(sagas::FighterCombat::resolve(bodies,volumes).size()==1);
         assert(bodies[1].status==sagas::FighterStatus::Captured);
     }
+    // Held directional A selects tilts; a fresh strong tap selects smashes first.
+    for (unsigned kind=0;kind<12;++kind) for (unsigned direction=0;direction<3;++direction) {
+        sagas::FighterBody tilt;tilt.kind=static_cast<sagas::FighterKind>(kind);tilt.attr=sagas::fighter_attributes(tilt.kind);
+        tilt.stick_x=direction==0?40:0;tilt.stick_y=direction==1?40:direction==2?-40:0;
+        assert(sagas::FighterCombat::start_tilt(tilt,true));
+        assert(tilt.attack_motion==sagas::fighter_source_data[kind].tilt[direction==0?2:direction==1?5:6]);
+        assert(std::any_of(sagas::source_jab_hitboxes.begin(),sagas::source_jab_hitboxes.end(),
+            [&](const auto& box){return box.kind==kind && box.motion==tilt.attack_motion;}));
+    }
+    // Fox forward-smash TransN displacement belongs to physics, in either facing.
+    const auto fox_smash=sagas::fighter_source_data[9].smash[0];
+    const auto fox_motion=scene_loader.fighter_motion(sagas::FighterKind::Fox,fox_smash,sagas::fighter_motion_flags(fox_smash));
+    assert(fox_motion.fighter_wrapper==sagas::Model3D::FighterWrapper::TransN && fox_motion.fighter_root_animation);
+    const auto initial=animation_decoder.pose(fox_motion.fighter_root);
+    const auto root0=animation_decoder.sample16(*fox_motion.fighter_root_animation,0,initial);
+    const auto root20=animation_decoder.sample16(*fox_motion.fighter_root_animation,20,initial);
+    for (const int facing:{-1,1}) {
+        sagas::FighterBody fox;fox.kind=sagas::FighterKind::Fox;fox.attr=sagas::fighter_attributes(fox.kind);fox.lr=facing;
+        fox.stick_x=80*facing;fox.tap_stick_x=0;assert(sagas::FighterCombat::start_smash(fox,true));
+        const sagas::CollisionSegment floor{{-10000,0},{10000,0},0,0,false};
+        for (int frame=1;frame<=20;++frame) {
+            fox.action_frame=frame;
+            sagas::FighterPhysics::tick(fox,std::span<const sagas::CollisionSegment>(&floor,1),[&](const auto& body)->std::optional<sagas::Vec3> {
+                const auto before=animation_decoder.sample16(*fox_motion.fighter_root_animation,body.action_frame-1,initial);
+                const auto after=animation_decoder.sample16(*fox_motion.fighter_root_animation,body.action_frame,initial);
+                return sagas::Vec3{(after.tracks[6]-before.tracks[6])*body.lr*body.attr.size,0,0};
+            });
+        }
+        const float expected=(root20.tracks[6]-root0.tracks[6])*fox.attr.size*facing;
+        assert(std::abs(expected)>100 && std::abs(fox.position.x-expected)<.01f && fox.grounded);
+    }
     sagas::FighterBody combo;combo.attr=sagas::fighter_attributes(combo.kind);
     sagas::FighterCombat::advance_jab(combo,true,false);
     assert(combo.jab_stage==1 && combo.status==sagas::FighterStatus::Attack);

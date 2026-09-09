@@ -118,6 +118,7 @@ public:
                                                     decoder.pose(model.fighter_root));
                 const float z=(current.tracks[6]-previous.tracks[6])*jumping.lr*jumping.attr.size;
                 const float y=(current.tracks[5]-previous.tracks[5])*jumping.attr.size;
+                if (jumping.grounded) return Vec3{z,0,-(current.tracks[4]-previous.tracks[4])*jumping.lr*jumping.attr.size};
                 const float angle=current.tracks[2];
                 return Vec3{z*std::cos(angle)-y*std::sin(angle),z*std::sin(angle)+y*std::cos(angle),0};
             });
@@ -126,8 +127,9 @@ public:
             if (body.position.x<bounds[3] || body.position.x>bounds[2] || body.position.y<bounds[1] || body.position.y>bounds[0]) {
                 --body.stocks;
                 if (!body.stocks) {body.status=FighterStatus::KO;continue;}
-                body.position={0,1500,0}; body.vel_air={}; body.vel_damage={}; body.damage=0; body.hitstun=body.hitlag=0;
-                body.grounded=false; body.status=FighterStatus::Fall; body.invincible=180;
+                const auto kind=body.kind;const auto attr=body.attr;const int stocks=body.stocks;
+                body={};body.kind=kind;body.attr=attr;body.stocks=stocks;
+                body.position={0,1500,0};body.grounded=false;body.status=FighterStatus::Fall;body.invincible=180;
             }
             const unsigned clip=motion(body);
             if (body.motion!=clip) {body.motion=clip;body.action_frame=0;}
@@ -171,6 +173,13 @@ public:
                     damage.damage,damage.angle,damage.growth,damage.weight,damage.base,0};
                 (void)FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&hit,1));
                 holder.lr=facing;holder.hit_mask=saved;holder.capture_target=-1;
+            }
+        }
+        for (unsigned i=0;i<bodies_.size();++i) {
+            auto& captive=bodies_[i];
+            if (captive.captured_by>=0 && (bodies_[captive.captured_by].capture_target!=static_cast<int>(i) || bodies_[captive.captured_by].stocks<=0)) {
+                captive.captured_by=-1;
+                if (captive.status==FighterStatus::Captured) {captive.status=FighterStatus::Fall;captive.grounded=false;}
             }
         }
         std::vector<AttackVolume> volumes;

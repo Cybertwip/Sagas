@@ -87,6 +87,7 @@ int main(int argc,char** argv) {
     SDL_DestroyWindow(window); SDL_Quit();
     // Exercise the actual SDL controls panel, saving and reloading a mapping.
     const auto controls_file=output/"controls.cfg";
+    { std::ofstream fixture(controls_file);fixture<<"tap_jump 1\n"; }
     {
         sagas::ApplicationOptions options;options.headless=true;options.start_at_select=true;
         options.frame_limit=1;options.capture_path=output/"controls.png";options.controls_path=controls_file;

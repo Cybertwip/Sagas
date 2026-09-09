@@ -219,8 +219,9 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             apply_ground_friction(body);
             if (!locked) body.status=FighterStatus::Wait;
         }
+        body.vel_air.z=0;
         if (body.status==FighterStatus::Attack && motion) {
-            if (const auto authored=motion(body)) body.vel_ground=authored->x*body.lr;
+            if (const auto authored=motion(body)) {body.vel_ground=authored->x*body.lr;body.vel_air.z=authored->z;}
         }
         body.vel_air.x=body.vel_ground*body.lr*body.floor_tangent.x;
         body.vel_air.y=body.vel_ground*body.lr*body.floor_tangent.y;
@@ -266,7 +267,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     }
     const float velocity_x=body.vel_air.x+body.vel_damage.x;
     const float velocity_y=body.vel_air.y+body.vel_damage.y;
-    body.position.x+=velocity_x; body.position.y+=velocity_y;
+    body.position.x+=velocity_x; body.position.y+=velocity_y;body.position.z+=body.vel_air.z;
     const bool follows_floor=body.grounded;
     body.grounded=false;
     float floor=-std::numeric_limits<float>::infinity();
@@ -457,6 +458,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
     for (const auto& hit:attacks) {
         if (hit.owner>=bodies.size()) continue;
         auto& attacker=bodies[hit.owner];
+        if (attacker.status==FighterStatus::Captured || attacker.status==FighterStatus::KO) continue;
         const unsigned group=std::min(7U,hit.group);
         unsigned& mask=hit.epoch==~0U?attacker.hit_mask:attacker.hit_group_masks[group];
         if (hit.epoch!=~0U && attacker.hit_group_epochs[group]!=hit.epoch) {

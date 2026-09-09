@@ -663,6 +663,32 @@ int main() {
         if (!has_tilt) std::cerr<<"Missing tilt hitboxes kind "<<kind<<" motion "<<tilt.attack_motion<<'\n';
         assert(has_tilt);
     }
+    // Every fighter exposes a running attack with authored contact windows.
+    for (unsigned kind=0;kind<12;++kind) {
+        sagas::FighterBody runner;runner.kind=static_cast<sagas::FighterKind>(kind);
+        runner.attr=sagas::fighter_attributes(runner.kind);runner.status=sagas::FighterStatus::Run;
+        runner.vel_ground=runner.attr.run_speed;
+        assert(sagas::FighterCombat::start_dash_attack(runner,true));
+        assert(std::any_of(sagas::source_jab_hitboxes.begin(),sagas::source_jab_hitboxes.end(),
+            [&](const auto& box){return box.kind==kind && box.motion==runner.attack_motion;}));
+        assert(!sagas::FighterCombat::start_dash_attack(runner,true));
+    }
+    // The table index, rather than misleading asset filenames, determines
+    // damage reactions. Low-power air hits and vertical launches differ.
+    for (unsigned kind=0;kind<12;++kind) for (int mode=0;mode<3;++mode) {
+        std::array<sagas::FighterBody,2> bodies{};
+        bodies[1].kind=static_cast<sagas::FighterKind>(kind);
+        for (auto& body:bodies) body.attr=sagas::fighter_attributes(body.kind);
+        bodies[1].grounded=mode!=1;
+        sagas::AttackVolume hit{0,{0,bodies[1].attr.height*.5f,0},100,1,mode==2?90:0,0,0,mode==2?80:10,0};
+        assert(sagas::FighterCombat::resolve(bodies,std::span<const sagas::AttackVolume>(&hit,1)).size()==1);
+        const auto& victim=bodies[1];
+        assert(victim.lr==-1 && victim.status==sagas::FighterStatus::Hitstun);
+        assert(victim.damage_motion==sagas::fighter_source_data[kind].damage_reactions[mode==0?3:mode==1?9:16]);
+        assert(victim.damage_tumble==(mode!=0));
+        auto reaction=scene_loader.fighter_motion(victim.kind,victim.damage_motion,sagas::fighter_motion_flags(victim.damage_motion));
+        assert(!reaction.animation.empty());
+    }
     // Fox forward-smash TransN displacement belongs to physics, in either facing.
     const auto fox_smash=sagas::fighter_source_data[9].smash[0];
     const auto fox_motion=scene_loader.fighter_motion(sagas::FighterKind::Fox,fox_smash,sagas::fighter_motion_flags(fox_smash));

@@ -29,6 +29,11 @@ int main(int argc,char** argv) {
         sagas::PhysicsWorld physics;
         sagas::SceneResourceManager resources(assets);
         sagas::Services services{assets,render,audio,physics,resources,true};
+        {
+            auto title=sagas::make_title_scene();title->enter(services);
+            for (int frame=0;frame<140;++frame) title->update(services,{},1.f/60);
+            render.request_capture(output/"title.png");title->draw(services);
+        }
         // Mouse pickup must invalidate readiness; release places the puck and
         // moving away must leave the deposited selection ready to start.
         {

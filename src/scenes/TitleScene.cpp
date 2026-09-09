@@ -38,19 +38,14 @@ public:
         const Color tint{blend_channel(colors[color_index].r,next_color.r),
                          blend_channel(colors[color_index].g,next_color.g),
                          blend_channel(colors[color_index].b,next_color.b),255};
-        r.sprite_at(fire, {-32,-16}, {12.0f, 8.5f}, tint);
+        r.sprite_rect(fire, 0, 0, 320, 240, tint);
         const auto next_fire = "textures/MNTitleFireAnim/Frame" + std::to_string(((tic_ + 17) % 30) + 1) + ".png";
-        r.sprite_at(next_fire, {8,8}, {9.5f, 7.0f}, {tint.r, tint.g, tint.b, 210});
+        r.sprite_rect(next_fire, 0, 0, 320, 240, {tint.r, tint.g, tint.b, 100});
 
-        // Header and footer belong to the fixed US layout and do not take
-        // part in the logo-label transition.
-        r.sprite("textures/MNTitle/BorderUpper.png", {160, 15}, {1,1}, {20,18,6,255});
-        r.sprite("textures/MNTitle/Copyright.png", {160, 208}, {1,1}, {183,174,124,255});
-
-        // The red full-logo layer is the persistent low-alpha backing logo
-        // in the original final layout.  It does not get removed when the
-        // individual yellow labels finish their transition.
-        r.sprite("textures/MNTitle/LogoAnimFull.png", {260, 60}, {1, 1}, {255, 0, 0, 76});
+        // Keep the fire continuous to the canvas edges. The extracted border
+        // and footer panels otherwise introduce conspicuous inset rectangles.
+        r.sprite("textures/MNTitle/Copyright.png", {160, 208}, {1,1}, {245,231,180,255});
+        r.sprite("textures/MNTitle/LogoAnimFull.png", {260, 60}, {1, 1}, {255, 48, 0, 36});
         if (tic_ >= 170) {
             // Tick 170 calls mnTitleSetEndLogoPosition and exposes the label
             // link.  Keep that snapped final state; the previous uniform

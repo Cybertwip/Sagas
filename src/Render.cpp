@@ -494,8 +494,10 @@ RenderEngine::Texture& RenderEngine::texture(std::string_view logical) {
     // Collage is genuine opaque grayscale artwork.  Unlike the I/IA glyphs
     // and decals around it, its dark pixels are image data rather than alpha.
     if (key.ends_with("/SmashBrosCollage.png") || key.ends_with("/StoneBackground.png")) intensity_mask=false;
+    // Copyright is an IA mask with a non-opaque constant alpha in the dump.
+    if (key=="textures/MNTitle/Copyright.png") intensity_mask=true;
     if (intensity_mask) for (std::size_t i=0;i<pixels.size();i+=4) {
-        pixels[i+3]=pixels[i];
+        pixels[i+3]=static_cast<std::uint8_t>((unsigned(pixels[i])*pixels[i+3]+127)/255);
         pixels[i]=pixels[i+1]=pixels[i+2]=255;
     }
     GLuint handle{};
@@ -550,6 +552,9 @@ void RenderEngine::begin(Color clear) {
     }
     viewport_x_=(drawable_width-viewport_width_)/2;
     viewport_y_=(drawable_height-viewport_height_)/2;
+    glBindFramebuffer(GL_FRAMEBUFFER,0);
+    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+    glDepthMask(GL_TRUE);
     glDisable(GL_SCISSOR_TEST);
     glViewport(0,0,drawable_width,drawable_height);
     glClearColor(0,0,0,1);
@@ -572,7 +577,7 @@ void RenderEngine::draw_2d(std::span<const TriangleVertex> vertices,GLuint textu
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
     glUseProgram(program_2d_);
     glUniform1i(glGetUniformLocation(program_2d_,"colorTexture"),0);
     glUniform1i(glGetUniformLocation(program_2d_,"useTexture"),texture_handle!=0);
@@ -703,11 +708,11 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     } else glDisable(GL_CULL_FACE);
     if (material.additive) {
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA,GL_ONE);
+        glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE,GL_ZERO,GL_ONE);
         glDepthMask(GL_FALSE);
     } else if (material.translucent) {
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+        glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
     } else {
         glDisable(GL_BLEND);

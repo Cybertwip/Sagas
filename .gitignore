@@ -66,3 +66,6 @@ coverage/
 
 # Local controller preferences
 controls.cfg
+
+# Python authoring tools
+__pycache__/

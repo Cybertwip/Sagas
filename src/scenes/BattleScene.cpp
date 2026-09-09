@@ -249,7 +249,7 @@ public:
                 continue;
             }
             captive.lr=-holder.lr;captive.captured_throw=holder.status==FighterStatus::Throw;
-            captive.action_frame=holder.action_frame;
+            captive.action_frame=dive?4:holder.action_frame;
             const auto holder_model=posed(holder);
             const unsigned joint=dive?29:fighter_source_data[static_cast<unsigned>(holder.kind)].capture_joint;
             const auto anchor=renderer_->joint_point(holder_model,holder.action_frame,joint);
@@ -372,6 +372,19 @@ public:
             renderer_->draw(r,model,camera,body.action_frame*(body.status==FighterStatus::Land?body.landing_speed:1.f),
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
         }
+        for (const auto& shot:projectiles_) if (shot.weapon==6 || shot.weapon==8 || shot.weapon==7) {
+            if (!weapon_models_.contains(shot.weapon)) {
+                const n64::Address attributes{shot.weapon==7?243U:244U,shot.weapon==7?64U:shot.weapon==8?52U:0U};
+                const auto descriptor=archive_->resolve(attributes);
+                if (descriptor) weapon_models_.emplace(shot.weapon,loader_->model(*descriptor,archive_->resolve({attributes.file,attributes.offset+8}),GeometryLayout::Direct,
+                    archive_->resolve({attributes.file,attributes.offset+4}),archive_->resolve({attributes.file,attributes.offset+12})));
+            }
+            if (weapon_models_.contains(shot.weapon)) {
+                auto weapon=weapon_models_.at(shot.weapon);weapon.position=shot.position;weapon.rotation.y=shot.facing*std::numbers::pi_v<float>/2;
+                if (shot.weapon==7) weapon.scale={.5f,.5f,.5f};
+                renderer_->draw(r,weapon,camera,static_cast<float>(tic_));
+            }
+        }
         renderer_->end(r);
         draw_particles(r,camera);
         for (unsigned i=0;i<bodies_.size();++i) {
@@ -453,11 +466,11 @@ private:
                 if (!body.aerial_jump) return body.jump_backward?data.jump_back:data.jump;
                 if (data.multi_jump[0]) return data.multi_jump[std::clamp(body.jumps_used-2,0,4)];
                 return body.jump_backward?data.aerial_back:data.aerial_forward;
-            case FighterStatus::Fall:return data.fall;
+            case FighterStatus::SpecialFall:case FighterStatus::Fall:return data.fall;
             case FighterStatus::Land:return body.landing_motion?body.landing_motion:data.landing;
             case FighterStatus::Catch:return data.grab[0];
             case FighterStatus::CatchWait:return data.grab[1];
-            case FighterStatus::Captured:return data.capture[body.captured_throw?1:0];
+            case FighterStatus::Captured:return data.capture[body.captured_dive?2:body.captured_throw?1:0];
             case FighterStatus::Throw:return data.grab[body.throw_backward?3:2];
             case FighterStatus::Special:return body.special_motion;
             case FighterStatus::Attack:
@@ -502,8 +515,14 @@ private:
         if (body.status==FighterStatus::Captured) model.rotation.z=body.capture_rotation;
         if (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_phase==3)
             model.rotation.z=body.lr*std::numbers::pi_v<float>/2-std::atan2(body.special_velocity.x,body.special_velocity.y);
-        model.scale={body.attr.size,body.attr.size,body.attr.size};return model;
+        model.scale={body.attr.size,body.attr.size,body.attr.size};
+        if (body.kind==FighterKind::Pikachu && body.status==FighterStatus::Special && body.special_index%3==1 && body.special_phase==3) {
+            model.rotation.z=body.lr*std::numbers::pi_v<float>/2-std::atan2(body.special_velocity.x,body.special_velocity.y);
+            model.scale={body.attr.size*.8f,body.attr.size*.8f,body.attr.size*1.2f};
+        }
+        return model;
     }
+    std::unordered_map<unsigned,Model3D> weapon_models_;
     struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity;unsigned hit_mask{}; };
     std::vector<Projectile> projectiles_;
     void spawn_projectile(unsigned owner,const FighterBody& body) {

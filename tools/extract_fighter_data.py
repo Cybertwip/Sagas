@@ -6,7 +6,7 @@ ids={v['name']:int(v['id']) for v in csv.DictReader((r/'sagas/build/assets/reloc
 voices={v['name']:v['idx'] for v in json.loads((d/'build/us/src/audio/fgm.ucd.json').read_text())['entries']}
 names=['Luigi','Mario','Donkey','Link','Samus','Captain','Ness','Yoshi','Kirby','Fox','Pikachu','Purin']
 selected=[1,3,1,1,4,1,2,2,3,4,1,2]; scales=[1.21,1.25,1.,1.33,1.03,1.07,1.3,1.05,1.22,1.15,1.2,1.26]
-text='// US cartridge values from FTAttributes and scSubsys motion tables.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct FighterSourceData {\n float size,walk_mul,traction,dash,run,kneebend,jump_x,jump_mul,jump_base,air_accel,air_max,air_friction,gravity,terminal,fast,weight,height,width,select_scale,aerial_x,aerial_height,jab_window,cam_offset_y,camera_zoom,dash_decel,dash_to_run;\n unsigned jumps,idle,walk,dash_clip,run_clip,jump,fall,landing,jab,damage,selected,announce,selected_flags,kneebend_clip,jump_back,aerial_forward,aerial_back,jab2,jab3,run_brake;\n std::array<unsigned,5> multi_jump;\n std::array<unsigned,3> smash,rapid,smash_voices;\n std::array<unsigned,5> attack_air,landing_air;\n std::array<unsigned,4> grab;\n std::array<unsigned,3> crouch;\n std::array<unsigned,7> tilt;\n std::array<unsigned,3> walks;\n std::array<float,3> walk_lengths;\n unsigned landing_sfx,down_sfx;\n unsigned dash_attack,turn;\n unsigned taunt,capture_joint;\n std::array<unsigned,2> capture;\n std::array<unsigned,4> guard;\n std::array<unsigned,3> tech;\n std::array<unsigned,6> special_start,special_loop,special_end,special_active,special_hit;\n std::array<std::array<unsigned,6>,5> special_events;\n std::array<unsigned,12> down; // Bounce, stand, tech rolls, get-up rolls, attacks (D/U pairs).\n std::array<unsigned,20> damage_reactions; // Common motions DamageHi1 through DamageFall.\n std::array<unsigned,8> cliff;\n std::array<float,2> cliff_box;\n};\ninline constexpr std::array<FighterSourceData,12> fighter_source_data{{\n'
+text='// US cartridge values from FTAttributes and scSubsys motion tables.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct FighterSourceData {\n float size,walk_mul,traction,dash,run,kneebend,jump_x,jump_mul,jump_base,air_accel,air_max,air_friction,gravity,terminal,fast,weight,height,width,select_scale,aerial_x,aerial_height,jab_window,cam_offset_y,camera_zoom,dash_decel,dash_to_run;\n unsigned jumps,idle,walk,dash_clip,run_clip,jump,fall,landing,jab,damage,selected,announce,selected_flags,kneebend_clip,jump_back,aerial_forward,aerial_back,jab2,jab3,run_brake;\n std::array<unsigned,5> multi_jump;\n std::array<unsigned,3> smash,rapid,smash_voices;\n std::array<unsigned,5> attack_air,landing_air;\n std::array<unsigned,4> grab;\n std::array<unsigned,3> crouch;\n std::array<unsigned,7> tilt;\n std::array<unsigned,3> walks;\n std::array<float,3> walk_lengths;\n unsigned landing_sfx,down_sfx;\n unsigned dash_attack,turn;\n unsigned taunt,capture_joint;\n std::array<unsigned,3> capture;\n std::array<unsigned,4> guard;\n std::array<unsigned,3> tech;\n std::array<unsigned,6> special_start,special_loop,special_end,special_active,special_hit;\n std::array<std::array<unsigned,6>,5> special_events;\n std::array<unsigned,12> down; // Bounce, stand, tech rolls, get-up rolls, attacks (D/U pairs).\n std::array<unsigned,20> damage_reactions; // Common motions DamageHi1 through DamageFall.\n std::array<unsigned,8> cliff;\n std::array<float,2> cliff_box;\n};\ninline constexpr std::array<FighterSourceData,12> fighter_source_data{{\n'
 for idx,name in enumerate(names):
  p=next((d/'src/relocData').glob('[0-9]*_'+name+'Main.c'))
  src=re.search(r'FTAttributes\s+\w+\s*=\s*\{(.*?)\n\};',p.read_text(),re.S).group(1)
@@ -74,12 +74,14 @@ for idx,name in enumerate(names):
    loop=special_ids.get(stem+'Loop',special_ids.get(stem+'Hold',0))
    end=special_ids.get(stem+'End',0)
    special_hit.append(special_ids.get(stem+'Hit',special_ids.get(stem+'Catch',0)))
-   if name=='Captain' and direction=='Hi':end=special_ids.get('SpecialHiThrow',0)
+   if name=='Captain' and direction=='Hi':
+    end=special_ids.get('SpecialHiThrow',0);special_hit[-1]=special_ids['SpecialHiCatch']
    special_active.append(special_ids.get(stem,0))
    event_names=[stem+'Start' if stem+'Start' in special_ids else stem,stem+'Loop' if stem+'Loop' in special_ids else stem+'Hold','SpecialHiThrow' if name=='Captain' and direction=='Hi' else stem+'End',stem,stem+'Hit' if stem+'Hit' in special_ids else stem+'Catch']
+   if name=='Captain' and direction=='Hi':event_names[4]='SpecialHiCatch'
    for phase,event_name in enumerate(event_names):special_events[phase].append(special_event_ids.get(event_name,0))
    special_start.append(start);special_loop.append(loop);special_end.append(end)
- capture=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('CapturePulled','ThrownCommon')]
+ capture=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('CapturePulled','ThrownCommon','CaptureCaptain')]
  guard=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('GuardOn','GuardOff','EscapeF','EscapeB')]
  tech=[ids[motions[i]] for i in (70,62,63)]
  down=[ids[m] for m in motions[58:70]]

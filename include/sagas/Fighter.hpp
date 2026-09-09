@@ -86,7 +86,7 @@ struct FighterBody {
     unsigned landing_motion{};
     float landing_speed{1};
     int capture_target{-1}, captured_by{-1}, capture_tics{};
-    bool throw_backward{},turn_flipped{},turn_dash{},captured_throw{};
+    bool throw_backward{},turn_flipped{},turn_dash{},captured_throw{},captured_dive{};
     float capture_rotation{};
     int smash_buffer{},buffered_smash{-1},buffered_facing{1};
     int rapid_inputs{},tap_stick_x{255};

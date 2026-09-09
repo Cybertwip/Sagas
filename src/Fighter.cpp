@@ -362,6 +362,9 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
                 body.special_index%=3;
                 body.special_motion=body.special_phase==0?data.special_start[body.special_index]:body.special_phase==1?data.special_loop[body.special_index]:body.special_phase==4?data.special_hit[body.special_index]:data.special_end[body.special_index];
+            } else if (body.status==FighterStatus::SpecialFall) {
+                body.status=FighterStatus::Land;body.land_frames=4;body.landing_motion=fighter_source_data[static_cast<unsigned>(body.kind)].landing;
+                body.landing_speed=body.kind==FighterKind::Pikachu?.4f:.65f;body.action_frame=0;
             } else if (body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun) {
                 body.status=FighterStatus::Land; body.land_frames=4;body.landing_motion=0;body.action_frame=0;
             }
@@ -719,6 +722,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
                 attacker.capture_target=static_cast<int>(i);attacker.status=dive?FighterStatus::Special:FighterStatus::CatchWait;
                 if (dive) {attacker.special_phase=4;attacker.special_motion=fighter_source_data[static_cast<unsigned>(attacker.kind)].special_hit[attacker.special_index];attacker.vel_air={};}
                 attacker.action_frame=0;attacker.capture_tics=0;attacker.vel_ground=0;
+                defender.captured_dive=dive;
                 defender.captured_by=static_cast<int>(hit.owner);defender.status=FighterStatus::Captured;
                 defender.action_frame=0;defender.vel_air={};defender.vel_damage={};defender.vel_ground=0;
                 defender.attack_motion=0;defender.aerial_attack=-1;defender.hitlag=0;

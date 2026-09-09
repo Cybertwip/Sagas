@@ -59,6 +59,19 @@ int main(int argc,char** argv) {
             }
             assert(returned);
         }
+        for (auto kind:{sagas::FighterKind::Pikachu,sagas::FighterKind::Captain}) for (int direction=0;direction<3;++direction) {
+            auto battle=sagas::make_battle_scene(std::vector<sagas::FighterKind>{kind,sagas::FighterKind::Donkey},3,{0,1});battle->enter(services);
+            for(int frame=0;frame<190;++frame) {
+                sagas::InputState input;input.controllers[0].connected=true;
+                input.special_pressed=frame==70;input.special_held=frame>=70 && frame<100;
+                input.stick_y=frame>=70?(direction==1?80:direction==2?-80:0):0;
+                if(direction==1 && frame>=96) {input.stick_y=0;input.stick_x=-80;}
+                battle->update(services,input,1.f/60);
+                if(frame==85 || frame==95 || frame==110 || frame==145) {
+                    render.request_capture(output/(std::string(sagas::fighter_kind_name(kind))+"-special-"+std::to_string(direction)+"-"+std::to_string(frame)+".png"));battle->draw(services);
+                }
+            }
+        }
         for (int direction=0;direction<3;++direction) {
             auto battle=sagas::make_battle_scene(std::vector<sagas::FighterKind>{sagas::FighterKind::Fox,sagas::FighterKind::Donkey},3,{0,1});battle->enter(services);
             for (int frame=0;frame<190;++frame) {

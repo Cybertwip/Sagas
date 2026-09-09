@@ -1035,3 +1035,7 @@ def blender_worker(operation: str, input_path: Path, output_path: Path,
     print(f"STELLAR: saved weighted proxy {rigid_path}")
 
 GAME_DIR = Path(__file__).resolve().parents[3] / 'ssb-decomp-re'
+
+if __name__ == '__main__':
+    args = sys.argv[sys.argv.index('--') + 1:]
+    blender_worker(args[0], Path(args[1]), Path(args[2]), Path(args[3]) if len(args)>3 else None)

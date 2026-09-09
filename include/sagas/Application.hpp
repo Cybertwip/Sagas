@@ -35,13 +35,15 @@ private:
     void save_controls();
     void draw_controls();
     struct Binding { int key{},button{-1}; };
-    std::array<Binding,8> bindings_{};
+    std::array<Binding,10> bindings_{};
     bool controls_open_{},binding_wait_{},tap_jump_{true};
     int control_row_{};
     std::string controls_error_;
     ApplicationOptions options_;
     SDL_Window* window_{};
     SDL_Gamepad* gamepad_{};
+    std::array<SDL_Gamepad*,3> extra_gamepads_{};
+    std::array<bool,4> trigger_held_{},c_jump_held_{};
     std::unique_ptr<AssetRepository> assets_;
     std::unique_ptr<RenderEngine> render_;
     std::unique_ptr<AudioEngine> audio_;

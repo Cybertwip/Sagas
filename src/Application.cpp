@@ -19,24 +19,24 @@ namespace {
 }
 
 void Application::load_controls() {
-    bindings_={{{SDL_SCANCODE_A,SDL_GAMEPAD_BUTTON_SOUTH},{SDL_SCANCODE_X,SDL_GAMEPAD_BUTTON_NORTH},
-                {SDL_SCANCODE_Z,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER},{SDL_SCANCODE_C,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER},
-                {SDL_SCANCODE_UP,SDL_GAMEPAD_BUTTON_DPAD_UP},{SDL_SCANCODE_DOWN,SDL_GAMEPAD_BUTTON_DPAD_DOWN},
-                {SDL_SCANCODE_LEFT,SDL_GAMEPAD_BUTTON_DPAD_LEFT},{SDL_SCANCODE_RIGHT,SDL_GAMEPAD_BUTTON_DPAD_RIGHT}}};
+    bindings_={{{SDL_SCANCODE_J,SDL_GAMEPAD_BUTTON_SOUTH},{SDL_SCANCODE_I,SDL_GAMEPAD_BUTTON_NORTH},
+                {SDL_SCANCODE_LSHIFT,-1},{SDL_SCANCODE_E,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER},
+                {SDL_SCANCODE_W,SDL_GAMEPAD_BUTTON_DPAD_UP},{SDL_SCANCODE_S,SDL_GAMEPAD_BUTTON_DPAD_DOWN},
+                {SDL_SCANCODE_A,SDL_GAMEPAD_BUTTON_DPAD_LEFT},{SDL_SCANCODE_D,SDL_GAMEPAD_BUTTON_DPAD_RIGHT},{SDL_SCANCODE_K,SDL_GAMEPAD_BUTTON_EAST},{SDL_SCANCODE_Q,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER}}};
     std::ifstream file(options_.controls_path);
     std::string line;
     while (std::getline(file,line)) {
         std::istringstream row(line);std::string name;row>>name;
         if (name=="tap_jump") {int value;if (row>>value) tap_jump_=value!=0;continue;}
         int index,key,button;
-        if (name=="bind" && row>>index>>key>>button && index>=0 && index<8 && key>0 && key<SDL_SCANCODE_COUNT && button>=-1 && button<SDL_GAMEPAD_BUTTON_COUNT)
+        if (name=="bind" && row>>index>>key>>button && index>=0 && index<10 && key>0 && key<SDL_SCANCODE_COUNT && button>=-1 && button<SDL_GAMEPAD_BUTTON_COUNT)
             bindings_[index]={key,button};
     }
 }
 void Application::save_controls() {
     std::ofstream file(options_.controls_path);
     if (!file) {controls_error_="COULD NOT SAVE CONTROLS";return;}
-    file<<"# Sagas controls: attack jump shield grab up down left right\n";
+    file<<"# Sagas controls: attack jump shield grab up down left right special taunt\n";
     file<<"tap_jump "<<tap_jump_<<'\n';
     for (unsigned i=0;i<bindings_.size();++i) file<<"bind "<<i<<' '<<bindings_[i].key<<' '<<bindings_[i].button<<'\n';
     file.flush();controls_error_=file?"":"COULD NOT SAVE CONTROLS";
@@ -53,16 +53,16 @@ void Application::draw_controls() {
     };
     text("CONTROLS",20,14,1.6f);
     text("ACTION",20,35);text("KEYBOARD",100,35);text("CONTROLLER",178,35);
-    constexpr std::array<const char*,8> names{"ATTACK","JUMP","SHIELD","GRAB","UP","DOWN","LEFT","RIGHT"};
-    for (int i=0;i<9;++i) {
-        const float y=51+i*16.f;
+    constexpr std::array<const char*,10> names{"ATTACK","JUMP","SHIELD","GRAB","UP","DOWN","LEFT","RIGHT","SPECIAL","TAUNT"};
+    for (int i=0;i<11;++i) {
+        const float y=49+i*13.f;
         if (i==control_row_) r.fill(14,y-3,292,13,{80,40,80,255});
-        text(i==8?"TAP JUMP":names[i],20,y);
-        if (i==8) text(tap_jump_?"ON":"OFF",100,y);
+        text(i==10?"TAP JUMP":names[i],20,y);
+        if (i==10) text(tap_jump_?"ON":"OFF",100,y);
         else {
             text(SDL_GetScancodeName(static_cast<SDL_Scancode>(bindings_[i].key)),100,y);
             const auto* name=SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(bindings_[i].button));
-            text(name?name:"NONE",178,y);
+            text(name?name:(i==2?"TRIGGERS":"NONE"),178,y);
         }
     }
     text(binding_wait_?"PRESS A KEY OR CONTROLLER BUTTON":"UP DOWN SELECT   ENTER CHANGE",20,202);
@@ -104,6 +104,7 @@ Application::Application(ApplicationOptions options) : options_(std::move(option
 Application::~Application() {
     scenes_.reset(); services_.reset(); resources_.reset(); audio_.reset(); render_.reset(); assets_.reset();
     if (gamepad_) SDL_CloseGamepad(gamepad_);
+    for (auto* pad:extra_gamepads_) if (pad) SDL_CloseGamepad(pad);
     if (window_) SDL_DestroyWindow(window_);
     SDL_Quit();
 }
@@ -113,12 +114,26 @@ InputState Application::poll_input() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT) input.quit = true;
-        if (event.type == SDL_EVENT_GAMEPAD_ADDED && !gamepad_)
-            gamepad_ = SDL_OpenGamepad(event.gdevice.which);
-        if (event.type == SDL_EVENT_GAMEPAD_REMOVED && gamepad_ &&
-            event.gdevice.which == SDL_GetGamepadID(gamepad_)) {
-            SDL_CloseGamepad(gamepad_);
-            gamepad_ = nullptr;
+        if (event.type==SDL_EVENT_GAMEPAD_ADDED) {
+            if (!gamepad_) gamepad_=SDL_OpenGamepad(event.gdevice.which);
+            else for (auto& pad:extra_gamepads_) if (!pad) {pad=SDL_OpenGamepad(event.gdevice.which);break;}
+        }
+        if (event.type==SDL_EVENT_GAMEPAD_REMOVED) {
+            if (gamepad_ && SDL_GetGamepadID(gamepad_)==event.gdevice.which) {SDL_CloseGamepad(gamepad_);gamepad_=nullptr;}
+            for (auto& pad:extra_gamepads_) if (pad && SDL_GetGamepadID(pad)==event.gdevice.which) {SDL_CloseGamepad(pad);pad=nullptr;}
+        }
+        if (event.type==SDL_EVENT_GAMEPAD_BUTTON_DOWN || event.type==SDL_EVENT_GAMEPAD_BUTTON_UP) {
+            bool secondary=false;
+            for (unsigned slot=0;slot<extra_gamepads_.size();++slot) if (extra_gamepads_[slot] && SDL_GetGamepadID(extra_gamepads_[slot])==event.gbutton.which) {
+                secondary=true;auto& c=input.controllers[slot];const bool down=event.type==SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+                const auto button=event.gbutton.button;
+                c.attack|=down && button==bindings_[0].button;c.attack_released|=!down && button==bindings_[0].button;
+                c.jump|=down && button==bindings_[1].button;c.jump_released|=!down && button==bindings_[1].button;
+                c.special|=down && button==bindings_[8].button;c.grab|=down && button==bindings_[3].button;
+                c.shield_pressed|=down && button==bindings_[2].button;c.taunt|=down && button==bindings_[9].button;
+                c.cancel|=down && button==SDL_GAMEPAD_BUTTON_EAST;c.start|=down && button==SDL_GAMEPAD_BUTTON_START;
+            }
+            if (secondary) continue;
         }
         if (event.type==SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.key==SDLK_F2) {
             controls_open_=!controls_open_;binding_wait_=false;continue;
@@ -133,10 +148,10 @@ InputState Application::poll_input() {
                 if (key) bindings_[control_row_].key=event.key.scancode;
                 else bindings_[control_row_].button=event.gbutton.button;
                 binding_wait_=false;save_controls();
-            } else if ((key && event.key.key==SDLK_UP) || (button && event.gbutton.button==SDL_GAMEPAD_BUTTON_DPAD_UP)) control_row_=(control_row_+8)%9;
-            else if ((key && event.key.key==SDLK_DOWN) || (button && event.gbutton.button==SDL_GAMEPAD_BUTTON_DPAD_DOWN)) control_row_=(control_row_+1)%9;
+            } else if ((key && event.key.key==SDLK_UP) || (button && event.gbutton.button==SDL_GAMEPAD_BUTTON_DPAD_UP)) control_row_=(control_row_+10)%11;
+            else if ((key && event.key.key==SDLK_DOWN) || (button && event.gbutton.button==SDL_GAMEPAD_BUTTON_DPAD_DOWN)) control_row_=(control_row_+1)%11;
             else if ((key && event.key.key==SDLK_RETURN) || (button && event.gbutton.button==SDL_GAMEPAD_BUTTON_SOUTH)) {
-                if (control_row_==8) {tap_jump_=!tap_jump_;save_controls();}
+                if (control_row_==10) {tap_jump_=!tap_jump_;save_controls();}
                 else binding_wait_=true;
             }
             continue;
@@ -161,6 +176,8 @@ InputState Application::poll_input() {
             if (i==1) {input.jump_pressed|=down;input.jump_released|=up;}
             if (i==2) input.shield_pressed|=down;
             if (i==3) input.grab_pressed|=down;
+            if (i==8) input.special_pressed|=down;
+            if (i==9) input.taunt_pressed|=down;
         }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
             input.accept_pressed |= event.key.key == SDLK_SPACE || event.key.key == SDLK_A;
@@ -200,12 +217,27 @@ InputState Application::poll_input() {
         if (std::abs(axis_x) >= 8.0f) input.stick_x = std::clamp(axis_x, -80.0f, 80.0f);
         if (std::abs(axis_y) >= 8.0f) input.stick_y = std::clamp(axis_y, -80.0f, 80.0f);
     }
-    std::array<bool,8> held{};
+    std::array<bool,10> held{};
     for (unsigned i=0;i<bindings_.size();++i) {
         held[i]=(keys && keys[bindings_[i].key]) || (gamepad_ && bindings_[i].button>=0 &&
             SDL_GetGamepadButton(gamepad_,static_cast<SDL_GamepadButton>(bindings_[i].button)));
     }
     input.shield_held=held[2];
+    for (unsigned slot=0;slot<4;++slot) {
+        auto* pad=slot==0?gamepad_:extra_gamepads_[slot-1];
+        if (!pad) {trigger_held_[slot]=c_jump_held_[slot]=false;continue;}
+        const bool trigger=SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_LEFT_TRIGGER)>8000 || SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)>8000;
+        const bool c_jump=SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_WEST) || std::abs(SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_RIGHTX))>12000 || std::abs(SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_RIGHTY))>12000;
+        if (!slot) {input.shield_held|=trigger;input.shield_pressed|=trigger && !trigger_held_[slot];input.jump_pressed|=c_jump && !c_jump_held_[slot];input.jump_released|=!c_jump && c_jump_held_[slot];}
+        else {
+            auto& c=input.controllers[slot-1];c.connected=true;c.shield=trigger || (bindings_[2].button>=0 && SDL_GetGamepadButton(pad,static_cast<SDL_GamepadButton>(bindings_[2].button)));
+            c.shield_pressed|=trigger && !trigger_held_[slot];c.jump|=c_jump && !c_jump_held_[slot];c.jump_released|=!c_jump && c_jump_held_[slot];
+            c.x=std::clamp(SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_LEFTX)/409.f,-80.f,80.f);c.y=std::clamp(SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_LEFTY)/-409.f,-80.f,80.f);
+            if (std::abs(c.x)<8) c.x=80.f*(SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_DPAD_RIGHT)-SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+            if (std::abs(c.y)<8) c.y=80.f*(SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_DPAD_UP)-SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_DPAD_DOWN));
+        }
+        trigger_held_[slot]=trigger;c_jump_held_[slot]=c_jump;
+    }
     input.pointer_held=(SDL_GetMouseState(nullptr,nullptr)&SDL_BUTTON_LMASK)!=0;
     input.up=held[4];input.down=held[5];input.left=held[6];input.right=held[7];
     if (std::abs(input.stick_x) < 8.0f) input.stick_x = (input.right ? 80.0f : 0.0f) + (input.left ? -80.0f : 0.0f);

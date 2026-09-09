@@ -101,7 +101,7 @@ int main(int argc,char** argv) {
             SDL_Event event{};event.type=SDL_EVENT_KEY_DOWN;event.key.key=key;event.key.scancode=scan;SDL_PushEvent(&event);
         };
         press(SDLK_F2,SDL_SCANCODE_F2);press(SDLK_RETURN,SDL_SCANCODE_RETURN);press(SDLK_V,SDL_SCANCODE_V);
-        for (int i=0;i<8;++i) press(SDLK_DOWN,SDL_SCANCODE_DOWN);
+        for (int i=0;i<10;++i) press(SDLK_DOWN,SDL_SCANCODE_DOWN);
         press(SDLK_RETURN,SDL_SCANCODE_RETURN);
         assert(app.run()==0);
     }

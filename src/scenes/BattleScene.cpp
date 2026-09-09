@@ -17,7 +17,8 @@ namespace sagas {
 namespace {
 class BattleScene final : public Scene {
 public:
-    BattleScene(std::vector<FighterKind> fighters,int stock):stock_(stock) {
+    BattleScene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports={}):ports_(std::move(ports)),stock_(stock) {
+        if (ports_.empty()) {ports_.assign(fighters.size(),-1);if (!ports_.empty()) ports_[0]=0;}
         for (const auto kind:fighters) {
             FighterBody body; body.kind=kind; body.attr=fighter_attributes(kind); body.stocks=stock;
             bodies_.push_back(body);
@@ -47,17 +48,26 @@ public:
         update_particles();
         for (unsigned i=0;i<bodies_.size();++i) {
             auto& body=bodies_[i];
+            const int port=ports_[i];
+            const bool human=port==0 || (port>0 && input.controllers[port-1].connected);
+            InputState player_input=input;
+            if (port>0) {
+                const auto& c=input.controllers[port-1];
+                player_input.stick_x=c.x;player_input.stick_y=c.y;player_input.attack_pressed=c.attack;player_input.attack_released=c.attack_released;
+                player_input.special_pressed=c.special;player_input.jump_pressed=c.jump;player_input.jump_released=c.jump_released;
+                player_input.shield_held=c.shield;player_input.shield_pressed=c.shield_pressed;player_input.grab_pressed=c.grab;player_input.taunt_pressed=c.taunt;
+            }
             if (body.stocks<=0) continue;
             const int old_x=body.stick_x,old_y=body.stick_y;
             bool attack=false;
-            if (i==0) {
-                body.stick_x=static_cast<int>(input.stick_x); body.stick_y=static_cast<int>(input.stick_y);
-                body.jump_pressed=input.jump_pressed || (input.tap_jump && body.stick_y>=53 && previous_stick_y_<53);
-                if (body.jump_pressed) body.jump_button=input.jump_pressed;
-                body.jump_released=input.jump_released;
-                body.shield_held=input.shield_held; attack=input.attack_pressed;
-                body.shield_tics=input.shield_pressed?0:std::min(255,body.shield_tics+1);
-                previous_stick_y_=body.stick_y;
+            if (human) {
+                body.stick_x=static_cast<int>(player_input.stick_x); body.stick_y=static_cast<int>(player_input.stick_y);
+                body.jump_pressed=player_input.jump_pressed || (player_input.tap_jump && body.stick_y>=53 && old_y<53);
+                if (body.jump_pressed) body.jump_button=player_input.jump_pressed;
+                body.jump_released=player_input.jump_released;
+                body.shield_held=player_input.shield_held; attack=player_input.attack_pressed;
+                body.shield_tics=player_input.shield_pressed?0:std::min(255,body.shield_tics+1);
+
             } else {
                 // Deterministic CPU approach; the same body/attack/collision
                 // path is used for humans and CPU fighters.
@@ -79,7 +89,7 @@ public:
             if (!on_cliff && !body.hitlag && body.status!=FighterStatus::Captured) {
                 if (body.status!=FighterStatus::DownWait) ++body.action_frame;
                 if (fighter_is_down(body.status))
-                    FighterCombat::advance_down(body,attack,i==0 && input.shield_pressed,body.action_frame>=motion_length(body));
+                    FighterCombat::advance_down(body,attack,human && player_input.shield_pressed,body.action_frame>=motion_length(body));
                 if (body.status==FighterStatus::Hitstun) {
                     body.hitstun=std::max(0,body.hitstun-1);
                     if (!body.hitstun && (body.action_frame>=motion_length(body) || attack || body.jump_pressed || (body.grounded && (std::abs(body.stick_x)>=8 || body.stick_y<=-53 || body.shield_held)))) {
@@ -93,7 +103,7 @@ public:
                 } else if (body.status==FighterStatus::CrouchEnd && body.action_frame>=motion_length(body)) {
                     body.status=FighterStatus::Wait;body.action_frame=0;
                 }
-                const bool grab=FighterCombat::start_grab(body,(i==0 && input.grab_pressed) || (attack && body.shield_held));
+                const bool grab=FighterCombat::start_grab(body,(human && player_input.grab_pressed) || (attack && body.shield_held));
                 const bool aerial=FighterCombat::start_aerial(body,attack && !grab);
                 const bool dash_attack=FighterCombat::start_dash_attack(body,attack && !grab && !aerial);
                 const bool smash=FighterCombat::start_smash(body,attack && !grab && !aerial && !dash_attack);
@@ -110,7 +120,7 @@ public:
                 const bool tilt=FighterCombat::start_tilt(body,attack && !grab && !aerial && !smash);
                 const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump || body.status==FighterStatus::Dash) &&
                                   body.action_frame>=motion_length(body);
-                FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab && !tilt && !dash_attack,ended,i==0 && input.attack_released);
+                FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab && !tilt && !dash_attack,ended,human && player_input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status==FighterStatus::Dash && ended) {body.status=FighterStatus::Wait;body.vel_ground*=.75f;}
                 if (!fighter_is_down(body.status) && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
@@ -429,6 +439,7 @@ private:
             r.triangles(shape);
         }
     }
+    std::vector<int> ports_;
     int stock_,tic_{},previous_stick_y_{},winner_{-1},finish_tics_{};
     bool done_{},finished_{};
     std::vector<FighterBody> bodies_;
@@ -441,8 +452,8 @@ private:
     std::unique_ptr<Scene3DRenderer> renderer_;
 };
 }
-std::unique_ptr<Scene> make_battle_scene(std::vector<FighterKind> fighters,int stock) {
-    return std::make_unique<BattleScene>(std::move(fighters),stock);
+std::unique_ptr<Scene> make_battle_scene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports) {
+    return std::make_unique<BattleScene>(std::move(fighters),stock,std::move(ports));
 }
 std::unique_ptr<Scene> make_battle_scene(FighterKind p1,FighterKind p2,int stock) {
     return make_battle_scene(std::vector<FighterKind>{p1,p2},stock);

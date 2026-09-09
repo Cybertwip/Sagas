@@ -112,6 +112,29 @@ public:
             } else if (active_slot_!=0) {active_slot_=0;held_slot_=slots_[0].selected?-1:0;}
             else back_=true;
         }
+        if (!one_player_) for (unsigned player=1;player<4;++player) {
+            const auto& c=input.controllers[player-1];
+            if (!c.connected) continue;
+            auto& slot=slots_[player];
+            if (slot.kind!=SlotKind::Human) {
+                slot.kind=SlotKind::Human;slot.selected=false;
+                cursors_[player]={47+45.f*player,58};slot.puck={cursors_[player].x-6,cursors_[player].y-6};
+            }
+            auto& cursor=cursors_[player];cursor.x=std::clamp(cursor.x+c.x/20,0.f,300.f);cursor.y=std::clamp(cursor.y-c.y/20,10.f,230.f);
+            const int portrait=portrait_at(cursor.x,cursor.y);
+            if (!slot.selected) {
+                slot.puck={cursor.x-6,cursor.y-6};
+                if (portrait>=0 && (slot.fkind!=kPortraitKind[portrait] || previews_[player].nodes.empty())) {
+                    slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,false);
+                }
+            }
+            if (c.cancel && slot.selected) {slot.selected=false;load_preview(slot.fkind,player,false);}
+            if (c.attack) {
+                if (!slot.selected && portrait>=0) {slot.selected=true;slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,true);}
+                else if (slot.selected && cursor.x>=slot.puck.x && cursor.x<slot.puck.x+26 && cursor.y>=slot.puck.y && cursor.y<slot.puck.y+24) {slot.selected=false;load_preview(slot.fkind,player,false);}
+            }
+            if (c.start && ready()) start_=true;
+        }
         if ((input.start_pressed || input.skip_pressed) && ready()) start_=true;
     }
 
@@ -193,6 +216,12 @@ public:
         r.sprite_at("textures/MNPlayersCommon/"+std::string(hands[hand]),hand_pos);
         r.sprite_at("textures/MNPlayersCommon/1PTextGradient.png",
                     {hand_pos.x+label_offset[hand].x,hand_pos.y+label_offset[hand].y},{1,1},{224,21,21,255});
+        if (!one_player_) for (unsigned player=1;player<4;++player) if (slots_[player].kind==SlotKind::Human) {
+            if (!slots_[player].selected) r.sprite_at(pucks[player],slots_[player].puck);
+            const auto cursor=cursors_[player];const Vec2 pos{cursor.x-17,cursor.y+8};
+            r.sprite_at("textures/MNPlayersCommon/"+std::string(slots_[player].selected?"CursorHandHover.png":"CursorHandGrab.png"),pos);
+            r.sprite_at("textures/MNPlayersCommon/"+std::to_string(player+1)+"PTextGradient.png",{pos.x+9,pos.y+10});
+        }
         if (ready() && (tic_-selected_tick_[active_slot_])%40<30) {
             for (float x=0;x<320;x+=8)
                 r.sprite_at("textures/MNPlayersCommon/ReadyBanner.png",{x,71},{1,1},{244,86,127,255});
@@ -239,6 +268,7 @@ private:
     bool back_{};
     bool start_{};
     std::array<Slot,4> slots_{};
+    std::array<Vec2,4> cursors_{};
     std::array<float,4> door_offset_{41,41,41,41};
     std::array<Model3D,4> previews_{};
     std::array<int,4> selected_tick_{};
@@ -252,10 +282,12 @@ private:
 std::unique_ptr<Scene> CharacterSelectScene::next() {
     if (back_) return make_menu_scene();
     if (start_) {
-        std::vector<FighterKind> fighters;
-        for (const auto& slot:slots_) if (slot.kind!=SlotKind::None && slot.selected) fighters.push_back(slot.fkind);
-        if (one_player_) fighters.push_back(FighterKind::Donkey);
-        return make_battle_scene(std::move(fighters),stock_);
+        std::vector<FighterKind> fighters;std::vector<int> ports;
+        for (unsigned i=0;i<slots_.size();++i) if (slots_[i].kind!=SlotKind::None && slots_[i].selected) {
+            fighters.push_back(slots_[i].fkind);ports.push_back(slots_[i].kind==SlotKind::Human?static_cast<int>(i):-1);
+        }
+        if (one_player_) {fighters.push_back(FighterKind::Donkey);ports.push_back(-1);}
+        return make_battle_scene(std::move(fighters),stock_,std::move(ports));
     }
     return {};
 }

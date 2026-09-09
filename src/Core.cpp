@@ -10,9 +10,17 @@ void InputState::clear_edges() noexcept {
     up_pressed=down_pressed=left_pressed=right_pressed=false;
     jump_pressed=back_pressed=jump_released=false;
     attack_pressed=attack_released=grab_pressed=shield_pressed=false;
+    special_pressed=taunt_pressed=false;
+    for (auto& c:controllers) {c.attack=c.attack_released=c.special=c.jump=c.jump_released=c.shield_pressed=c.grab=c.start=c.cancel=c.taunt=false;}
     pointer_moved=pointer_pressed=pointer_released=false;
 }
 void InputState::latch_edges(const InputState& previous) noexcept {
+    special_pressed|=previous.special_pressed;taunt_pressed|=previous.taunt_pressed;
+    for (unsigned i=0;i<controllers.size();++i) {
+        auto& c=controllers[i];const auto& p=previous.controllers[i];
+        c.attack|=p.attack;c.attack_released|=p.attack_released;c.special|=p.special;c.jump|=p.jump;c.jump_released|=p.jump_released;
+        c.shield_pressed|=p.shield_pressed;c.grab|=p.grab;c.start|=p.start;c.cancel|=p.cancel;c.taunt|=p.taunt;
+    }
     accept_pressed|=previous.accept_pressed; cancel_pressed|=previous.cancel_pressed;
     skip_pressed|=previous.skip_pressed; start_pressed|=previous.start_pressed;
     quit|=previous.quit; jump_pressed|=previous.jump_pressed; back_pressed|=previous.back_pressed;

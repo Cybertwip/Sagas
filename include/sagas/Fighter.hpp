@@ -35,7 +35,7 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
+enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Tumble, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
 
 struct FighterModelSpec {
     std::string_view descriptor;
@@ -68,6 +68,8 @@ struct FighterBody {
     bool jab_queued{};
     unsigned attack_motion{},attack_epoch{~0U};
     int aerial_attack{-1}, shield_tics{255};
+    unsigned damage_motion{};
+    bool damage_tumble{};
     unsigned landing_motion{};
     float landing_speed{1};
     int capture_target{-1}, captured_by{-1}, capture_tics{};

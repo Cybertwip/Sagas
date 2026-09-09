@@ -363,7 +363,7 @@ bool FighterPhysics::try_ledge(FighterBody& body,Vec3 before,std::span<const Col
 
 bool FighterCombat::start_aerial(FighterBody& body,bool pressed) {
     if (!pressed || body.hitlag || body.grounded ||
-        (body.status!=FighterStatus::Jump && body.status!=FighterStatus::Fall)) return false;
+        (body.status!=FighterStatus::Jump && body.status!=FighterStatus::Fall && body.status!=FighterStatus::Tumble)) return false;
     int direction=0;
     if (std::abs(body.stick_x)>=20 || std::abs(body.stick_y)>=20) {
         const float angle=std::atan2(static_cast<float>(body.stick_y),static_cast<float>(std::abs(body.stick_x)));
@@ -521,12 +521,31 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             const float knockback=std::min(2500.0f,((component*defender.attr.weight*1.4f+18)*hit.growth*.01f)+hit.base);
             const float degrees=hit.angle==361 ? (defender.grounded ? (knockback<32?0.f:std::min(42.5f,((knockback-32)/.099998474f)*42.5f+1)) : 43.f) : static_cast<float>(hit.angle);
             const float angle=degrees*.01745329252f;
+            const bool was_airborne=!defender.grounded;
+            defender.lr=-attacker.lr;
             defender.vel_damage={std::cos(angle)*knockback*attacker.lr,std::sin(angle)*knockback,0};
             defender.vel_air={}; defender.vel_ground=0;
             if (defender.vel_damage.y>0) defender.grounded=false;
             defender.status=FighterStatus::Hitstun; defender.action_frame=0;
             defender.attack_motion=0;defender.jab_stage=0;defender.jab_followup_left=0;defender.rapid_inputs=0;
             defender.hitstun=std::max(1,static_cast<int>(knockback/1.875f));
+            const unsigned level=defender.hitstun<12?0:defender.hitstun<24?1:defender.hitstun<32?2:3;
+            // Until per-joint hurtboxes are available, classify contact height
+            // on the body capsule into the source low/neutral/high indices.
+            const float height=(hit.position.y-defender.position.y)/defender.attr.height;
+            const unsigned band=height<.333f?0:height<.667f?1:2;
+            unsigned reaction=was_airborne?9+level:(2-band)*3+level;
+            if (level==3) {
+                reaction=15-band;
+                if (degrees>75 && degrees<115) reaction=16;
+                if (defender.grounded) {
+                    defender.grounded=false;
+                    if (defender.vel_damage.y<0) defender.vel_damage.y*=-.8f;
+                }
+            }
+            defender.damage_motion=fighter_source_data[static_cast<unsigned>(defender.kind)].damage_reactions[reaction];
+            defender.damage_tumble=was_airborne || level==3;
+            defender.tap_stick_x=defender.tap_stick_y=255;
             defender.fastfall=false;
         }
     }

@@ -60,7 +60,7 @@ public:
                 const float dx=target!=bodies_.end()?target->position.x-body.position.x:0;
                 const float dy=target!=bodies_.end()?target->position.y-body.position.y:0;
                 body.stick_x=std::abs(dx)>260?(dx>0?60:-60):0; body.stick_y=0;
-                if (std::abs(dx)>1 && body.status!=FighterStatus::Attack) body.lr=dx>0?1:-1;
+                if (std::abs(dx)>1 && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Tumble) body.lr=dx>0?1:-1;
                 body.jump_pressed=body.grounded && dy>300 && tic_%40==0;
                 body.jump_button=true; body.jump_released=false;
                 attack=std::abs(dx)<420 && tic_%32==static_cast<int>(i)*3;
@@ -71,8 +71,13 @@ public:
             if (on_cliff) update_cliff(body);
             if (!on_cliff && !body.hitlag && body.status!=FighterStatus::Captured) {
                 ++body.action_frame;
-                if (body.status==FighterStatus::Hitstun && --body.hitstun<=0)
-                    body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
+                if (body.status==FighterStatus::Hitstun) {
+                    body.hitstun=std::max(0,body.hitstun-1);
+                    if (!body.hitstun && body.action_frame>=motion_length(body)) {
+                        body.status=body.grounded?FighterStatus::Wait:body.damage_tumble?FighterStatus::Tumble:FighterStatus::Fall;
+                        body.action_frame=0;
+                    }
+                }
                 if (body.status==FighterStatus::Turn && body.action_frame>=motion_length(body)) body.status=FighterStatus::Wait;
                 if (body.status==FighterStatus::Crouch && body.action_frame>=motion_length(body)) {
                     body.status=FighterStatus::CrouchWait;body.action_frame=0;
@@ -303,7 +308,8 @@ private:
                 if (body.attack_motion) return body.attack_motion;
                 if (body.jab_stage>=4) return data.rapid[body.jab_stage-4];
                 return body.jab_stage==3?data.jab3:body.jab_stage==2?data.jab2:data.jab;
-            case FighterStatus::Hitstun:return data.damage;
+            case FighterStatus::Hitstun:return body.damage_motion?body.damage_motion:data.damage_reactions[3];
+            case FighterStatus::Tumble:return data.damage_reactions[19];
             default:return data.idle;
         }
     }

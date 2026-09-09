@@ -150,6 +150,23 @@ int main(int argc,char** argv) {
             audio.stop();
         }
     }
+    {
+        const auto fixture_root=output/"roster-assets";
+        std::filesystem::create_directories(fixture_root/"mods");
+        for (const auto& entry:std::filesystem::directory_iterator(SAGAS_DEFAULT_ASSET_ROOT)) {
+            if (entry.path().filename()=="mods") continue;
+            const auto link=fixture_root/entry.path().filename();
+            if (!std::filesystem::exists(link)) std::filesystem::create_symlink(entry.path(),link);
+        }
+        {std::ofstream roster(fixture_root/"mods/roster.tsv");roster<<"6\n";for(int i=0;i<18;++i) roster<<i%12<<"\tFighter "<<i<<"\t\n";}
+        sagas::AssetRepository assets(fixture_root);sagas::RenderEngine render(window,assets);
+        sagas::AudioEngine audio(assets);sagas::PhysicsWorld physics;sagas::SceneResourceManager resources(assets);
+        sagas::Services services{assets,render,audio,physics,resources,true};
+        auto scene=sagas::make_character_select_scene(3,false,true);scene->enter(services);
+        sagas::InputState input;input.pointer_moved=true;input.pointer_x=272;input.pointer_y=107;input.accept_pressed=true;
+        scene->update(services,input,1.f/60);render.request_capture(output/"roster-18.png");scene->draw(services);
+        input={};input.start_pressed=true;scene->update(services,input,1.f/60);assert(scene->next());
+    }
     SDL_DestroyWindow(window); SDL_Quit();
     // Exercise the actual SDL controls panel, saving and reloading a mapping.
     const auto controls_file=output/"controls.cfg";

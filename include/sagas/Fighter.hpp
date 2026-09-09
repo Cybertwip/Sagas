@@ -108,6 +108,7 @@ struct FighterBody {
     std::array<unsigned,8> hit_group_masks{};
     std::array<unsigned,8> hit_group_epochs{~0U,~0U,~0U,~0U,~0U,~0U,~0U,~0U};
     int stocks{3};
+    int ko_tics{},ko_mode{};
     float shield{55};
     unsigned guard_motion{};
     int shield_stun{};

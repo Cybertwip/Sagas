@@ -7,10 +7,10 @@
 namespace sagas {
 void BattleCamera::tick(std::span<const FighterBody> fighters,const Stage3D& stage) {
     unsigned count=0;
-    for (const auto& body:fighters) if (body.stocks>0) ++count;
+    for (const auto& body:fighters) if (body.stocks>0 && body.status!=FighterStatus::KO) ++count;
     constexpr float zooms[]{0,1.5f,1.32f,1.16f,1};
     float left=65536,right=-65536,bottom=65536,top=-65536;
-    for (const auto& body:fighters) if (body.stocks>0) {
+    for (const auto& body:fighters) if (body.stocks>0 && body.status!=FighterStatus::KO) {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
         const auto& bounds=stage.camera_bounds;
         const float x=std::clamp(body.position.x,bounds[3],bounds[2]);

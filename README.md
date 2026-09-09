@@ -75,8 +75,7 @@ reflection. **This remains a partial port, not verified 1:1 gameplay.** Remainin
 work includes complete character-specific special callbacks (charging, capture,
 weapon behavior and recovery), exact thrown rotations/status tables, per-joint
 hurtboxes, moving collision, full source collision responses, CPU strategy,
-source particle assets and complete sound-event coverage. Current particles and
-projectile visuals are procedural. Full source effects and visual parity across
+source particle assets and complete sound-event coverage. Most effects remain procedural; Pikachu projectile models now load source geometry and materials. Full source effects and visual parity across
 every opening segment have not been established. Opening fight scripts are not
 yet connected to the shared battle simulation.
 
@@ -175,3 +174,23 @@ also check the attachment, landing, spotlight, and revival. These checks do
 not establish pixel-for-pixel parity for the entire opening; the renderer still
 approximates N64 lighting/compositing, and later segments retain placeholder
 presentations.
+
+
+Sagas Studio begins the Stellar authoring-tool port. Run
+`python3 sagas/tools/stellar/server.py` and open `http://127.0.0.1:8765`.
+Import packages, reorder/hide roster entries, choose columns, and save; reopen
+character select to load its responsive portrait grid. See
+[the tool README](tools/stellar/README.md) for the current boundary: custom
+model/audio assets are preserved, while imported entries still use a base
+fighter until the Sagas package runtime is implemented. No Remix overlays run.
+
+Guard now uses source entry/release and roll motions. Landing recovery prevents
+Z-cancel taps from immediately becoming guard. Shield entry/release and impacts
+play audio; shield break remains unimplemented. Jump-start attacks can queue an
+aerial, Reflector can yield to an available jump, and up-smash accepts run-brake
+and jump-start states. Neutral special landing transitions preserve action
+frames and projectile state. Special events are keyed by source state, since
+several states share animation files but have different command scripts.
+Pikachu has timed Quick Attack bursts and Thunder discharge transitions;
+Falcon Dive uses capture/release states. Collision and effects fidelity still
+require further source porting and playtesting.

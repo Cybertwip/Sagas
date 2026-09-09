@@ -49,6 +49,7 @@ public:
         update_particles();
         for (unsigned i=0;i<bodies_.size();++i) {
             auto& body=bodies_[i];
+            if (body.status==FighterStatus::KO) {advance_ko(body,services);continue;}
             const int port=ports_[i];
             const bool human=port==0 || (port>0 && input.controllers[port-1].connected);
             InputState player_input=input;
@@ -186,12 +187,7 @@ public:
                 emit(body.position,{225,225,220,170},3,false);
             const auto& bounds=stage_.blast_bounds;
             if (body.position.x<bounds[3] || body.position.x>bounds[2] || body.position.y<bounds[1] || body.position.y>bounds[0]) {
-                emit(before,{255,230,120,255},28,true);
-                --body.stocks;
-                if (!body.stocks) {body.status=FighterStatus::KO;continue;}
-                const auto kind=body.kind;const auto attr=body.attr;const int stocks=body.stocks;
-                body={};body.kind=kind;body.attr=attr;body.stocks=stocks;
-                body.position={0,1500,0};body.grounded=false;body.status=FighterStatus::Fall;body.invincible=180;
+                begin_ko(body,services);continue;
             }
             const unsigned clip=motion(body);
             if (body.motion!=clip) {
@@ -367,7 +363,7 @@ public:
         const auto& camera=camera_.view();
         for (const auto& layer:stage_.layers) renderer_->draw(r,layer,camera,static_cast<float>(tic_));
         for (const auto& body:bodies_) {
-            if (body.stocks<=0 || (body.invincible && tic_%6<2)) continue;
+            if (body.stocks<=0 || (body.status==FighterStatus::KO && (body.ko_mode==3 || body.ko_tics>=180)) || (body.invincible && tic_%6<2)) continue;
             const auto model=posed(body);
             renderer_->draw(r,model,camera,body.action_frame*(body.status==FighterStatus::Land?body.landing_speed:1.f),
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
@@ -446,9 +442,48 @@ private:
                            body.cliff_edge.y+pose.tracks[5]*body.attr.size,0};
         }
     }
+    void begin_ko(FighterBody& body,Services& services) {
+        const bool upward=body.position.y>stage_.blast_bounds[0];
+        body.ko_mode=upward?((ko_serial_++%6)==5?2:1):3;body.ko_tics=0;
+        body.status=FighterStatus::KO;body.action_frame=0;body.hitlag=0;body.hitstun=0;body.capture_target=-1;body.captured_by=-1;
+        body.vel_air={};body.vel_damage={};body.vel_ground=0;body.grounded=false;
+        const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+        if (upward) {
+            if (!services.deterministic_clock && data.deadup_sfx!=~0U) services.audio.play_fgm(data.deadup_sfx);
+            if (body.ko_mode==1) body.vel_air={0,(stage_.camera_bounds[0]*.6f-body.position.y)/180.f,-83.333336f};
+            else {
+                const auto& eye=camera_.view().eye;
+                body.position={eye.x,std::min(eye.y+3000,stage_.blast_bounds[0]),std::max(2000.f,eye.z-3000)};
+                body.vel_air.y=(stage_.camera_bounds[1]-body.position.y)/180.f;
+            }
+        } else {
+            --body.stocks;
+            emit({std::clamp(body.position.x,stage_.camera_bounds[3],stage_.camera_bounds[2]),std::clamp(body.position.y,stage_.camera_bounds[1],stage_.camera_bounds[0]),0},{255,230,120,255},32,true);
+            if (!services.deterministic_clock) {services.audio.play_fgm(dead_explode_sfx);for(auto sound:data.dead_sfx) if(sound!=~0U) services.audio.play_fgm(sound);}
+        }
+    }
+    void advance_ko(FighterBody& body,Services& services) {
+        if (body.ko_mode==0) return;
+        ++body.ko_tics;++body.action_frame;
+        if (body.ko_mode!=3 && body.ko_tics<=180) {
+            body.position.x+=body.vel_air.x;body.position.y+=body.vel_air.y;body.position.z+=body.vel_air.z;
+            if (body.ko_tics==180) {
+                --body.stocks;
+                emit(body.position,{255,255,255,255},20,true);
+                if (!services.deterministic_clock) services.audio.play_fgm(body.ko_mode==1?dead_star_sfx:dead_explode_sfx);
+            }
+        }
+        if (body.ko_tics>=(body.ko_mode==3?45:225) && body.stocks>0) {
+            const auto kind=body.kind;const auto attr=body.attr;const int stocks=body.stocks;
+            body={};body.kind=kind;body.attr=attr;body.stocks=stocks;
+            body.position={0,1500,0};body.grounded=false;body.status=FighterStatus::Fall;body.invincible=120;
+        }
+    }
+    unsigned ko_serial_{};
     static unsigned motion(const FighterBody& body) {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
         switch(body.status) {
+            case FighterStatus::KO:return data.damage_reactions[19];
             case FighterStatus::Shield:case FighterStatus::ShieldRelease:case FighterStatus::ShieldRoll:return body.guard_motion;
             case FighterStatus::Crouch:return data.crouch[0];
             case FighterStatus::CrouchWait:return data.crouch[1];

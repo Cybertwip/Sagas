@@ -170,12 +170,13 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         } else if (!body.grounded) jump(body);
     }
     if (body.grounded && body.stick_y<=-53 && body.tap_stick_y<4 &&
-        (body.status==FighterStatus::Wait || body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::Walk || body.status==FighterStatus::Shield)) {
+        (body.status==FighterStatus::Wait || body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash || body.status==FighterStatus::Run || body.status==FighterStatus::RunBrake || body.status==FighterStatus::Shield)) {
         for (const auto& line:stage) if (line.type==0 && line.pass_through &&
             body.position.x>=std::min(line.a.x,line.b.x) && body.position.x<=std::max(line.a.x,line.b.x)) {
             const float y=line.a.y+(line.b.y-line.a.y)*(body.position.x-line.a.x)/(line.b.x-line.a.x);
             if (std::abs(body.position.y-y)<2) {
-                body.grounded=false; body.drop_frames=12; body.position.y-=3; body.vel_air.y=-3;
+                body.grounded=false; body.drop_frames=12; body.position.y-=1; body.vel_air.y=0;body.status=FighterStatus::Fall;body.action_frame=0;body.tap_stick_y=255;
+                body.vel_air.x=std::clamp(body.vel_air.x,-body.attr.air_speed_max_x,body.attr.air_speed_max_x);
                 break;
             }
         }
@@ -707,7 +708,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
         }
         for (unsigned i=0;i<bodies.size();++i) {
             auto& defender=bodies[i];
-            if (i==hit.owner || defender.stocks<=0 || defender.invincible || defender.recovery_invulnerable || (mask&(1U<<i))) continue;
+            if (i==hit.owner || defender.status==FighterStatus::KO || defender.stocks<=0 || defender.invincible || defender.recovery_invulnerable || (mask&(1U<<i))) continue;
             // Capsule around the map collision body. Per-joint hurtboxes
             // remain a separate fidelity task; attacks already follow joints.
             const float y=std::clamp(hit.position.y,defender.position.y+defender.attr.width,

@@ -79,7 +79,8 @@ std::vector<std::vector<std::optional<n64::Address>>> material_animation_table(
         if (!scripts) continue;
         for (std::size_t material=0;material<materials[node].size();++material) {
             const n64::Address script_slot{scripts->file,scripts->offset+static_cast<std::uint32_t>(material*4)};
-            if (archive.u32(script_slot)!=0) result[node][material]=archive.resolve(script_slot);
+            if (archive.u32(script_slot)==0) break; // Material animation chains are null-terminated.
+            result[node][material]=archive.resolve(script_slot);
         }
     }
     return result;
@@ -238,7 +239,7 @@ Stage3D Scene3DLoader::stage(std::string_view header) {
                     for (unsigned i=1;i<length;++i) {
                         const auto a=point(start+i-1),b=point(start+i);
                         const unsigned flags=a.second|b.second;
-                        result.collision.push_back({a.first,b.first,type,flags,type==0 && (flags&0x800U)!=0,line});
+                        result.collision.push_back({a.first,b.first,type,flags,type==0 && (flags&0x4000U)!=0,line});
                     }
                 }
             }

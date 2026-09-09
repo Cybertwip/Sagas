@@ -180,7 +180,7 @@ InputState Application::poll_input() {
             if (i==9) input.taunt_pressed|=down;
         }
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-            input.accept_pressed |= event.key.key == SDLK_SPACE || event.key.scancode == bindings_[0].key;
+            input.accept_pressed |= event.key.key == SDLK_SPACE || event.key.key == SDLK_J;
             input.start_pressed |= event.key.key == SDLK_RETURN;
             if (bindings_[2].key==SDL_SCANCODE_LSHIFT && (event.key.key==SDLK_U || event.key.key==SDLK_Z)) input.shield_pressed=true;
             input.back_pressed |= event.key.key == SDLK_ESCAPE;

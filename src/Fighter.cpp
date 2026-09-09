@@ -458,7 +458,9 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
         body.special_phase=2;body.special_motion=data.special_end[index];body.action_frame=0;return;
     }
     if (body.special_phase==0 && animation_ended && data.special_loop[index]) {
-        body.special_phase=1;body.special_motion=data.special_loop[index];body.action_frame=0;return;
+        body.special_phase=1;body.special_motion=data.special_loop[index];body.action_frame=0;
+        if (body.kind==FighterKind::Fox && index%3==1) body.special_tics=0;
+        return;
     }
     if (body.special_phase==1 && (pressed || body.special_tics>=120)) {
         if (data.special_end[index]) {body.special_phase=2;body.special_motion=data.special_end[index];body.action_frame=0;return;}

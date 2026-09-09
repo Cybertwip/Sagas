@@ -109,6 +109,9 @@ public:
                 if (body.status==FighterStatus::Special)
                     FighterCombat::advance_special(body,human && player_input.special_pressed,body.action_frame>=motion_length(body));
                 (void)FighterCombat::start_special(body,human && player_input.special_pressed);
+                if (human && player_input.taunt_pressed && body.grounded && (body.status==FighterStatus::Wait || body.status==FighterStatus::Walk)) {
+                    body.status=FighterStatus::Attack;body.attack_motion=fighter_source_data[static_cast<unsigned>(body.kind)].taunt;body.action_frame=0;
+                }
                 const bool grab=FighterCombat::start_grab(body,(human && player_input.grab_pressed) || (attack && body.shield_held));
                 const bool aerial=FighterCombat::start_aerial(body,attack && !grab);
                 const bool dash_attack=FighterCombat::start_dash_attack(body,attack && !grab && !aerial && body.smash_buffer<=0);
@@ -465,6 +468,8 @@ private:
         if (!with_root && model.fighter_wrapper==Model3D::FighterWrapper::TransN) model.fighter_root_animation.reset();
         model.position=body.position;model.rotation.y=body.lr*std::numbers::pi_v<float>/2;
         if (body.status==FighterStatus::Captured) model.rotation.z=body.capture_rotation;
+        if (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_phase==3)
+            model.rotation.z=body.lr*std::numbers::pi_v<float>/2-std::atan2(body.special_velocity.x,body.special_velocity.y);
         model.scale={body.attr.size,body.attr.size,body.attr.size};return model;
     }
     struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity; };

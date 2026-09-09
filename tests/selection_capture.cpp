@@ -60,9 +60,9 @@ int main(int argc,char** argv) {
             assert(returned);
         }
         for (int direction=0;direction<3;++direction) {
-            auto battle=sagas::make_battle_scene(sagas::FighterKind::Fox,sagas::FighterKind::Donkey,3);battle->enter(services);
+            auto battle=sagas::make_battle_scene(std::vector<sagas::FighterKind>{sagas::FighterKind::Fox,sagas::FighterKind::Donkey},3,{0,1});battle->enter(services);
             for (int frame=0;frame<190;++frame) {
-                sagas::InputState input;input.shield_held=frame>=50 && frame<70;
+                sagas::InputState input;input.controllers[0].connected=true;input.shield_held=frame>=50 && frame<70;
                 input.special_pressed=frame==90;input.special_held=frame>=90 && frame<150;
                 input.stick_y=frame>=90 && frame<150?(direction==1?80:direction==2?-80:0):0;
                 battle->update(services,input,1.f/60);
@@ -70,6 +70,17 @@ int main(int argc,char** argv) {
                     render.request_capture(output/("fox-special-"+std::to_string(direction)+"-"+std::to_string(frame)+".png"));battle->draw(services);
                 }
             }
+        }
+        {
+            auto scene=sagas::make_character_select_scene(3,false,true);scene->enter(services);
+            sagas::InputState outside;outside.pointer_moved=true;outside.pointer_x=275;outside.pointer_y=12;
+            scene->update(services,outside,1.f/60);
+            outside.pointer_released=true;scene->update(services,outside,1.f/60);
+            sagas::InputState start;start.start_pressed=true;scene->update(services,start,1.f/60);assert(!scene->next());
+            render.request_capture(output/"token-constrained.png");scene->draw(services);
+            sagas::InputState select;select.pointer_moved=true;select.pointer_x=92;select.pointer_y=58;select.accept_pressed=true;
+            scene->update(services,select,1.f/60);
+            sagas::InputState down;down.stick_y=-80;down.skip_pressed=true;scene->update(services,down,1.f/60);assert(!scene->next());
         }
         // Mouse pickup must invalidate readiness; release places the puck and
         // moving away must leave the deposited selection ready to start.

@@ -776,7 +776,8 @@ int main() {
     {
         sagas::FighterBody fox;fox.kind=sagas::FighterKind::Fox;fox.attr=sagas::fighter_attributes(fox.kind);fox.stick_y=80;
         assert(sagas::FighterCombat::start_special(fox,true));
-        for (int frame=0;frame<35;++frame) sagas::FighterCombat::advance_special(fox,false,frame==8);
+        sagas::FighterCombat::advance_special(fox,false,true);
+        for (int frame=0;frame<35;++frame) sagas::FighterCombat::advance_special(fox,false,false);
         assert(!fox.grounded && fox.special_phase==3 && fox.special_motion==sagas::fighter_source_data[9].special_active[4]);
         sagas::FighterPhysics::tick(fox,-10000);assert(fox.vel_air.y>110);
         fox.action_frame=30;sagas::FighterCombat::advance_special(fox,false,false);

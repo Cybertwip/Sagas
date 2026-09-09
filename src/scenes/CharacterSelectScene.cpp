@@ -36,7 +36,7 @@ public:
             slots_[i] = {SlotKind::None, FighterKind::Mario, false};
         cursor_x_ = kPortraitX[1] + 22;
         cursor_y_ = kPortraitY[1] + 22;
-        slots_[0].puck={cursor_x_-6,cursor_y_-6};
+        slots_[0].puck=constrained_puck(cursor_x_,cursor_y_);
     }
     void enter(Services& services) override {
         archive_=&services.resources.archive();
@@ -56,7 +56,7 @@ public:
             cursor_x_=std::clamp(input.pointer_x,0.f,300.f);
             cursor_y_=std::clamp(input.pointer_y,10.f,230.f);
         }
-        if (held_slot_>=0) slots_[held_slot_].puck={cursor_x_-6,cursor_y_-6};
+        if (held_slot_>=0) slots_[held_slot_].puck=constrained_puck(cursor_x_,cursor_y_);
         const int hover = portrait_at(cursor_x_,cursor_y_);
         if (hover!=hover_) {
             hover_=hover;
@@ -86,7 +86,7 @@ public:
             if (pickup>=0) {
                 active_slot_=pickup;held_slot_=pickup;
                 slots_[pickup].selected=false;
-                slots_[pickup].puck={cursor_x_-6,cursor_y_-6};
+                slots_[pickup].puck=constrained_puck(cursor_x_,cursor_y_);
                 load_preview(slots_[pickup].fkind,pickup,false);
                 services.audio.play(AudioCue::MenuSelect);
             } else if ((one_player_?(cursor_y_>=195 && cursor_y_<214):(cursor_y_>=128 && cursor_y_<143)) && cursor_x_>=22) {
@@ -107,7 +107,7 @@ public:
         if (input.cancel_pressed) {
             if (slots_[active_slot_].selected) {
                 slots_[active_slot_].selected=false;held_slot_=static_cast<int>(active_slot_);
-                slots_[active_slot_].puck={cursor_x_-6,cursor_y_-6};
+                slots_[active_slot_].puck=constrained_puck(cursor_x_,cursor_y_);
                 load_preview(slots_[active_slot_].fkind,active_slot_,false);
             } else if (active_slot_!=0) {active_slot_=0;held_slot_=slots_[0].selected?-1:0;}
             else back_=true;
@@ -123,7 +123,7 @@ public:
             auto& cursor=cursors_[player];cursor.x=std::clamp(cursor.x+c.x/20,0.f,300.f);cursor.y=std::clamp(cursor.y-c.y/20,10.f,230.f);
             const int portrait=portrait_at(cursor.x,cursor.y);
             if (!slot.selected) {
-                slot.puck={cursor.x-6,cursor.y-6};
+                slot.puck=constrained_puck(cursor.x,cursor.y);
                 if (portrait>=0 && (slot.fkind!=kPortraitKind[portrait] || previews_[player].nodes.empty())) {
                     slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,false);
                 }
@@ -135,7 +135,7 @@ public:
             }
             if (c.start && ready()) start_=true;
         }
-        if ((input.start_pressed || input.skip_pressed) && ready()) start_=true;
+        if (input.start_pressed && ready()) start_=true;
     }
 
     void draw(Services& services) override {
@@ -175,7 +175,6 @@ public:
             if (slots_[player].selected) {
                 r.sprite_at(std::string("textures/CharacterNames/") +
                             std::string(fighter_kind_name(slots_[player].fkind)) + ".png",{x+8,146});
-                r.sprite_at(pucks[player],slots_[player].puck);
             }
         }
 
@@ -206,6 +205,14 @@ public:
             const auto label=slots_[player].kind==SlotKind::None?"NALabel.png":slots_[player].kind==SlotKind::Cpu?"CPLabel.png":"HmnLabel.png";
             r.sprite_at("textures/MNPlayersCommon/"+std::string(label),{x+(one_player_?8.f:42.f),one_player_?201.f:131.f});
         }
+        if (ready() && (tic_-selected_tick_[active_slot_])%40<30) {
+            for (float x=0;x<320;x+=8)
+                r.sprite_at("textures/MNPlayersCommon/ReadyBanner.png",{x,71},{1,1},{244,86,127,255});
+            r.sprite_rect("textures/MNPlayersCommon/ReadyToFightText.png",50,71,224,17,{255,255,157,255});
+        }
+        r.sprite_at("textures/MNPlayersCommon/BackButton.png",{244,16});
+        for (int player=0;player<gates;++player)
+            if (slots_[player].selected) r.sprite_at(pucks[player],slots_[player].puck);
         // Pucks render beneath the hand in both held and placed states.
         if (held_slot_>=0) r.sprite_at(pucks[held_slot_],slots_[held_slot_].puck);
         const bool portrait_band=cursor_y_>=38 && cursor_y_<=124;
@@ -222,16 +229,14 @@ public:
             r.sprite_at("textures/MNPlayersCommon/"+std::string(slots_[player].selected?"CursorHandHover.png":"CursorHandGrab.png"),pos);
             r.sprite_at("textures/MNPlayersCommon/"+std::to_string(player+1)+"PTextGradient.png",{pos.x+9,pos.y+10});
         }
-        if (ready() && (tic_-selected_tick_[active_slot_])%40<30) {
-            for (float x=0;x<320;x+=8)
-                r.sprite_at("textures/MNPlayersCommon/ReadyBanner.png",{x,71},{1,1},{244,86,127,255});
-            r.sprite_rect("textures/MNPlayersCommon/ReadyToFightText.png",50,71,224,17,{255,255,157,255});
-        }
-        r.sprite_at("textures/MNPlayersCommon/BackButton.png",{244,16});
         r.end();
     }
     std::unique_ptr<Scene> next() override;
 private:
+    static Vec2 constrained_puck(float x,float y) {
+        // The hand can visit settings and Back; the whole token stays on portraits.
+        return {std::clamp(x-6,25.f,269.f),std::clamp(y-6,36.f,98.f)};
+    }
     struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{}; };
     [[nodiscard]] static int portrait_at(float x, float y) {
         for (int i = 0; i < 12; ++i) {

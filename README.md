@@ -20,6 +20,7 @@ Runtime options:
 
 ```text
 --assets PATH       use another external asset bundle
+--controls PATH     load/save controller bindings (default controls.cfg)
 --title             begin directly at the title scene
 --menu              begin directly at the main menu
 --select            begin directly at character selection
@@ -30,37 +31,54 @@ Runtime options:
 --capture-only      skip intermediate drawing during headless captures
 ```
 
-Enter/Space/A or a controller's south/Start button accepts. Escape/B cancels;
-S skips. Startup accepts a skip after the original eight-frame lockout and each
-opening segment after its original ten-frame lockout.
+Space/J or controller south confirms menus; Enter/Start begins a match.
+Escape/B cancels. S skips the opening, but does not start a match from selection.
+Physical A is movement, never menu confirmation.
 
-In character selection, move the puck with arrows or the left stick and press
-A/Space to select. Activate CPU slots by selecting their N/A label, then choose
-a fighter for that slot. B recalls the active puck; Enter starts once all enabled
-slots have a selection (at least two in VS). Selected previews use the source
-submotion flags, including Ness and Pikachu's extra XRotN animation track.
+Character selection supports mouse pickup/drop and independent hands/tokens for
+up to four connected controllers. Tokens stay inside the portrait grid while
+hands can visit Back and slot settings. Click an N/A slot label to add a CPU.
+Back sits at the upper right; inactive slots use the original closed shutters.
 
-In battle, arrows/stick move, X or upward stick jumps, A/Space performs the first
-jab, and Z shields. Tap A again to buffer the character's jab follow-up; release
-X during the first three jump-startup ticks for a short hop. Controller equivalents are north/west for jump, south for
-jab and right shoulder for shield. Escape returns to selection.
+The default controls follow `remix/src/input.c`; F2 opens the binding editor.
+Bindings and tap-jump preference persist in `controls.cfg`.
 
-Battle currently supports cartridge movement attributes, static stage collision,
-gravity, jumps, landing, platform drops, joint-bound jab-chain hitboxes, damage,
-hitlag, hitstun, knockback and stock respawns. Knockback decays separately from
-movement and survives landing. CPU movement uses the same physics/combat path.
-This is still a partial gameplay implementation: hurtboxes are body capsules;
-the full move set, source action transitions, ledge grabs, moving platforms,
-collision responses, sound-event coverage and battle HUD remain unfinished.
-Ground knockback currently assumes normal floor friction. Opening fight scripts
-have not yet been connected to this simulation.
+| Action | Keyboard | Controller |
+| --- | --- | --- |
+| Move | WASD | Left stick / D-pad |
+| A attack | J | South |
+| B special | K | East |
+| Jump | I | North, West, or right stick |
+| Shield / Z tech | Shift, U, or Z | Either trigger |
+| Grab | E, or shield + attack | Right shoulder, or shield + South |
+| Taunt | Q | Left shoulder |
 
-Jump force follows `ftCommonJumpGetJumpForceButton` and per-character attributes.
-Kirby/Purin use their authored extra-jump velocity tables; Ness/Yoshi use TransN
-animation deltas. Aerial turning, jump armor and multi-jump interrupt gates remain
-to be ported. Jab follow-ups read script flag-1 timing and source input windows;
-animation termination replaces the previous universal 30-frame timeout. Rapid
-jabs are not implemented yet.
+Directional attacks include tilts, smashes, dash attacks and five aerials. A
+fresh strong directional tap selects a smash; held directions select tilts.
+Smashes have a three-tick input queue, paused during hitlag. Releasing jump
+within the first three startup ticks gives a short hop. Down crouches; a fresh
+down tap drops through pass-through platforms. After knockdown, attack gives a
+get-up attack, left/right rolls, and up or shield stands up. A shield press less
+than 20 ticks before tumble impact performs a neutral/directional tech.
+
+Battle uses cartridge movement attributes, floor friction, animation root
+motion, joint-bound attack windows, multi-hit collision groups, hitlag,
+knockback, grounded/airborne damage reactions, tumble, knockdowns and get-ups.
+Grabbed fighters follow the holder's animated attachment joint through throws.
+Hit, electric, landing and launch effects, visible shields, and a GAME SET
+transition replace the previous silent/frozen match end. Audio events are
+consumed once per motion frame; impact articulations retain timed pitch changes.
+
+Special motion dispatch and basic projectile contact are available. Fox has
+Blaster, aimed Firefox startup/travel/end, and held Reflector with projectile
+reflection. **This remains a partial port, not verified 1:1 gameplay.** Remaining
+work includes complete character-specific special callbacks (charging, capture,
+weapon behavior and recovery), exact thrown rotations/status tables, per-joint
+hurtboxes, moving collision, full source collision responses, CPU strategy,
+source particle assets and complete sound-event coverage. Current particles and
+projectile visuals are procedural. Full source effects and visual parity across
+every opening segment have not been established. Opening fight scripts are not
+yet connected to the shared battle simulation.
 
 The default battle camera follows `gmCameraUpdateInterests` and
 `gmCameraDefaultFuncCamera`: fighter offsets, facing margins, stage bounds,

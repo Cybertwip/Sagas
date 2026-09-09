@@ -552,8 +552,9 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
         auto& attacker=bodies[hit.owner];
         if (attacker.status==FighterStatus::Captured || attacker.status==FighterStatus::KO) continue;
         const unsigned group=std::min(7U,hit.group);
-        unsigned& mask=hit.epoch==~0U?attacker.hit_mask:attacker.hit_group_masks[group];
-        if (hit.epoch!=~0U && attacker.hit_group_epochs[group]!=hit.epoch) {
+        unsigned projectile_mask=0;
+        unsigned& mask=hit.projectile?projectile_mask:hit.epoch==~0U?attacker.hit_mask:attacker.hit_group_masks[group];
+        if (!hit.projectile && hit.epoch!=~0U && attacker.hit_group_epochs[group]!=hit.epoch) {
             attacker.hit_group_epochs[group]=hit.epoch;mask=0;
         }
         for (unsigned i=0;i<bodies.size();++i) {
@@ -579,7 +580,8 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             }
             mask|=1U<<i;
             const int lag=hit.damage/3+4;
-            attacker.hitlag=defender.hitlag=lag;
+            defender.hitlag=lag;
+            if (!hit.projectile) attacker.hitlag=lag;
             const bool shield=defender.status==FighterStatus::Shield;
             hits.push_back({hit.owner,i,shield,hit.fgm,hit.element});
             if (shield) {
@@ -593,8 +595,9 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             const float degrees=hit.angle==361 ? (defender.grounded ? (knockback<32?0.f:std::min(42.5f,((knockback-32)/.099998474f)*42.5f+1)) : 43.f) : static_cast<float>(hit.angle);
             const float angle=degrees*.01745329252f;
             const bool was_airborne=!defender.grounded;
-            defender.lr=-attacker.lr;
-            defender.vel_damage={std::cos(angle)*knockback*attacker.lr,std::sin(angle)*knockback,0};
+            const int hit_lr=hit.facing?hit.facing:attacker.lr;
+            defender.lr=-hit_lr;
+            defender.vel_damage={std::cos(angle)*knockback*hit_lr,std::sin(angle)*knockback,0};
             defender.vel_air={}; defender.vel_ground=0;
             if (defender.vel_damage.y>0) defender.grounded=false;
             defender.status=FighterStatus::Hitstun; defender.action_frame=0;

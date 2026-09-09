@@ -50,7 +50,14 @@ for idx,name in enumerate(names):
  table=re.search(r'FTMotionDesc dFT'+name+r'MotionDescs\[\]\s*=\s*\{(.*?)\n\};',(d/'src/ft/ftdata.c').read_text(),re.S).group(1)
  motions=re.findall(r'\{\s*(?:&ll(\w+)FileID|0x00000000),',table)
  common=(d/'src/ft/ftdef.h').read_text().split('typedef enum FTCommonMotion')[1].split('}')[0]
- special_base=re.findall(r'nFTCommonMotion(\w+)',common).index('SpecialStart')-1
+ common=re.sub(r'//[^\n]*|/\*.*?\*/','',common,flags=re.S)
+ enum_values={};value=-1
+ for entry in common.split(','):
+  m=re.search(r'(nFTCommonMotion\w+)(?:\s*=\s*(-?\d+|nFTCommonMotion\w+))?',entry)
+  if not m:continue
+  value=(enum_values[m[2]] if m[2].startswith('nFT') else int(m[2])) if m[2] else value+1
+  enum_values[m[1]]=value
+ special_base=enum_values['nFTCommonMotionSpecialStart']
  header=(d/f'src/ft/ftchar/ft{name.lower()}/ft{name.lower()}.h').read_text()
  enum=re.search(r'typedef enum ft'+name+r'Motion\s*\{(.*?)\}',header,re.S).group(1)
  enum=re.sub(r'//[^\n]*','',enum)

@@ -3,6 +3,7 @@
 #include <sagas/FighterSourceData.hpp>
 #include <sagas/FighterAttackData.hpp>
 #include <sagas/FighterThrowData.hpp>
+#include <sagas/WeaponSourceData.hpp>
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
 #include <sagas/OpeningMotionAudio.hpp>
@@ -105,7 +106,7 @@ public:
                 }
                 if (body.status==FighterStatus::Special)
                     FighterCombat::advance_special(body,human && player_input.special_pressed,body.action_frame>=motion_length(body));
-                const bool special=FighterCombat::start_special(body,human && player_input.special_pressed);
+                (void)FighterCombat::start_special(body,human && player_input.special_pressed);
                 const bool grab=FighterCombat::start_grab(body,(human && player_input.grab_pressed) || (attack && body.shield_held));
                 const bool aerial=FighterCombat::start_aerial(body,attack && !grab);
                 const bool dash_attack=FighterCombat::start_dash_attack(body,attack && !grab && !aerial);
@@ -194,6 +195,12 @@ public:
                 else body.action_frame=0;
                 body.motion=clip;
             }
+            if (body.status==FighterStatus::Special && !body.special_projectile) {
+                for (const auto& flag:source_special_flags)
+                    if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==clip && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(body.action_frame)) {
+                        spawn_projectile(i,body);body.special_projectile=true;break;
+                    }
+            }
             body.recovery_invulnerable=false;
             if (fighter_is_down(body.status)) {
                 unsigned hit_status=1;
@@ -264,7 +271,29 @@ public:
                     volumes.push_back({i,position,box.radius*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm,body.status==FighterStatus::Catch,box.group,box.epoch,box.element});
                 }
         }
-        const auto hits=FighterCombat::resolve(bodies_,volumes);
+        auto hits=FighterCombat::resolve(bodies_,volumes);
+        for (auto& shot:projectiles_) {
+            if (--shot.life<=0) continue;
+            const auto before=shot.position;
+            shot.position.x+=shot.velocity.x;shot.position.y+=shot.velocity.y;shot.velocity.y-=shot.gravity;
+            for (const auto& floor:stage_.collision) if (floor.type==0 && floor.a.x!=floor.b.x && shot.velocity.y<0 && shot.position.x>=std::min(floor.a.x,floor.b.x) && shot.position.x<=std::max(floor.a.x,floor.b.x)) {
+                const float y=floor.a.y+(floor.b.y-floor.a.y)*(shot.position.x-floor.a.x)/(floor.b.x-floor.a.x);
+                if (before.y>=y && shot.position.y<y) {
+                    shot.position.y=y+10;
+                    if (shot.weapon==0 || shot.weapon==1) shot.velocity.y=std::abs(shot.velocity.y)*.85f;
+                    else if (shot.weapon==6) {shot.velocity.y=0;shot.gravity=0;}
+                    else shot.life=0;
+                }
+            }
+            if (shot.weapon==4 && shot.life<80) shot.velocity.x+=(bodies_[shot.owner].position.x>shot.position.x?3.f:-3.f);
+            const auto& a=weapon_source_data[shot.weapon];
+            AttackVolume contact{shot.owner,shot.position,a.size*.5f,a.damage,a.angle,a.growth,a.weight,a.base,static_cast<unsigned>(a.sfx),false,0,~0U,static_cast<unsigned>(a.element),true,shot.facing};
+            auto contacts=FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&contact,1));
+            if (!contacts.empty()) {shot.life=0;hits.insert(hits.end(),contacts.begin(),contacts.end());}
+            const Color color=a.element==2?Color{130,200,255,255}:shot.weapon==2?Color{255,80,80,255}:Color{255,160,55,255};
+            particles_.push_back({shot.position,{},color,0,3,shot.weapon==2?50.f:90.f,true});
+        }
+        std::erase_if(projectiles_,[](const auto& shot){return shot.life<=0;});
         for (const auto& hit:hits) {
             const auto& victim=bodies_[hit.defender];
             emit({victim.position.x,victim.position.y+victim.attr.height*.5f,0},
@@ -417,6 +446,21 @@ private:
         model.position=body.position;model.rotation.y=body.lr*std::numbers::pi_v<float>/2;
         model.scale={body.attr.size,body.attr.size,body.attr.size};return model;
     }
+    struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity; };
+    std::vector<Projectile> projectiles_;
+    void spawn_projectile(unsigned owner,const FighterBody& body) {
+        if (body.special_index%3!=0) return;
+        unsigned weapon;
+        switch (body.kind) {
+            case FighterKind::Luigi:weapon=0;break;case FighterKind::Mario:weapon=1;break;
+            case FighterKind::Fox:weapon=2;break;case FighterKind::Samus:weapon=3;break;
+            case FighterKind::Link:weapon=4;break;case FighterKind::Ness:weapon=5;break;
+            case FighterKind::Pikachu:weapon=6;break;default:return;
+        }
+        const float speed=weapon==2?160.f:weapon==4?85.f:weapon==6?28.28427f:50.f;
+        const Vec3 origin{body.position.x+body.lr*(body.attr.width+60),body.position.y+body.attr.height*.6f,0};
+        projectiles_.push_back({owner,weapon,origin,{body.lr*speed,weapon==1?-4.3578f:weapon==6?-28.28427f:0,0},weapon==0?80:weapon==1?140:160,body.lr,weapon==1?1.2f:0.f});
+    }
     struct Particle { Vec3 position,velocity; Color color; int age{},life{}; float size{}; bool spark{}; };
     std::vector<Particle> particles_;
     void emit(Vec3 origin,Color color,int count,bool spark) {
@@ -456,7 +500,7 @@ private:
         }
     }
     std::vector<int> ports_;
-    int stock_,tic_{},previous_stick_y_{},winner_{-1},finish_tics_{};
+    int stock_,tic_{},winner_{-1},finish_tics_{};
     bool done_{},finished_{};
     std::vector<FighterBody> bodies_;
     Stage3D stage_;

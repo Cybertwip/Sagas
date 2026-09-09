@@ -34,6 +34,29 @@ int main(int argc,char** argv) {
             for (int frame=0;frame<140;++frame) title->update(services,{},1.f/60);
             render.request_capture(output/"title.png");title->draw(services);
         }
+        {
+            auto versus=sagas::make_character_select_scene(1,false,false);versus->enter(services);
+            sagas::InputState select;select.accept_pressed=true;select.controllers[0].connected=true;
+            select.controllers[1].connected=true;select.controllers[2].connected=true;
+            versus->update(services,select,1.f/60);
+            select.accept_pressed=false;
+            for (auto& c:select.controllers) c.attack=true;
+            versus->update(services,select,1.f/60);
+            render.request_capture(output/"four-player-select.png");versus->draw(services);
+            sagas::InputState start;start.start_pressed=true;
+            versus->update(services,start,1.f/60);assert(versus->next());
+        }
+        {
+            auto battle=sagas::make_battle_scene(sagas::FighterKind::Fox,sagas::FighterKind::Donkey,1);battle->enter(services);
+            bool returned=false;
+            for (int frame=0;frame<1000;++frame) {
+                sagas::InputState move;move.stick_x=-80;
+                battle->update(services,move,1.f/60);
+                if (frame%60==0) {render.request_capture(output/"match-end.png");battle->draw(services);}
+                if (battle->next()) {returned=true;break;}
+            }
+            assert(returned);
+        }
         // Mouse pickup must invalidate readiness; release places the puck and
         // moving away must leave the deposited selection ready to start.
         {

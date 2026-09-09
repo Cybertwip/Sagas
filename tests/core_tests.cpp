@@ -743,6 +743,23 @@ int main() {
             if (!release) full=jumper.vel_air.y;else assert(jumper.vel_air.y<full);
         }
     }
+    {
+        // A solid stage side must not catch feet walking across its top corner.
+        const std::array<sagas::CollisionSegment,2> ledge{{{{-500,0},{500,0},0,0,false},{{500,-500},{500,0},2,0,false}}};
+        sagas::FighterBody runner;runner.kind=sagas::FighterKind::Fox;runner.attr=sagas::fighter_attributes(runner.kind);
+        runner.position.x=490;runner.status=sagas::FighterStatus::Run;runner.stick_x=80;runner.vel_ground=runner.attr.run_speed;
+        sagas::FighterPhysics::tick(runner,ledge);
+        assert(!runner.grounded && runner.status==sagas::FighterStatus::Fall);
+        assert(runner.vel_air.x<=runner.attr.air_speed_max_x);
+        sagas::FighterPhysics::tick(runner,ledge);assert(runner.position.y<0);
+    }
+    for (unsigned kind=0;kind<12;++kind) for (int direction=0;direction<3;++direction) {
+        sagas::FighterBody special;special.kind=static_cast<sagas::FighterKind>(kind);special.attr=sagas::fighter_attributes(special.kind);
+        special.stick_y=direction==1?80:direction==2?-80:0;
+        assert(sagas::FighterCombat::start_special(special,true));
+        auto actor=scene_loader.fighter_motion(special.kind,special.special_motion,sagas::fighter_motion_flags(special.special_motion));
+        assert(!actor.animation.empty());
+    }
     // Fox forward-smash TransN displacement belongs to physics, in either facing.
     const auto fox_smash=sagas::fighter_source_data[9].smash[0];
     const auto fox_motion=scene_loader.fighter_motion(sagas::FighterKind::Fox,fox_smash,sagas::fighter_motion_flags(fox_smash));

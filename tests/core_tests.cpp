@@ -499,6 +499,34 @@ int main() {
     const float damage=fighters[1].damage;
     hits=sagas::FighterCombat::resolve(fighters,attack);
     assert(hits.size()==1 && fighters[1].damage==damage && fighters[1].shield==47);
+    assert(fighters[1].shield_stun==16);
+    for (unsigned kind=0;kind<12;++kind) {
+        sagas::FighterBody guard;guard.kind=static_cast<sagas::FighterKind>(kind);
+        guard.attr=sagas::fighter_attributes(guard.kind);guard.shield_held=true;
+        guard.status=sagas::FighterStatus::Land;guard.land_frames=4;
+        sagas::FighterCombat::advance_guard(guard,false);
+        assert(guard.status==sagas::FighterStatus::Land);
+        guard.status=sagas::FighterStatus::Wait;
+        sagas::FighterCombat::advance_guard(guard,false);
+        assert(guard.status==sagas::FighterStatus::Shield && guard.guard_motion==sagas::fighter_source_data[kind].guard[0]);
+        guard.shield_held=false;guard.action_frame=7;
+        sagas::FighterCombat::advance_guard(guard,false);
+        assert(guard.status==sagas::FighterStatus::Shield);
+        guard.action_frame=8;sagas::FighterCombat::advance_guard(guard,false);
+        assert(guard.status==sagas::FighterStatus::ShieldRelease);
+        sagas::FighterCombat::advance_guard(guard,true);
+        assert(guard.status==sagas::FighterStatus::Wait);
+        for (int direction:{-1,1}) {
+            guard.status=sagas::FighterStatus::Shield;guard.stick_x=direction*80;guard.tap_stick_x=0;guard.lr=1;
+            guard.shield_stun=2;sagas::FighterCombat::advance_guard(guard,false);
+            assert(guard.status==sagas::FighterStatus::Shield);
+            guard.shield_stun=0;sagas::FighterCombat::advance_guard(guard,false);
+            assert(guard.status==sagas::FighterStatus::ShieldRoll);
+            assert(guard.guard_motion==sagas::fighter_source_data[kind].guard[direction>0?2:3]);
+            sagas::FighterCombat::advance_guard(guard,true);
+            assert(guard.status==sagas::FighterStatus::Wait && guard.vel_ground==0);
+        }
+    }
     // Landing must preserve horizontal knockback independently of input.
     auto& sliding=fighters[1];
     sliding.hitlag=0; sliding.status=sagas::FighterStatus::Hitstun;

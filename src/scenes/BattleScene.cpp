@@ -132,11 +132,13 @@ public:
                 FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab && !tilt && !dash_attack,ended,human && player_input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status==FighterStatus::Dash && ended) {body.status=FighterStatus::Wait;body.vel_ground*=.75f;}
-                if (!fighter_is_down(body.status) && body.status!=FighterStatus::Special && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
-                    if (body.shield_held && body.grounded && body.shield>0) {
-                        body.status=FighterStatus::Shield; body.shield=std::max(0.0f,body.shield-.15f);
-                    } else if (body.status==FighterStatus::Shield) body.status=FighterStatus::Wait;
+                const auto previous_guard=body.status;
+                FighterCombat::advance_guard(body,body.action_frame>=motion_length(body));
+                if (!services.deterministic_clock && previous_guard!=body.status) {
+                    if (body.status==FighterStatus::Shield) services.audio.play_fgm(guard_on_sfx);
+                    if (body.status==FighterStatus::ShieldRelease) services.audio.play_fgm(guard_off_sfx);
                 }
+                if (body.status==FighterStatus::Shield) body.shield=std::max(0.f,body.shield-.15f);
                 if (body.status!=FighterStatus::Shield) body.shield=std::min(55.0f,body.shield+.05f);
             }
             // Source DownBounce chooses the side from joint 4's current X rotation.
@@ -209,7 +211,7 @@ public:
                     }
             }
             body.recovery_invulnerable=false;
-            if (fighter_is_down(body.status)) {
+            if (fighter_is_down(body.status) || body.status==FighterStatus::ShieldRoll) {
                 unsigned hit_status=1;
                 for (const auto& event:source_hit_status)
                     if (event.kind==static_cast<unsigned>(body.kind) && event.motion==clip && event.frame<=static_cast<unsigned>(body.action_frame)) hit_status=event.status;
@@ -321,7 +323,7 @@ public:
             const auto& victim=bodies_[hit.defender];
             emit({victim.position.x,victim.position.y+victim.attr.height*.5f,0},
                  hit.shield?Color{100,175,255,255}:hit.element==2?Color{125,195,255,255}:Color{255,235,130,255},hit.shield?6:12,true);
-            if (!services.deterministic_clock && !hit.shield) services.audio.play_fgm(hit.fgm);
+            if (!services.deterministic_clock) services.audio.play_fgm(hit.fgm);
         }
         int alive=0;
         for (unsigned i=0;i<bodies_.size();++i) if (bodies_[i].stocks>0) {++alive;winner_=static_cast<int>(i);}
@@ -405,6 +407,7 @@ private:
     static unsigned motion(const FighterBody& body) {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
         switch(body.status) {
+            case FighterStatus::Shield:case FighterStatus::ShieldRelease:case FighterStatus::ShieldRoll:return body.guard_motion;
             case FighterStatus::Crouch:return data.crouch[0];
             case FighterStatus::CrouchWait:return data.crouch[1];
             case FighterStatus::CrouchEnd:return data.crouch[2];
@@ -487,7 +490,7 @@ private:
         const Vec3 origin{body.position.x+body.lr*(body.attr.width+60),body.position.y+body.attr.height*.6f,0};
         projectiles_.push_back({owner,weapon,origin,{body.lr*speed,weapon==1?-4.3578f:weapon==6?-28.28427f:0,0},weapon==0?80:weapon==1?140:160,body.lr,weapon==1?1.2f:0.f});
     }
-    struct Particle { Vec3 position,velocity; Color color; int age{},life{}; float size{}; bool spark{},ring{}; };
+    struct Particle { Vec3 position,velocity; Color color; int age{},life{}; float size{}; bool spark{},ring{}; int sides{16}; };
     std::vector<Particle> particles_;
     void emit(Vec3 origin,Color color,int count,bool spark) {
         for (int i=0;i<count;++i) {
@@ -511,7 +514,7 @@ private:
         for (const auto& body:bodies_) if (body.status==FighterStatus::Shield || (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_index%3==2)) {
             const bool shield=body.status==FighterStatus::Shield;
             const float radius=body.attr.height*(shield?.42f+.25f*body.shield/55.f:.6f);
-            displayed.push_back({{body.position.x,body.position.y+body.attr.height*.5f,body.position.z},{},shield?Color{255,100,120,180}:Color{100,210,255,210},0,1,radius,false,true});
+            displayed.push_back({{body.position.x,body.position.y+body.attr.height*.5f,body.position.z},{},shield?Color{255,100,120,180}:Color{100,210,255,210},0,1,radius,false,true,shield?32:6});
         }
         for (const auto& p:displayed) {
             const Vec3 delta{p.position.x-camera.eye.x,p.position.y-camera.eye.y,p.position.z-camera.eye.z};
@@ -523,8 +526,8 @@ private:
             std::vector<TriangleVertex> shape;shape.reserve(48);
             Color edge=color;edge.a=p.ring?220:0;
             if (p.ring) color.a=35;
-            for (int segment=0;segment<16;++segment) {
-                const float a=segment*2*std::numbers::pi_v<float>/16,b=(segment+1)*2*std::numbers::pi_v<float>/16;
+            for (int segment=0;segment<p.sides;++segment) {
+                const float a=segment*2*std::numbers::pi_v<float>/p.sides,b=(segment+1)*2*std::numbers::pi_v<float>/p.sides;
                 shape.push_back({{x,y},color,{}});
                 shape.push_back({{x+std::cos(a)*size*.75f,y+std::sin(a)*size},edge,{}});
                 shape.push_back({{x+std::cos(b)*size*.75f,y+std::sin(b)*size},edge,{}});

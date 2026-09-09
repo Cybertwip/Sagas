@@ -35,7 +35,7 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Special, Hitstun, Tumble, DownBounce, DownWait, DownStand, DownRoll, DownAttack, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
+enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Special, Hitstun, Tumble, DownBounce, DownWait, DownStand, DownRoll, DownAttack, Shield, ShieldRelease, ShieldRoll, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
 
 [[nodiscard]] constexpr bool fighter_is_down(FighterStatus status) {
     return status==FighterStatus::DownBounce || status==FighterStatus::DownWait ||
@@ -107,6 +107,8 @@ struct FighterBody {
     std::array<unsigned,8> hit_group_epochs{~0U,~0U,~0U,~0U,~0U,~0U,~0U,~0U};
     int stocks{3};
     float shield{55};
+    unsigned guard_motion{};
+    int shield_stun{};
 };
 
 struct CollisionSegment {
@@ -147,6 +149,7 @@ struct AttackVolume {
 struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; unsigned fgm{},element{}; };
 class FighterCombat final {
 public:
+    static void advance_guard(FighterBody& body,bool animation_ended);
     static void advance_down(FighterBody& body,bool attack,bool stand,bool animation_ended);
     static void advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released=false);
     static bool start_special(FighterBody& body,bool pressed);

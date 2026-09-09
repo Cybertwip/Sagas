@@ -32,7 +32,7 @@ def extract(decomp, manifest, battle=False):
     selected = [606,607,608,942,943,944,1188,1015,1821,1876,1269,1387,779,1957,
                 810,806,922,936,958,959,953]
     if battle:
-        selected=sorted({value for name,value in ids.items() if re.fullmatch(r'FT(?:Mario|Fox|Donkey|Samus|Luigi|Link|Yoshi|Captain|Kirby|Pikachu|Purin|Ness)Anim(?:Jab.*|[FUD]Smash|Jump.*|Run|Dash|LandingAirX)',name) and value in mapping})
+        selected=sorted({value for name,value in ids.items() if re.fullmatch(r'FT(?:Mario|Fox|Donkey|Samus|Luigi|Link|Yoshi|Captain|Kirby|Pikachu|Purin|Ness)Anim.*',name) and value in mapping})
     result = []
     for clip in selected:
         if clip not in mapping:

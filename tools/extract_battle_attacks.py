@@ -36,6 +36,7 @@ def extract(decomp, manifest):
         special_base=enum_values['nFTCommonMotionSpecialStart']
         special_clips.update(ids[n] for n in entries[special_base:] if n in ids)
         recovery_clips.update(ids[n] for n in entries[58:71] if n)
+        recovery_clips.update(ids[entries[enum_values['nFTCommonMotion'+n]]] for n in ('GuardOn','GuardOff','EscapeF','EscapeB'))
         for clip,script,offset in re.findall(r'\{\s*&ll(\w+)FileID,\s*(\w+)(?:\s*\+\s*(0x[0-9A-Fa-f]+))?,',table):
             if clip in ids and script in scripts:
                 if offset:

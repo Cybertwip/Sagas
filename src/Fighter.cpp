@@ -162,7 +162,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     const Vec3 before=body.position;
     const bool was_grounded=body.grounded;
     bool began_kneebend=false;
-    if (body.jump_pressed && !fighter_is_down(body.status) && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Special && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
+    if (body.jump_pressed && body.shield_stun==0 && body.status!=FighterStatus::ShieldRoll && body.status!=FighterStatus::ShieldRelease && !fighter_is_down(body.status) && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Special && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
         if (body.grounded && body.status!=FighterStatus::KneeBend) {
             began_kneebend=true;
             body.status=FighterStatus::KneeBend; body.jump_frames=0;
@@ -206,7 +206,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         }
         if (body.status==FighterStatus::Land && !body.landing_motion && --body.land_frames<=0) body.status=FighterStatus::Wait;
         const bool locked=fighter_is_down(body.status) || body.status==FighterStatus::Turn || body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::CrouchEnd || body.status==FighterStatus::KneeBend || body.status==FighterStatus::Attack ||
-                          body.status==FighterStatus::Special || body.status==FighterStatus::Shield || body.status==FighterStatus::Hitstun || body.status==FighterStatus::Land ||
+                          body.status==FighterStatus::Special || body.status==FighterStatus::ShieldRelease || body.status==FighterStatus::ShieldRoll || body.status==FighterStatus::Shield || body.status==FighterStatus::Hitstun || body.status==FighterStatus::Land ||
                           body.status==FighterStatus::Catch || body.status==FighterStatus::CatchWait || body.status==FighterStatus::Throw;
         if (!locked && body.status==FighterStatus::Run && body.stick_x*body.lr<44) {body.status=FighterStatus::RunBrake;body.action_frame=0;}
         if (!locked && body.status==FighterStatus::Dash) {
@@ -235,7 +235,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             if (!locked) body.status=FighterStatus::Wait;
         }
         body.vel_air.z=0;
-        if ((body.status==FighterStatus::Attack || body.status==FighterStatus::Special || body.status==FighterStatus::CatchWait || body.status==FighterStatus::Throw || body.status==FighterStatus::DownRoll || body.status==FighterStatus::DownAttack) && motion) {
+        if ((body.status==FighterStatus::Attack || body.status==FighterStatus::Special || body.status==FighterStatus::CatchWait || body.status==FighterStatus::Throw || body.status==FighterStatus::DownRoll || body.status==FighterStatus::ShieldRoll || body.status==FighterStatus::DownAttack) && motion) {
             if (const auto authored=motion(body)) {
                 body.vel_ground=authored->x*body.lr;body.vel_air.z=authored->z;
                 if (body.status==FighterStatus::Special && authored->y>0) {body.grounded=false;body.vel_air.y=authored->y;body.jumps_used=std::max(1,body.jumps_used);}
@@ -393,6 +393,39 @@ bool FighterPhysics::try_ledge(FighterBody& body,Vec3 before,std::span<const Col
     return false;
 }
 
+void FighterCombat::advance_guard(FighterBody& body,bool animation_ended) {
+    const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+    if (body.status==FighterStatus::ShieldRoll) {
+        if (!body.turn_flipped) for (const auto& event:source_motion_flags)
+            if (event.kind==static_cast<unsigned>(body.kind) && event.motion==body.guard_motion && event.value && event.frame<=static_cast<unsigned>(body.action_frame)) {
+                body.lr=-body.lr;body.vel_ground=-body.vel_ground;body.turn_flipped=true;break;
+            }
+        if (animation_ended) {body.status=FighterStatus::Wait;body.action_frame=0;body.vel_ground=0;body.vel_air={};}
+        return;
+    }
+    if (body.status==FighterStatus::ShieldRelease) {
+        if (animation_ended) {body.status=FighterStatus::Wait;body.action_frame=0;}
+        return;
+    }
+    if (body.status==FighterStatus::Shield) {
+        if (body.shield_stun>0) {--body.shield_stun;return;}
+        if (std::abs(body.stick_x)>=56 && body.tap_stick_x<4) {
+            body.guard_motion=data.guard[body.stick_x*body.lr>=0?2:3];
+            body.status=FighterStatus::ShieldRoll;body.action_frame=0;body.turn_flipped=false;return;
+        }
+        if ((!body.shield_held || body.shield<=0) && body.action_frame>=8) {
+            body.status=FighterStatus::ShieldRelease;body.guard_motion=data.guard[1];body.action_frame=0;
+        }
+        return;
+    }
+    const bool available=body.status==FighterStatus::Wait || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash ||
+        body.status==FighterStatus::Run || body.status==FighterStatus::RunBrake || body.status==FighterStatus::CrouchWait;
+    // Landing keeps its recovery frames; a Z-cancel tap cannot overwrite it.
+    if (available && body.grounded && body.shield_held && body.shield>0) {
+        body.status=FighterStatus::Shield;body.guard_motion=data.guard[0];body.action_frame=0;
+    }
+}
+
 void FighterCombat::advance_down(FighterBody& body,bool attack,bool stand,bool animation_ended) {
     if (!fighter_is_down(body.status) || body.hitlag) return;
     const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
@@ -485,7 +518,7 @@ bool FighterCombat::start_aerial(FighterBody& body,bool pressed) {
 }
 
 bool FighterCombat::start_grab(FighterBody& body,bool pressed) {
-    if (!pressed || body.hitlag || !body.grounded ||
+    if (body.shield_stun>0 || !pressed || body.hitlag || !body.grounded ||
         (body.status!=FighterStatus::Wait && body.status!=FighterStatus::Crouch && body.status!=FighterStatus::CrouchWait && body.status!=FighterStatus::CrouchEnd && body.status!=FighterStatus::Walk && body.status!=FighterStatus::Dash &&
          body.status!=FighterStatus::Run && body.status!=FighterStatus::Shield)) return false;
     body.status=FighterStatus::Catch;body.action_frame=0;body.hit_mask=0;body.attack_epoch=~0U;body.hit_group_epochs.fill(~0U);
@@ -635,7 +668,9 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             hits.push_back({hit.owner,i,shield,hit.fgm,hit.element});
             if (shield) {
                 defender.shield=std::max(0.0f,defender.shield-hit.damage);
-                if (defender.shield>0) continue;
+                defender.shield_stun=static_cast<int>(hit.damage*1.62f+4);
+                defender.vel_ground=(attacker.position.x<defender.position.x?1.f:-1.f)*defender.lr*defender.shield_stun*2.f;
+                continue; // Shield-break states are intentionally not implemented yet.
             }
             defender.smash_buffer=0;
             defender.damage+=hit.damage;

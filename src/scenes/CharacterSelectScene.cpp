@@ -101,7 +101,7 @@ public:
                     services.audio.play(AudioCue::MenuSelect);
                 }
             } else if (input.accept_pressed) place();
-            if (one_player_?(cursor_y_>=214 && cursor_x_<50):(cursor_y_>=16 && cursor_y_<30 && cursor_x_>=244)) back_=true;
+            if (cursor_y_>=16 && cursor_y_<30 && cursor_x_>=244) back_=true;
         }
         if (input.pointer_released) place();
         if (input.cancel_pressed) {
@@ -193,14 +193,12 @@ public:
         r.sprite_at("textures/MNPlayersCommon/"+std::string(hands[hand]),hand_pos);
         r.sprite_at("textures/MNPlayersCommon/1PTextGradient.png",
                     {hand_pos.x+label_offset[hand].x,hand_pos.y+label_offset[hand].y},{1,1},{224,21,21,255});
-        if (ready()) {
-            const auto pulse = static_cast<std::uint8_t>(180 + 75 * ((tic_ / 8) % 2));
-            r.sprite("textures/MNPlayersCommon/ReadyToFightText.png", {160, 122}, {1,1},
-                     {255,255,255,pulse});
-            r.sprite("textures/MNPlayersCommon/PressText.png", {118, 14});
-            r.sprite("textures/MNPlayersCommon/StartText.png", {168, 14});
+        if (ready() && (tic_-selected_tick_[active_slot_])%40<30) {
+            for (float x=0;x<320;x+=8)
+                r.sprite_at("textures/MNPlayersCommon/ReadyBanner.png",{x,71},{1,1},{244,86,127,255});
+            r.sprite_rect("textures/MNPlayersCommon/ReadyToFightText.png",50,71,224,17,{255,255,157,255});
         }
-        r.sprite_at("textures/MNPlayersCommon/BackButton.png",one_player_?Vec2{12,214}:Vec2{244,16});
+        r.sprite_at("textures/MNPlayersCommon/BackButton.png",{244,16});
         r.end();
     }
     std::unique_ptr<Scene> next() override;

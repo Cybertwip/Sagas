@@ -73,6 +73,7 @@ public:
                 ++body.action_frame;
                 if (body.status==FighterStatus::Hitstun && --body.hitstun<=0)
                     body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
+                if (body.status==FighterStatus::Turn && body.action_frame>=motion_length(body)) body.status=FighterStatus::Wait;
                 if (body.status==FighterStatus::Crouch && body.action_frame>=motion_length(body)) {
                     body.status=FighterStatus::CrouchWait;body.action_frame=0;
                 } else if (body.status==FighterStatus::CrouchEnd && body.action_frame>=motion_length(body)) {
@@ -80,7 +81,8 @@ public:
                 }
                 const bool grab=FighterCombat::start_grab(body,(i==0 && input.grab_pressed) || (attack && body.shield_held));
                 const bool aerial=FighterCombat::start_aerial(body,attack && !grab);
-                const bool smash=FighterCombat::start_smash(body,attack && !grab && !aerial);
+                const bool dash_attack=FighterCombat::start_dash_attack(body,attack && !grab && !aerial);
+                const bool smash=FighterCombat::start_smash(body,attack && !grab && !aerial && !dash_attack);
                 if (body.status==FighterStatus::Land && body.landing_motion && body.action_frame*body.landing_speed>=motion_length(body)) {
                     body.landing_motion=0;body.status=FighterStatus::Wait;body.action_frame=0;
                 }
@@ -94,7 +96,7 @@ public:
                 const bool tilt=FighterCombat::start_tilt(body,attack && !grab && !aerial && !smash);
                 const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump || body.status==FighterStatus::Dash) &&
                                   body.action_frame>=motion_length(body);
-                FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab && !tilt,ended,i==0 && input.attack_released);
+                FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab && !tilt && !dash_attack,ended,i==0 && input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status==FighterStatus::Dash && ended) {body.status=FighterStatus::Wait;body.vel_ground*=.75f;}
                 if (body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
@@ -132,7 +134,15 @@ public:
                 body.position={0,1500,0};body.grounded=false;body.status=FighterStatus::Fall;body.invincible=180;
             }
             const unsigned clip=motion(body);
-            if (body.motion!=clip) {body.motion=clip;body.action_frame=0;}
+            if (body.motion!=clip) {
+                const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+                const auto old=std::find(data.walks.begin(),data.walks.end(),body.motion);
+                const auto next=std::find(data.walks.begin(),data.walks.end(),clip);
+                if (body.status==FighterStatus::Walk && old!=data.walks.end() && next!=data.walks.end())
+                    body.action_frame=static_cast<int>(body.action_frame*data.walk_lengths[next-data.walks.begin()]/data.walk_lengths[old-data.walks.begin()]);
+                else body.action_frame=0;
+                body.motion=clip;
+            }
             if (!body.hitlag && !services.deterministic_clock)
                 for (const auto& sound:battle_motion_sounds)
                     if (sound.motion==clip && sound.frame==static_cast<unsigned>(body.action_frame)) {
@@ -270,7 +280,8 @@ private:
             case FighterStatus::Crouch:return data.crouch[0];
             case FighterStatus::CrouchWait:return data.crouch[1];
             case FighterStatus::CrouchEnd:return data.crouch[2];
-            case FighterStatus::Walk:return data.walk;
+            case FighterStatus::Turn:return data.turn;
+            case FighterStatus::Walk:return data.walks[std::abs(body.stick_x)>=62?2:std::abs(body.stick_x)>=26?1:0];
             case FighterStatus::Dash:return data.dash_clip;
             case FighterStatus::Run:return data.run_clip;
             case FighterStatus::RunBrake:return data.run_brake;

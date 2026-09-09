@@ -192,8 +192,18 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         if (body.jump_frames>=body.attr.knee_bend) jump(body);
     }
     if (body.grounded) {
+        if (body.status==FighterStatus::Turn && !body.turn_flipped) {
+            const auto clip=fighter_source_data[static_cast<unsigned>(body.kind)].turn;
+            for (const auto& flag:source_motion_flags) if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==clip && flag.value && body.action_frame>=static_cast<int>(flag.frame)) {
+                body.lr=-body.lr;body.vel_ground=-body.vel_ground;body.turn_flipped=true;
+                if (body.turn_dash && body.stick_x*body.lr>=56) {
+                    body.status=FighterStatus::Dash;body.action_frame=0;body.vel_ground=body.attr.dash_speed;body.tap_stick_x=255;
+                }
+                break;
+            }
+        }
         if (body.status==FighterStatus::Land && !body.landing_motion && --body.land_frames<=0) body.status=FighterStatus::Wait;
-        const bool locked=body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::CrouchEnd || body.status==FighterStatus::KneeBend || body.status==FighterStatus::Attack ||
+        const bool locked=body.status==FighterStatus::Turn || body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::CrouchEnd || body.status==FighterStatus::KneeBend || body.status==FighterStatus::Attack ||
                           body.status==FighterStatus::Shield || body.status==FighterStatus::Hitstun || body.status==FighterStatus::Land ||
                           body.status==FighterStatus::Catch || body.status==FighterStatus::CatchWait || body.status==FighterStatus::Throw;
         if (!locked && body.status==FighterStatus::Run && body.stick_x*body.lr<44) {body.status=FighterStatus::RunBrake;body.action_frame=0;}
@@ -206,8 +216,11 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             body.vel_ground=std::max(0.f,body.vel_ground-body.attr.traction*1.25f);
             if (body.vel_ground==0) body.status=FighterStatus::Wait;
         } else if (!locked && std::abs(body.stick_x)>=kStickMin) {
-            body.lr=body.stick_x>0?1:-1;
-            if (body.status==FighterStatus::Run) body.vel_ground=body.attr.run_speed;
+            if (body.stick_x*body.lr<0) {
+                body.status=FighterStatus::Turn;body.action_frame=0;body.turn_flipped=false;
+                body.turn_dash=std::abs(body.stick_x)>=56 && body.tap_stick_x<3;
+                apply_ground_friction(body);
+            } else if (body.status==FighterStatus::Run) body.vel_ground=body.attr.run_speed;
             else if (std::abs(body.stick_x)>=56 && body.tap_stick_x<3) {
                 body.status=FighterStatus::Dash;body.action_frame=0;body.vel_ground=body.attr.dash_speed;body.tap_stick_x=255;
             } else {
@@ -369,6 +382,14 @@ bool FighterCombat::start_grab(FighterBody& body,bool pressed) {
          body.status!=FighterStatus::Run && body.status!=FighterStatus::Shield)) return false;
     body.status=FighterStatus::Catch;body.action_frame=0;body.hit_mask=0;body.attack_epoch=~0U;body.hit_group_epochs.fill(~0U);
     body.attack_motion=0;body.jab_stage=0;body.aerial_attack=-1;
+    return true;
+}
+
+bool FighterCombat::start_dash_attack(FighterBody& body,bool pressed) {
+    if (!pressed || body.hitlag || !body.grounded || (body.status!=FighterStatus::Run && body.status!=FighterStatus::Dash)) return false;
+    body.attack_motion=fighter_source_data[static_cast<unsigned>(body.kind)].dash_attack;
+    body.status=FighterStatus::Attack;body.action_frame=0;body.hit_mask=0;body.hit_group_epochs.fill(~0U);
+    body.jab_stage=0;body.jab_followup_left=0;
     return true;
 }
 

@@ -35,7 +35,7 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
+enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
 
 struct FighterModelSpec {
     std::string_view descriptor;
@@ -71,7 +71,7 @@ struct FighterBody {
     unsigned landing_motion{};
     float landing_speed{1};
     int capture_target{-1}, captured_by{-1}, capture_tics{};
-    bool throw_backward{};
+    bool throw_backward{},turn_flipped{},turn_dash{};
     int rapid_inputs{},tap_stick_x{255};
     bool rapid_continue{};
     Vec2 cliff_edge{};
@@ -132,6 +132,7 @@ public:
     static void advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released=false);
     static bool start_aerial(FighterBody& body,bool pressed);
     static bool start_grab(FighterBody& body,bool pressed);
+    static bool start_dash_attack(FighterBody& body,bool pressed);
     static bool start_tilt(FighterBody& body,bool pressed);
     static bool start_smash(FighterBody& body,bool pressed);
     [[nodiscard]] static std::vector<FighterHit> resolve(std::span<FighterBody> bodies,

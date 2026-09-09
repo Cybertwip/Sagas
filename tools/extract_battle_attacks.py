@@ -50,7 +50,7 @@ def extract(decomp, manifest):
             elif command in ('ftMotionCommandReturn','ftMotionCommandEnd','ftMotionCommandPauseScript'):break
             else:yield command,arg
     hits=[]; followups=[]; flags=[]
-    supported={v for k,v in ids.items() if re.fullmatch(r'FT(?:Mario|Fox|Donkey|Samus|Luigi|Link|Yoshi|Captain|Kirby|Pikachu|Purin|Ness)Anim(?:Jab[123]|JabLoop(?:Start|End)?|FSmash|USmash|DSmash|AttackAir[NFBUD]|[UD]Tilt|FTilt(?:High|MidHigh|MidLow|Low)?|Catch)',k)}
+    supported={v for k,v in ids.items() if re.fullmatch(r'FT(?:Mario|Fox|Donkey|Samus|Luigi|Link|Yoshi|Captain|Kirby|Pikachu|Purin|Ness)Anim(?:Jab[123]|JabLoop(?:Start|End)?|FSmash|USmash|DSmash|AttackAir[NFBUD]|DashAttack|Turn|[UD]Tilt|FTilt(?:High|MidHigh|MidLow|Low)?|Catch)',k)}
     for kind,clip in sorted(key for key in mapping if key[1] in supported):
         active={};definitions={};frame=0;followup=-1;epoch=0;refresh_epochs={}
         def close(i):

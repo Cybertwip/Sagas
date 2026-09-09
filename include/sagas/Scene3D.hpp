@@ -26,6 +26,7 @@ struct Model3D {
     enum class FighterWrapper { None, TransN, XRotN };
     std::vector<n64::Node> nodes;
     std::vector<unsigned> source_joint_ids;
+    std::vector<std::array<float,3>> imported_rest_offsets;
     std::vector<n64::Mesh> meshes;
     // Fighter JointPairs slot 0 is drawn in the parent matrix; slot 1 is
     // drawn after applying the current joint matrix.
@@ -78,6 +79,7 @@ public:
                                 GeometryLayout layout = GeometryLayout::DisplayListLinks,
                                 std::string_view materials = {},
                                 std::string_view material_animation = {});
+    void apply_custom_mesh(Model3D& model, std::span<const std::uint8_t> bytes);
     [[nodiscard]] Model3D weapon(n64::Address attributes,unsigned render_flags);
     [[nodiscard]] Stage3D stage(std::string_view header);
     [[nodiscard]] Model3D model(n64::Address descriptor,

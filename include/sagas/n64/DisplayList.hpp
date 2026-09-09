@@ -41,6 +41,9 @@ struct Vertex {
     // Keep that load-time matrix binding on every expanded triangle vertex.
     std::uint16_t transform_node{0xffffU};
     bool transform_parent{};
+    std::uint16_t skin_node{0xffffU};
+    Vec3 skin_position{};
+    float skin_weight{1};
     bool translucent{};
     N64RenderState rdp;
 };

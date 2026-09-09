@@ -33,3 +33,17 @@ def convert(project_path, destination):
 
 if __name__=='__main__':
     print(convert(Path(sys.argv[1]),Path(sys.argv[2])))
+
+def export_native(proxy_path):
+    raw=json.loads(Path(proxy_path).read_text())
+    lines=['SGMESH1',str(len(raw['bind_joints']))]
+    for joint,point in raw['bind_joints'].items(): lines.append(' '.join(map(str,[joint,*point])))
+    tex=raw.get('texture') or {};pixels=tex.get('pixels',[])
+    lines.append(f"{tex.get('width',0)} {tex.get('height',0)}")
+    lines.append(' '.join(map(str,pixels)))
+    vertices=[v for tri in raw['geometry'] for v in tri['vertices']]
+    lines.append(str(len(vertices)))
+    for v in vertices:
+        skin=v['skin'];a=skin[0];b=skin[1] if len(skin)>1 else a
+        lines.append(' '.join(map(str,[a['joint'],a['weight'],*a['position'],b['joint'],*b['position'],*v['uv'],*v['color']])))
+    path=Path(proxy_path).with_name('model.sgmesh');path.write_text('\n'.join(lines)+'\n');return path

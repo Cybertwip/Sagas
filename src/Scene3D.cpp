@@ -4,6 +4,8 @@
 #include <array>
 #include <cmath>
 #include <stdexcept>
+#include <sstream>
+#include <map>
 
 namespace sagas {
 namespace {
@@ -125,6 +127,8 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
             n64::AnimationDecoder::apply(node, model.fighter_animation
                 ? animation.sample16(*model.animation[node_index],frame,animation.pose(node))
                 : animation.sample(*model.animation[node_index],frame,animation.pose(node)));
+        if (node_index<model.imported_rest_offsets.size())
+            for (unsigned axis=0;axis<3;++axis) node.translate[axis]+=model.imported_rest_offsets[node_index][axis];
         const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
         // A sibling ends the previous branch. Disabled fighter descriptors
         // can leave depth gaps; they must not pick up a cousin's old matrix.
@@ -152,6 +156,51 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
 }
 
 } // namespace
+
+void Scene3DLoader::apply_custom_mesh(Model3D& model,std::span<const std::uint8_t> bytes) {
+    std::istringstream input(std::string(reinterpret_cast<const char*>(bytes.data()),bytes.size()));
+    std::string magic;unsigned count{};input>>magic>>count;
+    if (magic!="SGMESH1" || count>128) throw std::runtime_error("Invalid custom mesh header");
+    std::map<unsigned,Vec3> binds;
+    for (unsigned i=0;i<count;++i) {unsigned id;Vec3 point;input>>id>>point.x>>point.y>>point.z;binds[id]=point;}
+    auto rest=model;rest.animation.clear();rest.fighter_root_animation.reset();
+    n64::AnimationDecoder decoder(archive_);
+    const auto matrices=world_matrices(decoder,rest,0);
+    model.imported_rest_offsets.resize(model.nodes.size());
+    std::vector<unsigned> ancestors;
+    for (unsigned i=0;i<model.nodes.size();++i) {
+        const auto depth=model.nodes[i].depth;
+        while (!ancestors.empty() && model.nodes[ancestors.back()].depth>=depth) ancestors.pop_back();
+        const unsigned id=model.source_joint_ids[i];
+        const auto stock=transform(matrices.world[i],{});
+        const auto origin=binds.contains(id)?binds[id]:stock;
+        Vec3 parent_origin{};
+        if (!ancestors.empty()) {
+            const auto parent=ancestors.back();const auto pid=model.source_joint_ids[parent];
+            parent_origin=binds.contains(pid)?binds[pid]:transform(matrices.world[parent],{});
+        }
+        const auto delta=sub(origin,parent_origin);const auto& m=matrices.parent[i].m;
+        const std::array<float,3> local{m[0]*delta.x+m[4]*delta.y+m[8]*delta.z,m[1]*delta.x+m[5]*delta.y+m[9]*delta.z,m[2]*delta.x+m[6]*delta.y+m[10]*delta.z};
+        for (unsigned axis=0;axis<3;++axis) model.imported_rest_offsets[i][axis]=local[axis]-model.nodes[i].translate[axis];
+        ancestors.push_back(i);
+    }
+    auto texture=std::make_shared<RasterImage>();input>>texture->width>>texture->height;
+    if (texture->width<0 || texture->height<0 || texture->width>2048 || texture->height>2048) throw std::runtime_error("Invalid custom texture size");
+    for (int i=0;i<texture->width*texture->height;++i) {unsigned pixel;input>>pixel;texture->rgba.insert(texture->rgba.end(),{static_cast<std::uint8_t>(((pixel>>11)&31)*255/31),static_cast<std::uint8_t>(((pixel>>6)&31)*255/31),static_cast<std::uint8_t>(((pixel>>1)&31)*255/31),255});}
+    input>>count;if (count>300000 || count%3) throw std::runtime_error("Invalid custom vertex count");
+    const auto node_for=[&](unsigned joint) {const auto it=std::find(model.source_joint_ids.begin(),model.source_joint_ids.end(),joint);if (it==model.source_joint_ids.end()) throw std::runtime_error("Custom mesh references absent joint");return static_cast<std::uint16_t>(it-model.source_joint_ids.begin());};
+    n64::Mesh mesh;
+    for (unsigned i=0;i<count;++i) {
+        n64::Vertex vertex;unsigned a,b,r,g,blue,alpha;
+        input>>a>>vertex.skin_weight>>vertex.x>>vertex.y>>vertex.z>>b>>vertex.skin_position.x>>vertex.skin_position.y>>vertex.skin_position.z>>vertex.u>>vertex.v>>r>>g>>blue>>alpha;
+        if (!input || !std::isfinite(vertex.x) || !std::isfinite(vertex.y) || !std::isfinite(vertex.z) || !std::isfinite(vertex.skin_weight) || vertex.skin_weight<0 || vertex.skin_weight>1) throw std::runtime_error("Invalid custom mesh vertex");
+        vertex.transform_node=node_for(a);vertex.skin_node=node_for(b);vertex.color={static_cast<std::uint8_t>(r),static_cast<std::uint8_t>(g),static_cast<std::uint8_t>(blue),255};
+        if (!texture->rgba.empty()) {vertex.texture=texture;vertex.color={255,255,255,255};}
+        mesh.vertices.push_back(vertex);
+    }
+    model.meshes.assign(model.nodes.size(),{});model.parent_meshes.clear();model.materials.clear();model.material_animation.clear();
+    if (!model.meshes.empty()) model.meshes[0]=std::move(mesh);
+}
 
 Model3D Scene3DLoader::model(std::string_view descriptor, std::string_view animation,
                             GeometryLayout layout, std::string_view material_symbol,
@@ -584,6 +633,11 @@ void Scene3DRenderer::draw(RenderEngine& render, const Model3D& model, const Cam
             for (int j=0;j<3;++j) {
                 const auto& source=mesh.vertices[i+j];
                 world_points[j]=transform(vertex_matrix(source),{source.x,source.y,source.z});
+                if (source.skin_node<matrices.world.size()) {
+                    const auto second=transform(matrices.world[source.skin_node],source.skin_position);
+                    const auto first=world_points[j];const float w=source.skin_weight;
+                    world_points[j]={first.x*w+second.x*(1-w),first.y*w+second.y*(1-w),first.z*w+second.z*(1-w)};
+                }
             }
             const float edge0=std::sqrt(std::max(1.0e-12f,dot(sub(world_points[1],world_points[0]),
                                                               sub(world_points[1],world_points[0]))));

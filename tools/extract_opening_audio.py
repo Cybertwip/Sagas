@@ -29,10 +29,25 @@ def extract(decomp, manifest, battle=False):
     for clip, script in re.findall(r'\{\s*&ll(\w+)FileID,\s*(\w+),', desc):
         if clip in ids and script in scripts:
             mapping.setdefault(ids[clip], script)
+    if battle:
+        names=['Luigi','Mario','Donkey','Link','Samus','Captain','Ness','Yoshi','Kirby','Fox','Pikachu','Purin']
+        for kind,name in enumerate(names):
+            table=re.search(r'FTMotionDesc dFT'+name+r'MotionDescs\[\]\s*=\s*\{(.*?)\n\};',desc,re.S).group(1)
+            rows=re.findall(r'^\s*(?:\{?\s*&ll(\w+)FileID\s*,\s*([^,\n]+),|\{?\s*0x00000000\s*,)',table,re.M)
+            for state,(_,expression) in enumerate(rows):
+                if state<195 or not expression:continue
+                match=re.fullmatch(r'(\w+)(?:\s*\+\s*(0x[0-9A-Fa-f]+))?',expression.strip())
+                if not match or match[1] not in scripts:continue
+                script=match[1]
+                if match[2]:
+                    if not all(command=='ftMotionCommandGoto' for command,_ in scripts[script]):continue
+                    key=script+'@'+match[2];scripts[key]=scripts[script][int(match[2],0)//8:];script=key
+                event_id=100000+kind*1024+state
+                mapping[event_id]=script
     selected = [606,607,608,942,943,944,1188,1015,1821,1876,1269,1387,779,1957,
                 810,806,922,936,958,959,953]
     if battle:
-        selected=sorted({value for name,value in ids.items() if re.fullmatch(r'FT(?:Mario|Fox|Donkey|Samus|Luigi|Link|Yoshi|Captain|Kirby|Pikachu|Purin|Ness)Anim.*',name) and value in mapping})
+        selected=sorted({value for name,value in ids.items() if re.fullmatch(r'FT(?:Mario|Fox|Donkey|Samus|Luigi|Link|Yoshi|Captain|Kirby|Pikachu|Purin|Ness)Anim.*',name) and value in mapping} | {key for key in mapping if key>=100000})
     result = []
     for clip in selected:
         if clip not in mapping:

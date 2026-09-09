@@ -152,6 +152,7 @@ struct AttackVolume {
 struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; unsigned fgm{},element{}; };
 class FighterCombat final {
 public:
+    static unsigned special_event_motion(const FighterBody& body);
     static void advance_guard(FighterBody& body,bool animation_ended);
     static void advance_down(FighterBody& body,bool attack,bool stand,bool animation_ended);
     static void advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released=false);

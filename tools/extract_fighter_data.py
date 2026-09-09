@@ -6,7 +6,7 @@ ids={v['name']:int(v['id']) for v in csv.DictReader((r/'sagas/build/assets/reloc
 voices={v['name']:v['idx'] for v in json.loads((d/'build/us/src/audio/fgm.ucd.json').read_text())['entries']}
 names=['Luigi','Mario','Donkey','Link','Samus','Captain','Ness','Yoshi','Kirby','Fox','Pikachu','Purin']
 selected=[1,3,1,1,4,1,2,2,3,4,1,2]; scales=[1.21,1.25,1.,1.33,1.03,1.07,1.3,1.05,1.22,1.15,1.2,1.26]
-text='// US cartridge values from FTAttributes and scSubsys motion tables.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct FighterSourceData {\n float size,walk_mul,traction,dash,run,kneebend,jump_x,jump_mul,jump_base,air_accel,air_max,air_friction,gravity,terminal,fast,weight,height,width,select_scale,aerial_x,aerial_height,jab_window,cam_offset_y,camera_zoom,dash_decel,dash_to_run;\n unsigned jumps,idle,walk,dash_clip,run_clip,jump,fall,landing,jab,damage,selected,announce,selected_flags,kneebend_clip,jump_back,aerial_forward,aerial_back,jab2,jab3,run_brake;\n std::array<unsigned,5> multi_jump;\n std::array<unsigned,3> smash,rapid,smash_voices;\n std::array<unsigned,5> attack_air,landing_air;\n std::array<unsigned,4> grab;\n std::array<unsigned,3> crouch;\n std::array<unsigned,7> tilt;\n std::array<unsigned,3> walks;\n std::array<float,3> walk_lengths;\n unsigned landing_sfx,down_sfx;\n unsigned dash_attack,turn;\n unsigned taunt,capture_joint;\n std::array<unsigned,2> capture;\n std::array<unsigned,4> guard;\n std::array<unsigned,3> tech;\n std::array<unsigned,6> special_start,special_loop,special_end,special_active,special_hit;\n std::array<unsigned,12> down; // Bounce, stand, tech rolls, get-up rolls, attacks (D/U pairs).\n std::array<unsigned,20> damage_reactions; // Common motions DamageHi1 through DamageFall.\n std::array<unsigned,8> cliff;\n std::array<float,2> cliff_box;\n};\ninline constexpr std::array<FighterSourceData,12> fighter_source_data{{\n'
+text='// US cartridge values from FTAttributes and scSubsys motion tables.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct FighterSourceData {\n float size,walk_mul,traction,dash,run,kneebend,jump_x,jump_mul,jump_base,air_accel,air_max,air_friction,gravity,terminal,fast,weight,height,width,select_scale,aerial_x,aerial_height,jab_window,cam_offset_y,camera_zoom,dash_decel,dash_to_run;\n unsigned jumps,idle,walk,dash_clip,run_clip,jump,fall,landing,jab,damage,selected,announce,selected_flags,kneebend_clip,jump_back,aerial_forward,aerial_back,jab2,jab3,run_brake;\n std::array<unsigned,5> multi_jump;\n std::array<unsigned,3> smash,rapid,smash_voices;\n std::array<unsigned,5> attack_air,landing_air;\n std::array<unsigned,4> grab;\n std::array<unsigned,3> crouch;\n std::array<unsigned,7> tilt;\n std::array<unsigned,3> walks;\n std::array<float,3> walk_lengths;\n unsigned landing_sfx,down_sfx;\n unsigned dash_attack,turn;\n unsigned taunt,capture_joint;\n std::array<unsigned,2> capture;\n std::array<unsigned,4> guard;\n std::array<unsigned,3> tech;\n std::array<unsigned,6> special_start,special_loop,special_end,special_active,special_hit;\n std::array<std::array<unsigned,6>,5> special_events;\n std::array<unsigned,12> down; // Bounce, stand, tech rolls, get-up rolls, attacks (D/U pairs).\n std::array<unsigned,20> damage_reactions; // Common motions DamageHi1 through DamageFall.\n std::array<unsigned,8> cliff;\n std::array<float,2> cliff_box;\n};\ninline constexpr std::array<FighterSourceData,12> fighter_source_data{{\n'
 for idx,name in enumerate(names):
  p=next((d/'src/relocData').glob('[0-9]*_'+name+'Main.c'))
  src=re.search(r'FTAttributes\s+\w+\s*=\s*\{(.*?)\n\};',p.read_text(),re.S).group(1)
@@ -48,7 +48,7 @@ for idx,name in enumerate(names):
  walk_lengths=[num(k) for k in ('walkslow_anim_length','walkmiddle_anim_length','walkfast_anim_length')]
  dash_attack=clip('DashAttack');turn=clip('Turn')
  table=re.search(r'FTMotionDesc dFT'+name+r'MotionDescs\[\]\s*=\s*\{(.*?)\n\};',(d/'src/ft/ftdata.c').read_text(),re.S).group(1)
- motions=re.findall(r'^\s*(?:\{\s*&ll(\w+)FileID|\{?\s*0x00000000)\s*,',table,re.M)
+ motions=re.findall(r'^\s*(?:\{?\s*&ll(\w+)FileID|\{?\s*0x00000000)\s*,',table,re.M)
  common=(d/'src/ft/ftdef.h').read_text().split('typedef enum FTCommonMotion')[1].split('}')[0]
  common=re.sub(r'//[^\n]*|/\*.*?\*/','',common,flags=re.S)
  enum_values={};value=-1
@@ -63,6 +63,8 @@ for idx,name in enumerate(names):
  enum=re.sub(r'//[^\n]*','',enum)
  motion_names=re.findall('nFT'+name+r'Motion(\w+)',enum)
  special_ids={n:ids.get(motions[special_base+i],0) for i,n in enumerate(motion_names) if special_base+i<len(motions)}
+ special_event_ids={n:100000+idx*1024+special_base+i for i,n in enumerate(motion_names)}
+ special_events=[[] for _ in range(5)]
  special_start=[];special_loop=[];special_end=[];special_active=[];special_hit=[]
  for air_mode in (False,True):
   for direction in ('N','Hi','Lw'):
@@ -74,6 +76,8 @@ for idx,name in enumerate(names):
    special_hit.append(special_ids.get(stem+'Hit',special_ids.get(stem+'Catch',0)))
    if name=='Captain' and direction=='Hi':end=special_ids.get('SpecialHiThrow',0)
    special_active.append(special_ids.get(stem,0))
+   event_names=[stem+'Start' if stem+'Start' in special_ids else stem,stem+'Loop' if stem+'Loop' in special_ids else stem+'Hold','SpecialHiThrow' if name=='Captain' and direction=='Hi' else stem+'End',stem,stem+'Hit' if stem+'Hit' in special_ids else stem+'Catch']
+   for phase,event_name in enumerate(event_names):special_events[phase].append(special_event_ids.get(event_name,0))
    special_start.append(start);special_loop.append(loop);special_end.append(end)
  capture=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('CapturePulled','ThrownCommon')]
  guard=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('GuardOn','GuardOff','EscapeF','EscapeB')]
@@ -84,12 +88,12 @@ for idx,name in enumerate(names):
  crouch=[clip('Crouch'),clip('CrouchIdle'),clip('CrouchEnd')]
  cliff_box=re.findall(r'[-\d.]+',vals['cliffcatch_coll'])
  flags=re.findall(r'^\s*(?:&ll\w+FileID|0x00000000),\s*[^,]+,\s*(0x[0-9A-Fa-f]+)',sub,re.M)[selected[idx]]
- text+='    {'+','.join(v+'f' if '.' in v else v+'.0f' for v in floats)+','+','.join(map(str,clips))+','+flags+'U,'+','.join(map(str,extra))+',{'+','.join(map(str,multi))+'},{'+','.join(map(str,attacks))+'},{'+','.join(map(str,rapid))+'},{'+','.join(map(str,smash_voices))+'},{'+','.join(map(str,air))+'},{'+','.join(map(str,landing_air))+'},{'+','.join(map(str,grab))+'},{'+','.join(map(str,crouch))+'},{'+','.join(map(str,tilt))+'},{'+','.join(map(str,walks))+'},{'+','.join(v+'f' for v in walk_lengths)+'},'+str(voices['nSYAudioFGM'+('Mario' if name=='Luigi' else name)+'Landing'])+','+str(voices['nSYAudioFGM'+('Mario' if name=='Luigi' else name)+'DownBounce'])+','+str(dash_attack)+','+str(turn)+','+str(ids[motions[enum_values['nFTCommonMotionAppeal']]])+','+num('joint_itemheavy_id')+',{'+','.join(map(str,capture))+'},{'+','.join(map(str,guard))+'},{'+','.join(map(str,tech))+'},{'+','.join(map(str,special_start))+'},{'+','.join(map(str,special_loop))+'},{'+','.join(map(str,special_end))+'},{'+','.join(map(str,special_active))+'},{'+','.join(map(str,special_hit))+'},{'+','.join(map(str,down))+'},{'+','.join(map(str,reactions))+'},{'+','.join(map(str,cliff))+'},{'+','.join(v+'f' for v in cliff_box)+'}}, // '+name+'\n'
+ text+='    {'+','.join(v+'f' if '.' in v else v+'.0f' for v in floats)+','+','.join(map(str,clips))+','+flags+'U,'+','.join(map(str,extra))+',{'+','.join(map(str,multi))+'},{'+','.join(map(str,attacks))+'},{'+','.join(map(str,rapid))+'},{'+','.join(map(str,smash_voices))+'},{'+','.join(map(str,air))+'},{'+','.join(map(str,landing_air))+'},{'+','.join(map(str,grab))+'},{'+','.join(map(str,crouch))+'},{'+','.join(map(str,tilt))+'},{'+','.join(map(str,walks))+'},{'+','.join(v+'f' for v in walk_lengths)+'},'+str(voices['nSYAudioFGM'+('Mario' if name=='Luigi' else name)+'Landing'])+','+str(voices['nSYAudioFGM'+('Mario' if name=='Luigi' else name)+'DownBounce'])+','+str(dash_attack)+','+str(turn)+','+str(ids[motions[enum_values['nFTCommonMotionAppeal']]])+','+num('joint_itemheavy_id')+',{'+','.join(map(str,capture))+'},{'+','.join(map(str,guard))+'},{'+','.join(map(str,tech))+'},{'+','.join(map(str,special_start))+'},{'+','.join(map(str,special_loop))+'},{'+','.join(map(str,special_end))+'},{'+','.join(map(str,special_active))+'},{'+','.join(map(str,special_hit))+'},{{{'+ '},{'.join(','.join(map(str,row)) for row in special_events)+'}}},{'+','.join(map(str,down))+'},{'+','.join(map(str,reactions))+'},{'+','.join(map(str,cliff))+'},{'+','.join(v+'f' for v in cliff_box)+'}}, // '+name+'\n'
 text+='}};\n'
 # Main-motion flags bind both wrapper tracks and auxiliary joints (e.g. grabs).
 macros={k:int(v,16) for k,v in re.findall(r'#define\s+(FTANIM_FLAG_\w+)\s+(0x[0-9A-Fa-f]+)',(d/'src/ft/ftdef.h').read_text())}
 motion_flags={}
-for name,flags in re.findall(r'\{\s*&ll(\w+)FileID,\s*[^,]+,\s*([^}]+)\}',(d/'src/ft/ftdata.c').read_text()):
+for name,flags in re.findall(r'\{?\s*&ll(\w+)FileID,\s*[^,]+,\s*([^}]+)\}',(d/'src/ft/ftdata.c').read_text()):
  if name not in ids:continue
  value=0
  for token in re.findall(r'FTANIM_FLAG_\w+|0x[0-9A-Fa-f]+',flags):value|=macros.get(token,0) if token.startswith('FT') else int(token,16)

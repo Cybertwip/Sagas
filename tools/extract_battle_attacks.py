@@ -24,7 +24,7 @@ def extract(decomp, manifest):
     source=(decomp/'src/ft/ftdata.c').read_text()
     for kind,name in enumerate(names):
         table=re.search(r'FTMotionDesc dFT'+name+r'MotionDescs\[\]\s*=\s*\{(.*?)\n\};',source,re.S).group(1)
-        entries=re.findall(r'^\s*(?:\{\s*&ll(\w+)FileID|\{?\s*0x00000000)\s*,',table,re.M)
+        entries=re.findall(r'^\s*(?:\{?\s*&ll(\w+)FileID|\{?\s*0x00000000)\s*,',table,re.M)
         common=(decomp/'src/ft/ftdef.h').read_text().split('typedef enum FTCommonMotion')[1].split('}')[0]
         common=re.sub(r'//[^\n]*|/\*.*?\*/','',common,flags=re.S)
         enum_values={};value=-1
@@ -37,12 +37,23 @@ def extract(decomp, manifest):
         special_clips.update(ids[n] for n in entries[special_base:] if n in ids)
         recovery_clips.update(ids[n] for n in entries[58:71] if n)
         recovery_clips.update(ids[entries[enum_values['nFTCommonMotion'+n]]] for n in ('GuardOn','GuardOff','EscapeF','EscapeB'))
-        for clip,script,offset in re.findall(r'\{\s*&ll(\w+)FileID,\s*(\w+)(?:\s*\+\s*(0x[0-9A-Fa-f]+))?,',table):
+        for clip,script,offset in re.findall(r'\{?\s*&ll(\w+)FileID,\s*(\w+)(?:\s*\+\s*(0x[0-9A-Fa-f]+))?,',table):
             if clip in ids and script in scripts:
                 if offset:
                     if not all(c=='ftMotionCommandGoto' for c,_ in scripts[script]):continue
                     key=script+'@'+offset;scripts[key]=scripts[script][int(offset,0)//8:];script=key
                 mapping.setdefault((kind,ids[clip]),script)
+        rows=re.findall(r'^\s*(?:\{?\s*&ll(\w+)FileID\s*,\s*([^,\n]+),|\{?\s*0x00000000\s*,)',table,re.M)
+        for state,(_,expression) in enumerate(rows):
+            if state<195 or not expression:continue
+            match=re.fullmatch(r'(\w+)(?:\s*\+\s*(0x[0-9A-Fa-f]+))?',expression.strip())
+            if not match or match[1] not in scripts:continue
+            script=match[1]
+            if match[2]:
+                if not all(command=='ftMotionCommandGoto' for command,_ in scripts[script]):continue
+                key=script+'@'+match[2];scripts[key]=scripts[script][int(match[2],0)//8:];script=key
+            event_id=100000+kind*1024+state
+            mapping[(kind,event_id)]=script;special_clips.add(event_id)
     voices={r['name']:r['idx'] for r in json.loads((decomp/'build/us/src/audio/fgm.ucd.json').read_text())['entries']}
     hit_table=(decomp/'src/ft/ftmain.c').read_text().split('dFTMainHitCollisionFGMs')[1].split('};')[0]
     hit_sounds=[voices[name] for name in re.findall(r'nSYAudio\w+',hit_table)]

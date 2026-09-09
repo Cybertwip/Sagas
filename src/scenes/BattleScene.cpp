@@ -200,14 +200,15 @@ public:
                 const auto next=std::find(data.walks.begin(),data.walks.end(),clip);
                 if (body.status==FighterStatus::Walk && old!=data.walks.end() && next!=data.walks.end())
                     body.action_frame=static_cast<int>(body.action_frame*data.walk_lengths[next-data.walks.begin()]/data.walk_lengths[old-data.walks.begin()]);
-                else body.action_frame=0;
+                else if (body.status!=FighterStatus::Special) body.action_frame=0;
                 body.motion=clip;
             }
+            const unsigned event_clip=body.status==FighterStatus::Special?FighterCombat::special_event_motion(body):clip;
             if (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_index%3==1 && tic_%3==0)
                 emit({body.position.x,body.position.y+body.attr.height*.5f,0},{255,160,60,220},3,true);
             if (body.status==FighterStatus::Special && !body.special_projectile) {
                 for (const auto& flag:source_special_flags)
-                    if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==clip && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(body.action_frame)) {
+                    if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==event_clip && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(body.action_frame)) {
                         spawn_projectile(i,body);body.special_projectile=true;break;
                     }
             }
@@ -215,13 +216,13 @@ public:
             if (fighter_is_down(body.status) || body.status==FighterStatus::ShieldRoll || body.status==FighterStatus::Special) {
                 unsigned hit_status=1;
                 for (const auto& event:source_hit_status)
-                    if (event.kind==static_cast<unsigned>(body.kind) && event.motion==clip && event.frame<=static_cast<unsigned>(body.action_frame)) hit_status=event.status;
+                    if (event.kind==static_cast<unsigned>(body.kind) && event.motion==event_clip && event.frame<=static_cast<unsigned>(body.action_frame)) hit_status=event.status;
                 body.recovery_invulnerable=hit_status!=1;
             }
-            if (!body.hitlag && (body.audio_motion!=clip || body.audio_frame!=body.action_frame)) {
-                body.audio_motion=clip;body.audio_frame=body.action_frame;
+            if (!body.hitlag && (body.audio_motion!=event_clip || body.audio_frame!=body.action_frame)) {
+                body.audio_motion=event_clip;body.audio_frame=body.action_frame;
                 if (!services.deterministic_clock) for (const auto& sound:battle_motion_sounds)
-                    if (sound.motion==clip && sound.frame==static_cast<unsigned>(body.action_frame)) {
+                    if (sound.motion==event_clip && sound.frame==static_cast<unsigned>(body.action_frame)) {
                         const auto& voices=fighter_source_data[static_cast<unsigned>(body.kind)].smash_voices;
                         unsigned fgm=sound.fgm==~0U?voices[(tic_+i)%3]:sound.fgm;
                         if (body.kind==FighterKind::Luigi)
@@ -260,7 +261,7 @@ public:
             const auto& damage=source_throws[static_cast<unsigned>(holder.kind)][holder.throw_backward?1:0];
             bool dive_release=false;
             if (dive) for (const auto& flag:source_special_flags)
-                if (flag.kind==static_cast<unsigned>(holder.kind) && flag.motion==holder.special_motion && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(holder.action_frame)) dive_release=true;
+                if (flag.kind==static_cast<unsigned>(holder.kind) && flag.motion==FighterCombat::special_event_motion(holder) && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(holder.action_frame)) dive_release=true;
             if (dive_release || (holder.status==FighterStatus::Throw && holder.action_frame>=damage.frame)) {
                 captive.captured_by=-1;captive.status=FighterStatus::Wait;captive.invincible=0;
                 // Reuse the damage/knockback path with only the captured target eligible.
@@ -288,7 +289,7 @@ public:
             if ((body.status!=FighterStatus::Attack && body.status!=FighterStatus::Special && body.status!=FighterStatus::Catch && body.status!=FighterStatus::DownAttack) || body.hitlag || body.stocks<=0) continue;
             const auto model=posed(body);
             for (const auto& box:source_jab_hitboxes)
-                if (box.kind==static_cast<unsigned>(body.kind) && box.motion==body.motion && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
+                if (box.kind==static_cast<unsigned>(body.kind) && box.motion==(body.status==FighterStatus::Special?FighterCombat::special_event_motion(body):body.motion) && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
                     const auto position=renderer_->joint_point(model,body.action_frame,box.joint,
                         {static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
                     volumes.push_back({i,position,box.radius*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm,(body.status==FighterStatus::Catch || (body.kind==FighterKind::Captain && body.special_index%3==1 && body.status==FighterStatus::Special && body.special_phase==0)),box.group,box.epoch,box.element});

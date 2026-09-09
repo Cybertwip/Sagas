@@ -466,6 +466,10 @@ void FighterCombat::advance_down(FighterBody& body,bool attack,bool stand,bool a
     body.action_frame=0;body.vel_ground=0;body.jump_pressed=false;
 }
 
+unsigned FighterCombat::special_event_motion(const FighterBody& body) {
+    return fighter_source_data[static_cast<unsigned>(body.kind)].special_events[std::min(4U,body.special_phase)][body.special_index];
+}
+
 bool FighterCombat::start_special(FighterBody& body,bool pressed) {
     if (!pressed || body.hitlag || (body.status!=FighterStatus::Wait && body.status!=FighterStatus::Walk &&
         body.status!=FighterStatus::Dash && body.status!=FighterStatus::Run && body.status!=FighterStatus::CrouchWait &&
@@ -512,7 +516,7 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
             return;
         }
         if (!body.special_second && !body.special_direction_checked) for (const auto& flag:source_motion_flags)
-            if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==body.special_motion && flag.value==1 && flag.frame<=static_cast<unsigned>(body.action_frame)) {
+            if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==special_event_motion(body) && flag.value==1 && flag.frame<=static_cast<unsigned>(body.action_frame)) {
                 body.special_direction_checked=true;
                 const float mag=std::hypot(body.stick_x,body.stick_y),speed=std::hypot(body.special_velocity.x,body.special_velocity.y);
                 if (mag>=60 && (body.stick_x*body.special_velocity.x+body.stick_y*body.special_velocity.y)/(mag*speed)<std::cos(.7330383f)) {body.special_second=true;zip();}
@@ -522,7 +526,7 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
         return;
     }
     if (body.kind==FighterKind::Pikachu && index%3==2 && (body.special_phase==1 || body.special_phase==4)) {
-        for (const auto& flag:source_motion_flags) if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==body.special_motion && flag.value && flag.frame<=static_cast<unsigned>(body.action_frame)) {
+        for (const auto& flag:source_motion_flags) if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==special_event_motion(body) && flag.value && flag.frame<=static_cast<unsigned>(body.action_frame)) {
             body.special_phase=2;body.special_motion=data.special_end[index];body.action_frame=0;break;
         }
         return;

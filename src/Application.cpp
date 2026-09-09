@@ -1,3 +1,4 @@
+#include <sstream>
 #include <sagas/Application.hpp>
 #include <sagas/Fighter.hpp>
 
@@ -255,6 +256,19 @@ int Application::run() {
     InputState pending;
     while (running && (options_.frame_limit <= 0 || frames < options_.frame_limit)) {
         auto input = poll_input();
+        if (options_.preview_cell>=0 && frames==0) {
+            int columns=6,max_cell=11;
+            if (assets_->exists("mods/roster.tsv")) {
+                const auto blob=assets_->blob("mods/roster.tsv");
+                std::istringstream data(std::string(reinterpret_cast<const char*>(blob->data()),blob->size()));
+                std::string line;std::getline(data,line);columns=std::clamp(std::stoi(line),3,12);int row=0;max_cell=0;
+                while (std::getline(data,line)) {const auto last=line.rfind('\t');const auto first=line.find('\t');int cell=row++;if (last!=first && last!=std::string::npos && last+1<line.size()) {try {cell=std::stoi(line.substr(last+1));} catch (...) {}}
+                    max_cell=std::max(max_cell,cell);}
+            }
+            const int rows=(max_cell+columns)/columns;
+            input.pointer_moved=true;input.pointer_x=25+(options_.preview_cell%columns+.5f)*270.f/columns;
+            input.pointer_y=36+(options_.preview_cell/columns+.5f)*86.f/rows;
+        }
         input.latch_edges(pending);
         pending=input;
         running = !input.quit;

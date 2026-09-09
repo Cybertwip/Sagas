@@ -13,6 +13,7 @@ int main(int argc, char** argv) {
             else if (arg == "--controls" && i + 1 < argc) options.controls_path = argv[++i];
             else if (arg == "--title") options.start_at_title = true;
             else if (arg == "--menu") options.start_at_menu = true;
+            else if (arg == "--preview-cell" && i + 1 < argc) options.preview_cell = std::stoi(argv[++i]);
             else if (arg == "--headless") options.headless = true;
             else if (arg == "--select") options.start_at_select = true;
             else if (arg == "--battle") options.start_at_battle = true;

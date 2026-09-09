@@ -15,6 +15,7 @@ struct ApplicationOptions {
     bool start_at_title{};
     bool start_at_menu{};
     bool start_at_select{},start_at_battle{};
+    int preview_cell{-1};
     bool headless{};
     int frame_limit{};
     bool capture_only{};

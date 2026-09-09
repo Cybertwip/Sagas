@@ -37,6 +37,8 @@ import uuid
 
 from typing import Any, Callable, Iterable, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from stellar_audio import estimate_pitch, pitch_note, process_sound, read_wav_mono, write_wav_mono
 
 from stellar_batch import discover_projects as _discover_batch_projects

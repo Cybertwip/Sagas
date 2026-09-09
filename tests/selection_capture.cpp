@@ -23,7 +23,14 @@ int main(int argc,char** argv) {
     const std::filesystem::path output=argv[1];
     std::filesystem::create_directories(output);
     {
-        sagas::AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);
+        const auto fixture=output/"builtin-assets";
+        std::filesystem::create_directories(fixture);
+        for (const auto& entry:std::filesystem::directory_iterator(SAGAS_DEFAULT_ASSET_ROOT)) {
+            if (entry.path().filename()=="mods") continue;
+            const auto link=fixture/entry.path().filename();
+            if (!std::filesystem::exists(link)) std::filesystem::create_symlink(entry.path(),link);
+        }
+        sagas::AssetRepository assets(fixture);
         sagas::RenderEngine render(window,assets);
         sagas::AudioEngine audio(assets);
         sagas::PhysicsWorld physics;

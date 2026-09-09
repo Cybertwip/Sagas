@@ -86,6 +86,7 @@ public:
             body.tap_stick_x=std::abs(body.stick_x)>=56 && (std::abs(old_x)<56 || old_x*body.stick_x<0)?0:std::min(255,body.tap_stick_x+1);
             body.tap_stick_y=std::abs(body.stick_y)>=53 && (std::abs(old_y)<53 || old_y*body.stick_y<0)?0:std::min(255,body.tap_stick_y+1);
             FighterCombat::buffer_smash(body,attack);
+            FighterCombat::buffer_aerial(body,attack);
             body.special_held=human && player_input.special_held;
             const bool on_cliff=body.status==FighterStatus::CliffCatch || body.status==FighterStatus::CliffWait || body.status==FighterStatus::CliffClimb;
             if (on_cliff) update_cliff(body);
@@ -129,7 +130,7 @@ public:
                 const bool tilt=FighterCombat::start_tilt(body,attack && !grab && !aerial && !smash);
                 const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump || body.status==FighterStatus::Dash) &&
                                   body.action_frame>=motion_length(body);
-                FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab && !tilt && !dash_attack,ended,human && player_input.attack_released);
+                FighterCombat::advance_jab(body,attack && !body.jump_pressed && body.aerial_buffer<=0 && !smash && !aerial && !grab && !tilt && !dash_attack,ended,human && player_input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status==FighterStatus::Dash && ended) {body.status=FighterStatus::Wait;body.vel_ground*=.75f;}
                 const auto previous_guard=body.status;
@@ -236,8 +237,9 @@ public:
             auto& holder=bodies_[i];
             if (holder.capture_target<0) continue;
             auto& captive=bodies_[holder.capture_target];
-            const bool release=holder.stocks<=0 || !holder.grounded ||
-                (holder.status!=FighterStatus::CatchWait && holder.status!=FighterStatus::Throw) ||
+            const bool dive=holder.kind==FighterKind::Captain && holder.status==FighterStatus::Special && holder.special_phase==4;
+            const bool release=holder.stocks<=0 || (!holder.grounded && !dive) ||
+                (!dive && holder.status!=FighterStatus::CatchWait && holder.status!=FighterStatus::Throw) ||
                 (holder.status==FighterStatus::CatchWait && holder.capture_tics>180);
             if (release) {
                 captive.captured_by=-1;captive.status=FighterStatus::Fall;captive.grounded=false;
@@ -248,7 +250,7 @@ public:
             captive.lr=-holder.lr;captive.captured_throw=holder.status==FighterStatus::Throw;
             captive.action_frame=holder.action_frame;
             const auto holder_model=posed(holder);
-            const unsigned joint=fighter_source_data[static_cast<unsigned>(holder.kind)].capture_joint;
+            const unsigned joint=dive?29:fighter_source_data[static_cast<unsigned>(holder.kind)].capture_joint;
             const auto anchor=renderer_->joint_point(holder_model,holder.action_frame,joint);
             const auto up=renderer_->joint_point(holder_model,holder.action_frame,joint,{0,1,0});
             captive.capture_rotation=std::atan2(up.y-anchor.y,up.x-anchor.x)-std::numbers::pi_v<float>/2;
@@ -256,7 +258,10 @@ public:
             const auto root=renderer_->joint_point(captive_model,captive.action_frame,4);
             captive.position={anchor.x-root.x,anchor.y-root.y,anchor.z-root.z};
             const auto& damage=source_throws[static_cast<unsigned>(holder.kind)][holder.throw_backward?1:0];
-            if (holder.status==FighterStatus::Throw && holder.action_frame>=damage.frame) {
+            bool dive_release=false;
+            if (dive) for (const auto& flag:source_special_flags)
+                if (flag.kind==static_cast<unsigned>(holder.kind) && flag.motion==holder.special_motion && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(holder.action_frame)) dive_release=true;
+            if (dive_release || (holder.status==FighterStatus::Throw && holder.action_frame>=damage.frame)) {
                 captive.captured_by=-1;captive.status=FighterStatus::Wait;captive.invincible=0;
                 // Reuse the damage/knockback path with only the captured target eligible.
                 const unsigned saved=holder.hit_mask;
@@ -264,9 +269,10 @@ public:
                 const int facing=holder.lr;
                 if (holder.throw_backward) holder.lr=-holder.lr;
                 AttackVolume hit{i,{captive.position.x,captive.position.y+captive.attr.width,0},1,
-                    damage.damage,damage.angle,damage.growth,damage.weight,damage.base,0};
+                    dive?20:damage.damage,dive?361:damage.angle,dive?82:damage.growth,dive?0:damage.weight,dive?30:damage.base,0};
                 (void)FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&hit,1));
                 holder.lr=facing;holder.hit_mask=saved;holder.capture_target=-1;
+                if (dive) {holder.special_phase=2;holder.special_motion=fighter_source_data[static_cast<unsigned>(holder.kind)].special_end[holder.special_index];holder.action_frame=0;emit(captive.position,{255,180,60,255},20,true);}
             }
         }
         for (unsigned i=0;i<bodies_.size();++i) {
@@ -285,7 +291,7 @@ public:
                 if (box.kind==static_cast<unsigned>(body.kind) && box.motion==body.motion && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
                     const auto position=renderer_->joint_point(model,body.action_frame,box.joint,
                         {static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
-                    volumes.push_back({i,position,box.radius*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm,body.status==FighterStatus::Catch,box.group,box.epoch,box.element});
+                    volumes.push_back({i,position,box.radius*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm,(body.status==FighterStatus::Catch || (body.kind==FighterKind::Captain && body.special_index%3==1 && body.status==FighterStatus::Special && body.special_phase==0)),box.group,box.epoch,box.element});
                 }
         }
         auto hits=FighterCombat::resolve(bodies_,volumes);

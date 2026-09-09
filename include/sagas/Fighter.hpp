@@ -35,7 +35,7 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Special, Hitstun, Tumble, DownBounce, DownWait, DownStand, DownRoll, DownAttack, Shield, ShieldRelease, ShieldRoll, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
+enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, SpecialFall, Land, Attack, Special, Hitstun, Tumble, DownBounce, DownWait, DownStand, DownRoll, DownAttack, Shield, ShieldRelease, ShieldRoll, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
 
 [[nodiscard]] constexpr bool fighter_is_down(FighterStatus status) {
     return status==FighterStatus::DownBounce || status==FighterStatus::DownWait ||
@@ -76,6 +76,8 @@ struct FighterBody {
     unsigned special_motion{},special_index{},special_phase{},special_tics{};
     bool special_projectile{},special_held{};
     Vec2 special_velocity{};
+    int aerial_buffer{};
+    bool special_second{},special_direction_checked{};
     unsigned damage_motion{};
     bool damage_tumble{};
     unsigned down_face{1},down_motion{};
@@ -154,6 +156,7 @@ public:
     static void advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released=false);
     static bool start_special(FighterBody& body,bool pressed);
     static void advance_special(FighterBody& body,bool pressed,bool animation_ended);
+    static void buffer_aerial(FighterBody& body,bool pressed);
     static bool start_aerial(FighterBody& body,bool pressed);
     static bool start_grab(FighterBody& body,bool pressed);
     static bool start_dash_attack(FighterBody& body,bool pressed);

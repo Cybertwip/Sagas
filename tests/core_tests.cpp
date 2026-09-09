@@ -658,8 +658,10 @@ int main() {
         tilt.stick_x=direction==0?40:0;tilt.stick_y=direction==1?40:direction==2?-40:0;
         assert(sagas::FighterCombat::start_tilt(tilt,true));
         assert(tilt.attack_motion==sagas::fighter_source_data[kind].tilt[direction==0?2:direction==1?5:6]);
-        assert(std::any_of(sagas::source_jab_hitboxes.begin(),sagas::source_jab_hitboxes.end(),
-            [&](const auto& box){return box.kind==kind && box.motion==tilt.attack_motion;}));
+        const bool has_tilt=std::any_of(sagas::source_jab_hitboxes.begin(),sagas::source_jab_hitboxes.end(),
+            [&](const auto& box){return box.kind==kind && box.motion==tilt.attack_motion;});
+        if (!has_tilt) std::cerr<<"Missing tilt hitboxes kind "<<kind<<" motion "<<tilt.attack_motion<<'\n';
+        assert(has_tilt);
     }
     // Fox forward-smash TransN displacement belongs to physics, in either facing.
     const auto fox_smash=sagas::fighter_source_data[9].smash[0];

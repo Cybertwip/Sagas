@@ -63,7 +63,7 @@ private:
 
 enum class Action : std::uint8_t { Accept, Cancel, Skip, Up, Down, Left, Right, Quit };
 struct ControllerInput {
-    bool connected{},attack{},attack_released{},special{},jump{},jump_released{},shield{},shield_pressed{},grab{},start{},cancel{},taunt{};
+    bool connected{},attack{},attack_released{},special{},special_held{},jump{},jump_released{},shield{},shield_pressed{},grab{},start{},cancel{},taunt{};
     float x{},y{};
 };
 struct InputState {
@@ -73,7 +73,7 @@ struct InputState {
     bool jump_pressed{}, shield_held{}, back_pressed{};
     bool jump_released{};
     bool attack_pressed{}, attack_released{}, grab_pressed{}, shield_pressed{};
-    bool special_pressed{},taunt_pressed{};
+    bool special_pressed{},special_held{},taunt_pressed{};
     std::array<ControllerInput,3> controllers{};
     bool tap_jump{true};
     bool pointer_moved{}, pointer_pressed{}, pointer_released{}, pointer_held{};

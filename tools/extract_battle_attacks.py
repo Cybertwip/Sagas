@@ -24,7 +24,7 @@ def extract(decomp, manifest):
     source=(decomp/'src/ft/ftdata.c').read_text()
     for kind,name in enumerate(names):
         table=re.search(r'FTMotionDesc dFT'+name+r'MotionDescs\[\]\s*=\s*\{(.*?)\n\};',source,re.S).group(1)
-        entries=re.findall(r'\{\s*(?:&ll(\w+)FileID|0x00000000),',table)
+        entries=re.findall(r'^\s*(?:\{\s*&ll(\w+)FileID|\{?\s*0x00000000)\s*,',table,re.M)
         common=(decomp/'src/ft/ftdef.h').read_text().split('typedef enum FTCommonMotion')[1].split('}')[0]
         common=re.sub(r'//[^\n]*|/\*.*?\*/','',common,flags=re.S)
         enum_values={};value=-1
@@ -35,7 +35,7 @@ def extract(decomp, manifest):
          enum_values[m[1]]=value
         special_base=enum_values['nFTCommonMotionSpecialStart']
         special_clips.update(ids[n] for n in entries[special_base:] if n in ids)
-        recovery_clips.update(ids[n] for n in entries[58:70] if n)
+        recovery_clips.update(ids[n] for n in entries[58:71] if n)
         for clip,script,offset in re.findall(r'\{\s*&ll(\w+)FileID,\s*(\w+)(?:\s*\+\s*(0x[0-9A-Fa-f]+))?,',table):
             if clip in ids and script in scripts:
                 if offset:

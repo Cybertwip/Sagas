@@ -118,7 +118,7 @@ public:
             auto& slot=slots_[player];
             if (slot.kind!=SlotKind::Human) {
                 slot.kind=SlotKind::Human;slot.selected=false;
-                cursors_[player]={47+45.f*player,58};slot.puck={cursors_[player].x-6,cursors_[player].y-6};
+                cursors_[player]={47+45.f*(player+1),58};slot.puck={cursors_[player].x-6,cursors_[player].y-6};
             }
             auto& cursor=cursors_[player];cursor.x=std::clamp(cursor.x+c.x/20,0.f,300.f);cursor.y=std::clamp(cursor.y-c.y/20,10.f,230.f);
             const int portrait=portrait_at(cursor.x,cursor.y);

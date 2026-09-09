@@ -74,7 +74,8 @@ struct FighterBody {
     unsigned attack_motion{},attack_epoch{~0U};
     int aerial_attack{-1}, shield_tics{255};
     unsigned special_motion{},special_index{},special_phase{},special_tics{};
-    bool special_projectile{};
+    bool special_projectile{},special_held{};
+    Vec2 special_velocity{};
     unsigned damage_motion{};
     bool damage_tumble{};
     unsigned down_face{1},down_motion{};
@@ -83,7 +84,9 @@ struct FighterBody {
     unsigned landing_motion{};
     float landing_speed{1};
     int capture_target{-1}, captured_by{-1}, capture_tics{};
-    bool throw_backward{},turn_flipped{},turn_dash{};
+    bool throw_backward{},turn_flipped{},turn_dash{},captured_throw{};
+    float capture_rotation{};
+    int smash_buffer{},buffered_smash{-1},buffered_facing{1};
     int rapid_inputs{},tap_stick_x{255};
     bool rapid_continue{};
     Vec2 cliff_edge{};
@@ -152,6 +155,7 @@ public:
     static bool start_grab(FighterBody& body,bool pressed);
     static bool start_dash_attack(FighterBody& body,bool pressed);
     static bool start_tilt(FighterBody& body,bool pressed);
+    static void buffer_smash(FighterBody& body,bool pressed);
     static bool start_smash(FighterBody& body,bool pressed);
     [[nodiscard]] static std::vector<FighterHit> resolve(std::span<FighterBody> bodies,
                                                         std::span<const AttackVolume> attacks);

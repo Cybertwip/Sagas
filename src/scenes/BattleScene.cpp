@@ -55,7 +55,7 @@ public:
             if (port>0) {
                 const auto& c=input.controllers[port-1];
                 player_input.stick_x=c.x;player_input.stick_y=c.y;player_input.attack_pressed=c.attack;player_input.attack_released=c.attack_released;
-                player_input.special_pressed=c.special;player_input.jump_pressed=c.jump;player_input.jump_released=c.jump_released;
+                player_input.special_pressed=c.special;player_input.special_held=c.special_held;player_input.jump_pressed=c.jump;player_input.jump_released=c.jump_released;
                 player_input.shield_held=c.shield;player_input.shield_pressed=c.shield_pressed;player_input.grab_pressed=c.grab;player_input.taunt_pressed=c.taunt;
             }
             if (body.stocks<=0) continue;
@@ -85,6 +85,8 @@ public:
             }
             body.tap_stick_x=std::abs(body.stick_x)>=56 && (std::abs(old_x)<56 || old_x*body.stick_x<0)?0:std::min(255,body.tap_stick_x+1);
             body.tap_stick_y=std::abs(body.stick_y)>=53 && (std::abs(old_y)<53 || old_y*body.stick_y<0)?0:std::min(255,body.tap_stick_y+1);
+            FighterCombat::buffer_smash(body,attack);
+            body.special_held=human && player_input.special_held;
             const bool on_cliff=body.status==FighterStatus::CliffCatch || body.status==FighterStatus::CliffWait || body.status==FighterStatus::CliffClimb;
             if (on_cliff) update_cliff(body);
             if (!on_cliff && !body.hitlag && body.status!=FighterStatus::Captured) {
@@ -109,7 +111,7 @@ public:
                 (void)FighterCombat::start_special(body,human && player_input.special_pressed);
                 const bool grab=FighterCombat::start_grab(body,(human && player_input.grab_pressed) || (attack && body.shield_held));
                 const bool aerial=FighterCombat::start_aerial(body,attack && !grab);
-                const bool dash_attack=FighterCombat::start_dash_attack(body,attack && !grab && !aerial);
+                const bool dash_attack=FighterCombat::start_dash_attack(body,attack && !grab && !aerial && body.smash_buffer<=0);
                 const bool smash=FighterCombat::start_smash(body,attack && !grab && !aerial && !dash_attack);
                 if (body.status==FighterStatus::Land && body.landing_motion && body.action_frame*body.landing_speed>=motion_length(body)) {
                     body.landing_motion=0;body.status=FighterStatus::Wait;body.action_frame=0;
@@ -236,8 +238,16 @@ public:
                 if (holder.status==FighterStatus::CatchWait) holder.status=FighterStatus::Wait;
                 continue;
             }
-            captive.position={holder.position.x+holder.lr*(holder.attr.width+captive.attr.width),holder.position.y,0};
-            captive.lr=-holder.lr;
+            captive.lr=-holder.lr;captive.captured_throw=holder.status==FighterStatus::Throw;
+            captive.action_frame=holder.action_frame;
+            const auto holder_model=posed(holder);
+            const unsigned joint=fighter_source_data[static_cast<unsigned>(holder.kind)].capture_joint;
+            const auto anchor=renderer_->joint_point(holder_model,holder.action_frame,joint);
+            const auto up=renderer_->joint_point(holder_model,holder.action_frame,joint,{0,1,0});
+            captive.capture_rotation=std::atan2(up.y-anchor.y,up.x-anchor.x)-std::numbers::pi_v<float>/2;
+            auto captive_model=posed(captive);captive_model.position={};
+            const auto root=renderer_->joint_point(captive_model,captive.action_frame,4);
+            captive.position={anchor.x-root.x,anchor.y-root.y,anchor.z-root.z};
             const auto& damage=source_throws[static_cast<unsigned>(holder.kind)][holder.throw_backward?1:0];
             if (holder.status==FighterStatus::Throw && holder.action_frame>=damage.frame) {
                 captive.captured_by=-1;captive.status=FighterStatus::Wait;captive.invincible=0;
@@ -402,7 +412,7 @@ private:
             case FighterStatus::Land:return body.landing_motion?body.landing_motion:data.landing;
             case FighterStatus::Catch:return data.grab[0];
             case FighterStatus::CatchWait:return data.grab[1];
-            case FighterStatus::Captured:return data.damage;
+            case FighterStatus::Captured:return data.capture[body.captured_throw?1:0];
             case FighterStatus::Throw:return data.grab[body.throw_backward?3:2];
             case FighterStatus::Special:return body.special_motion;
             case FighterStatus::Attack:
@@ -444,6 +454,7 @@ private:
         auto model=models_.at(key);
         if (!with_root && model.fighter_wrapper==Model3D::FighterWrapper::TransN) model.fighter_root_animation.reset();
         model.position=body.position;model.rotation.y=body.lr*std::numbers::pi_v<float>/2;
+        if (body.status==FighterStatus::Captured) model.rotation.z=body.capture_rotation;
         model.scale={body.attr.size,body.attr.size,body.attr.size};return model;
     }
     struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity; };
@@ -461,7 +472,7 @@ private:
         const Vec3 origin{body.position.x+body.lr*(body.attr.width+60),body.position.y+body.attr.height*.6f,0};
         projectiles_.push_back({owner,weapon,origin,{body.lr*speed,weapon==1?-4.3578f:weapon==6?-28.28427f:0,0},weapon==0?80:weapon==1?140:160,body.lr,weapon==1?1.2f:0.f});
     }
-    struct Particle { Vec3 position,velocity; Color color; int age{},life{}; float size{}; bool spark{}; };
+    struct Particle { Vec3 position,velocity; Color color; int age{},life{}; float size{}; bool spark{},ring{}; };
     std::vector<Particle> particles_;
     void emit(Vec3 origin,Color color,int count,bool spark) {
         for (int i=0;i<count;++i) {
@@ -481,7 +492,13 @@ private:
         const auto dot=[](Vec3 a,Vec3 b){return a.x*b.x+a.y*b.y+a.z*b.z;};
         const auto forward=normalize(Vec3{camera.at.x-camera.eye.x,camera.at.y-camera.eye.y,camera.at.z-camera.eye.z});
         const auto right=normalize(cross(forward,camera.up)),up=cross(right,forward);
-        for (const auto& p:particles_) {
+        auto displayed=particles_;
+        for (const auto& body:bodies_) if (body.status==FighterStatus::Shield || (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_index%3==2)) {
+            const bool shield=body.status==FighterStatus::Shield;
+            const float radius=body.attr.height*(shield?.42f+.25f*body.shield/55.f:.6f);
+            displayed.push_back({{body.position.x,body.position.y+body.attr.height*.5f,body.position.z},{},shield?Color{255,100,120,180}:Color{100,210,255,210},0,1,radius,false,true});
+        }
+        for (const auto& p:displayed) {
             const Vec3 delta{p.position.x-camera.eye.x,p.position.y-camera.eye.y,p.position.z-camera.eye.z};
             const float depth=dot(delta,forward);if (depth<=camera.near_plane) continue;
             const float factor=120/(depth*std::tan(camera.fov_y*std::numbers::pi_v<float>/360));
@@ -489,14 +506,31 @@ private:
             const float size=p.size*factor*(p.spark?1.f:1.f+p.age*.05f);
             auto color=p.color;color.a=static_cast<std::uint8_t>(color.a*(1.f-float(p.age)/p.life));
             std::vector<TriangleVertex> shape;shape.reserve(48);
-            Color edge=color;edge.a=0;
+            Color edge=color;edge.a=p.ring?220:0;
+            if (p.ring) color.a=35;
             for (int segment=0;segment<16;++segment) {
                 const float a=segment*2*std::numbers::pi_v<float>/16,b=(segment+1)*2*std::numbers::pi_v<float>/16;
                 shape.push_back({{x,y},color,{}});
-                shape.push_back({{x+std::cos(a)*size,y+std::sin(a)*size},edge,{}});
-                shape.push_back({{x+std::cos(b)*size,y+std::sin(b)*size},edge,{}});
+                shape.push_back({{x+std::cos(a)*size*.75f,y+std::sin(a)*size},edge,{}});
+                shape.push_back({{x+std::cos(b)*size*.75f,y+std::sin(b)*size},edge,{}});
             }
             r.triangles(shape);
+            if (p.spark && p.color.b>p.color.r && p.color.b>200) {
+                std::vector<TriangleVertex> bolts;
+                for (int branch=0;branch<4;++branch) {
+                    const float a=branch*1.57079633f+p.age*.4f;
+                    Vec2 previous{x,y};
+                    for (int step=1;step<=4;++step) {
+                        const float twist=a+((step%2)?-.45f:.3f),distance=size*step*.6f;
+                        const Vec2 next{x+std::cos(twist)*distance*.75f,y+std::sin(twist)*distance};
+                        const Color flash{225,250,255,color.a};const float width=.45f;
+                        bolts.insert(bolts.end(),{{{previous.x-width,previous.y},flash,{}},{{previous.x+width,previous.y},flash,{}},{{next.x+width,next.y},flash,{}},
+                            {{previous.x-width,previous.y},flash,{}},{{next.x+width,next.y},flash,{}},{{next.x-width,next.y},flash,{}}});
+                        previous=next;
+                    }
+                }
+                r.triangles(bolts);
+            }
         }
     }
     std::vector<int> ports_;

@@ -235,15 +235,13 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             if (!locked) body.status=FighterStatus::Wait;
         }
         body.vel_air.z=0;
-        if ((body.status==FighterStatus::Attack || body.status==FighterStatus::Special || body.status==FighterStatus::DownRoll || body.status==FighterStatus::DownAttack) && motion) {
+        if ((body.status==FighterStatus::Attack || body.status==FighterStatus::Special || body.status==FighterStatus::CatchWait || body.status==FighterStatus::Throw || body.status==FighterStatus::DownRoll || body.status==FighterStatus::DownAttack) && motion) {
             if (const auto authored=motion(body)) {body.vel_ground=authored->x*body.lr;body.vel_air.z=authored->z;}
         }
         body.vel_air.x=body.vel_ground*body.lr*body.floor_tangent.x;
         body.vel_air.y=body.vel_ground*body.lr*body.floor_tangent.y;
     } else {
-        if (body.status==FighterStatus::Special && motion) {
-            if (const auto authored=motion(body)) {body.vel_air=*authored;}
-        }
+
         const bool authored=body.aerial_jump && body.status==FighterStatus::Jump &&
                             (body.kind==FighterKind::Ness || body.kind==FighterKind::Yoshi) && motion;
         const auto root_velocity=authored?motion(body):std::optional<Vec3>{};
@@ -268,6 +266,18 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             } else if (authored) body.status=FighterStatus::Fall;
         }
         if (root_velocity && body.kind==FighterKind::Ness) body.position.x+=root_velocity->x;
+        if (body.status==FighterStatus::Special) {
+            if (body.kind==FighterKind::Fox && body.special_index%3==1) {
+                if (body.special_phase==3) {
+                    const float speed=std::max(0.f,115.f-std::max(0,body.action_frame-2)*3.03571438789f);
+                    body.vel_air={body.special_velocity.x*speed/115,body.special_velocity.y*speed/115,0};
+                } else if (body.special_phase!=2) body.vel_air={};
+            } else if (body.kind==FighterKind::Fox && body.special_index%3==2) {
+                body.vel_air.x*=.8f;body.vel_air.y=body.special_tics<=4?0:std::max(-body.attr.tvel_base,body.vel_air.y+body.attr.gravity-.8f);
+            } else if (motion) {
+                if (const auto authored=motion(body)) body.vel_air=*authored;
+            }
+        }
         if (body.status==FighterStatus::Jump) ++body.jump_frames;
     }
     // ftMainProcPhysicsMap keeps knockback separate from controlled velocity.
@@ -322,6 +332,12 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             if (body.status==FighterStatus::Tumble || (body.status==FighterStatus::Hitstun && body.damage_tumble)) {
                 body.status=FighterStatus::DownBounce;body.action_frame=0;body.hitstun=0;
                 body.down_motion=fighter_source_data[static_cast<unsigned>(body.kind)].down[body.down_face];
+                if (body.shield_tics<20) {
+                    const unsigned tech=std::abs(body.stick_x)<20?0:body.stick_x*body.lr>=0?1:2;
+                    body.status=tech?FighterStatus::DownRoll:FighterStatus::DownStand;
+                    body.down_motion=fighter_source_data[static_cast<unsigned>(body.kind)].tech[tech];
+                    body.shield_tics=255;
+                }
                 body.down_attack_buffer=0;body.down_wait=180;body.vel_ground=0;
                 body.attack_motion=0;body.aerial_attack=-1;
             } else if (body.status==FighterStatus::Attack && body.aerial_attack>=0) {
@@ -422,6 +438,22 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
     ++body.special_tics;
     const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
     const auto index=body.special_index;
+    if (body.kind==FighterKind::Fox && index%3==1) {
+        if (body.special_tics==35) {
+            const float angle=std::hypot(body.stick_x,body.stick_y)>=45?std::atan2(static_cast<float>(body.stick_y),static_cast<float>(body.stick_x)):1.57079632679f;
+            body.special_velocity={115*std::cos(angle),115*std::sin(angle)};
+            body.grounded=false;body.special_index=4;body.special_phase=3;body.special_motion=data.special_active[4];body.action_frame=0;
+            body.jumps_used=body.attr.jumps_max;return;
+        }
+        if (body.special_phase==3) {
+            if (body.action_frame>=30) {body.special_phase=2;body.special_motion=data.special_end[4];body.action_frame=0;}
+            return;
+        }
+        if (body.special_phase==1) return;
+    }
+    if (body.kind==FighterKind::Fox && index%3==2 && body.special_phase==1 && body.special_tics>=18 && !body.special_held) {
+        body.special_phase=2;body.special_motion=data.special_end[index];body.action_frame=0;return;
+    }
     if (body.special_phase==0 && animation_ended && data.special_loop[index]) {
         body.special_phase=1;body.special_motion=data.special_loop[index];body.action_frame=0;return;
     }
@@ -485,13 +517,25 @@ bool FighterCombat::start_tilt(FighterBody& body,bool pressed) {
     return true;
 }
 
+void FighterCombat::buffer_smash(FighterBody& body,bool pressed) {
+    if (!body.hitlag && body.smash_buffer>0) --body.smash_buffer;
+    if (!pressed || !body.grounded) return;
+    int direction=-1;
+    if (body.tap_stick_y<4 && std::abs(body.stick_y)>=53) direction=body.stick_y>0?1:2;
+    else if (body.tap_stick_x<3 && std::abs(body.stick_x)>=56) direction=0;
+    if (direction<0) return;
+    body.smash_buffer=3;body.buffered_smash=direction;body.buffered_facing=direction==0?(body.stick_x>0?1:-1):body.lr;
+}
+
 bool FighterCombat::start_smash(FighterBody& body,bool pressed) {
-    if (!pressed || body.hitlag || !body.grounded || (body.status!=FighterStatus::Wait && body.status!=FighterStatus::Crouch && body.status!=FighterStatus::CrouchWait && body.status!=FighterStatus::CrouchEnd && body.status!=FighterStatus::Walk && body.status!=FighterStatus::Dash && body.status!=FighterStatus::Run)) return false;
+    if ((!pressed && body.smash_buffer<=0) || body.hitlag || !body.grounded || (body.status!=FighterStatus::Wait && body.status!=FighterStatus::Crouch && body.status!=FighterStatus::CrouchWait && body.status!=FighterStatus::CrouchEnd && body.status!=FighterStatus::Walk && body.status!=FighterStatus::Dash && body.status!=FighterStatus::Run)) return false;
     int direction=-1;
     if (body.tap_stick_y<4 && body.stick_y>=53) direction=1;
     else if (body.tap_stick_y<4 && body.stick_y<=-53) direction=2;
     else if (body.tap_stick_x<3 && std::abs(body.stick_x)>=56) {direction=0;body.lr=body.stick_x>0?1:-1;}
+    if (direction<0 && body.smash_buffer>0) {direction=body.buffered_smash;body.lr=body.buffered_facing;}
     if (direction<0) return false;
+    body.smash_buffer=0;
     body.attack_motion=fighter_source_data[static_cast<unsigned>(body.kind)].smash[direction];
     body.status=FighterStatus::Attack;body.action_frame=0;body.hit_mask=0;body.attack_epoch=~0U;body.hit_group_epochs.fill(~0U);
     body.jab_stage=0;body.jab_followup_left=0;body.vel_ground=0;
@@ -588,6 +632,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
                 defender.shield=std::max(0.0f,defender.shield-hit.damage);
                 if (defender.shield>0) continue;
             }
+            defender.smash_buffer=0;
             defender.damage+=hit.damage;
             const float p=defender.damage;
             const float component=hit.weight ? 1+hit.weight*.5f : p*.1f+p*hit.damage*.05f;
@@ -619,6 +664,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             }
             defender.damage_motion=fighter_source_data[static_cast<unsigned>(defender.kind)].damage_reactions[reaction];
             defender.damage_tumble=was_airborne || level==3;
+            defender.shield_tics=255;
             defender.tap_stick_x=defender.tap_stick_y=255;
             defender.fastfall=false;
         }

@@ -222,7 +222,7 @@ InputState Application::poll_input() {
         held[i]=(keys && keys[bindings_[i].key]) || (gamepad_ && bindings_[i].button>=0 &&
             SDL_GetGamepadButton(gamepad_,static_cast<SDL_GamepadButton>(bindings_[i].button)));
     }
-    input.shield_held=held[2];
+    input.shield_held=held[2];input.special_held=held[8];
     for (unsigned slot=0;slot<4;++slot) {
         auto* pad=slot==0?gamepad_:extra_gamepads_[slot-1];
         if (!pad) {trigger_held_[slot]=c_jump_held_[slot]=false;continue;}
@@ -230,7 +230,7 @@ InputState Application::poll_input() {
         const bool c_jump=SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_WEST) || std::abs(SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_RIGHTX))>12000 || std::abs(SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_RIGHTY))>12000;
         if (!slot) {input.shield_held|=trigger;input.shield_pressed|=trigger && !trigger_held_[slot];input.jump_pressed|=c_jump && !c_jump_held_[slot];input.jump_released|=!c_jump && c_jump_held_[slot];}
         else {
-            auto& c=input.controllers[slot-1];c.connected=true;c.shield=trigger || (bindings_[2].button>=0 && SDL_GetGamepadButton(pad,static_cast<SDL_GamepadButton>(bindings_[2].button)));
+            auto& c=input.controllers[slot-1];c.connected=true;c.special_held=SDL_GetGamepadButton(pad,static_cast<SDL_GamepadButton>(bindings_[8].button));c.shield=trigger || (bindings_[2].button>=0 && SDL_GetGamepadButton(pad,static_cast<SDL_GamepadButton>(bindings_[2].button)));
             c.shield_pressed|=trigger && !trigger_held_[slot];c.jump|=c_jump && !c_jump_held_[slot];c.jump_released|=!c_jump && c_jump_held_[slot];
             c.x=std::clamp(SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_LEFTX)/409.f,-80.f,80.f);c.y=std::clamp(SDL_GetGamepadAxis(pad,SDL_GAMEPAD_AXIS_LEFTY)/-409.f,-80.f,80.f);
             if (std::abs(c.x)<8) c.x=80.f*(SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_DPAD_RIGHT)-SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_DPAD_LEFT));

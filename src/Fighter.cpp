@@ -301,7 +301,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 body.position.y=y-body.attr.height; body.vel_air.y=body.vel_damage.y=0;
             }
         } else if (line.type>=2 && std::abs(line.b.y-line.a.y)>.001f) {
-            if (body.position.y+body.attr.height<std::min(line.a.y,line.b.y) || body.position.y>std::max(line.a.y,line.b.y)) continue;
+            if (body.position.y+body.attr.height<std::min(line.a.y,line.b.y) || body.position.y>=std::max(line.a.y,line.b.y)-.01f) continue;
             const float x=line.a.x+(line.b.x-line.a.x)*(body.position.y-line.a.y)/(line.b.y-line.a.y);
             const float side=velocity_x>=0?body.attr.width:-body.attr.width;
             if ((before.x+side-x)*(body.position.x+side-x)<=0) {
@@ -335,7 +335,10 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             }
         }
     } else if (fighter_is_down(body.status) || body.status==FighterStatus::Wait || body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::CrouchEnd || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash || body.status==FighterStatus::Run || body.status==FighterStatus::RunBrake)
-        body.status=FighterStatus::Fall;
+    {
+        body.status=FighterStatus::Fall;body.action_frame=0;
+        body.vel_air.x=std::clamp(body.vel_air.x,-body.attr.air_speed_max_x,body.attr.air_speed_max_x);
+    }
     if (was_grounded && !body.grounded && body.jumps_used==0) body.jumps_used=1;
     body.jump_pressed=false;
 }

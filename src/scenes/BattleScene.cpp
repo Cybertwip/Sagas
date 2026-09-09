@@ -39,7 +39,12 @@ public:
     void update(Services& services,const InputState& input,float) override {
         ++tic_;
         if (input.back_pressed) done_=true;
-        if (winner_>=0) { if (++finish_tics_>180 || input.start_pressed) done_=true; return; }
+        if (finished_) {
+            update_particles();
+            if (++finish_tics_>=120 || input.start_pressed || input.accept_pressed || input.cancel_pressed) done_=true;
+            return;
+        }
+        update_particles();
         for (unsigned i=0;i<bodies_.size();++i) {
             auto& body=bodies_[i];
             if (body.stocks<=0) continue;
@@ -57,11 +62,13 @@ public:
                 // Deterministic CPU approach; the same body/attack/collision
                 // path is used for humans and CPU fighters.
                 const auto target=std::find_if(bodies_.begin(),bodies_.end(),[&](const auto& other){return &other!=&body && other.stocks>0;});
-                const float dx=target!=bodies_.end()?target->position.x-body.position.x:0;
+                const bool target_offstage=target!=bodies_.end() && (target->status==FighterStatus::CliffCatch || target->status==FighterStatus::CliffWait || target->position.y<0);
+                const float target_x=target_offstage?std::clamp(target->position.x,-900.f,900.f):target!=bodies_.end()?target->position.x:0;
+                const float dx=target_x-body.position.x;
                 const float dy=target!=bodies_.end()?target->position.y-body.position.y:0;
                 body.stick_x=std::abs(dx)>260?(dx>0?60:-60):0; body.stick_y=0;
                 if (std::abs(dx)>1 && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Tumble && !fighter_is_down(body.status)) body.lr=dx>0?1:-1;
-                body.jump_pressed=body.grounded && dy>300 && tic_%40==0;
+                body.jump_pressed=(body.grounded && dy>300 && !target_offstage && tic_%40==0) || (!body.grounded && body.position.y<0 && body.jumps_used<body.attr.jumps_max && body.vel_air.y<0);
                 body.jump_button=true; body.jump_released=false;
                 attack=std::abs(dx)<420 && tic_%32==static_cast<int>(i)*3;
             }
@@ -75,7 +82,7 @@ public:
                     FighterCombat::advance_down(body,attack,i==0 && input.shield_pressed,body.action_frame>=motion_length(body));
                 if (body.status==FighterStatus::Hitstun) {
                     body.hitstun=std::max(0,body.hitstun-1);
-                    if (!body.hitstun && body.action_frame>=motion_length(body)) {
+                    if (!body.hitstun && (body.action_frame>=motion_length(body) || attack || body.jump_pressed || (body.grounded && (std::abs(body.stick_x)>=8 || body.stick_y<=-53 || body.shield_held)))) {
                         body.status=body.grounded?FighterStatus::Wait:body.damage_tumble?FighterStatus::Tumble:FighterStatus::Fall;
                         body.action_frame=0;
                     }
@@ -126,6 +133,7 @@ public:
                     body.down_face=(turns<-.5f || (turns>0 && turns<.5f))?0:1;
                 }
             }
+            const bool was_grounded=body.grounded;
             const auto before=body.position;
             if (!on_cliff) FighterPhysics::tick(body,stage_.collision,[&](const FighterBody& jumping) -> std::optional<Vec3> {
                 const auto model=posed(jumping,true);
@@ -145,8 +153,12 @@ public:
                 return Vec3{z*std::cos(angle)-y*std::sin(angle),z*std::sin(angle)+y*std::cos(angle),0};
             });
             if (!on_cliff && FighterPhysics::try_ledge(body,before,stage_.collision,bodies_)) update_cliff(body,false);
+            if (!was_grounded && body.grounded) emit(body.position,{215,225,235,220},body.status==FighterStatus::DownBounce?16:7,false);
+            if (body.grounded && (body.status==FighterStatus::Dash || body.status==FighterStatus::RunBrake) && tic_%4==0)
+                emit(body.position,{225,225,220,170},3,false);
             const auto& bounds=stage_.blast_bounds;
             if (body.position.x<bounds[3] || body.position.x>bounds[2] || body.position.y<bounds[1] || body.position.y>bounds[0]) {
+                emit(before,{255,230,120,255},28,true);
                 --body.stocks;
                 if (!body.stocks) {body.status=FighterStatus::KO;continue;}
                 const auto kind=body.kind;const auto attr=body.attr;const int stocks=body.stocks;
@@ -170,8 +182,9 @@ public:
                     if (event.kind==static_cast<unsigned>(body.kind) && event.motion==clip && event.frame<=static_cast<unsigned>(body.action_frame)) hit_status=event.status;
                 body.recovery_invulnerable=hit_status!=1;
             }
-            if (!body.hitlag && !services.deterministic_clock)
-                for (const auto& sound:battle_motion_sounds)
+            if (!body.hitlag && (body.audio_motion!=clip || body.audio_frame!=body.action_frame)) {
+                body.audio_motion=clip;body.audio_frame=body.action_frame;
+                if (!services.deterministic_clock) for (const auto& sound:battle_motion_sounds)
                     if (sound.motion==clip && sound.frame==static_cast<unsigned>(body.action_frame)) {
                         const auto& voices=fighter_source_data[static_cast<unsigned>(body.kind)].smash_voices;
                         unsigned fgm=sound.fgm==~0U?voices[(tic_+i)%3]:sound.fgm;
@@ -180,6 +193,7 @@ public:
                                 if (fgm==fighter_source_data[static_cast<unsigned>(FighterKind::Mario)].smash_voices[v]) {fgm=voices[v];break;}
                         services.audio.play_fgm(fgm);
                     }
+            }
         }
         // Resolve capture links after both fighters have advanced, so player order
         // cannot move the captive twice or leave a stale link after interruption.
@@ -232,11 +246,16 @@ public:
                 }
         }
         const auto hits=FighterCombat::resolve(bodies_,volumes);
-        if (!services.deterministic_clock)
-            for (const auto& hit:hits) if (!hit.shield) services.audio.play_fgm(hit.fgm);
+        for (const auto& hit:hits) {
+            const auto& victim=bodies_[hit.defender];
+            emit({victim.position.x,victim.position.y+victim.attr.height*.5f,0},
+                 hit.shield?Color{100,175,255,255}:Color{255,235,130,255},hit.shield?6:12,true);
+            if (!services.deterministic_clock && !hit.shield) services.audio.play_fgm(hit.fgm);
+        }
         int alive=0;
         for (unsigned i=0;i<bodies_.size();++i) if (bodies_[i].stocks>0) {++alive;winner_=static_cast<int>(i);}
         if (alive>1) winner_=-1;
+        else {finished_=true;finish_tics_=0;}
         camera_.tick(bodies_,stage_);
     }
     void draw(Services& services) override {
@@ -252,6 +271,7 @@ public:
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
         }
         renderer_->end(r);
+        draw_particles(r,camera);
         for (unsigned i=0;i<bodies_.size();++i) {
             const float x=12+i*76.0f;
             r.fill(x,192,72,42,{0,0,0,150});
@@ -264,6 +284,16 @@ public:
             }
             r.sprite_at("textures/IFCommonPlayerDamage/SymbolPercent.png",{x+59,210},{.8f,.8f});
             for (int stock=0;stock<bodies_[i].stocks;++stock) r.fill(x+4+stock*6,226,4,4,i==0?Color{255,80,80,255}:Color{100,170,255,255});
+        }
+        if (finished_) {
+            r.fill(0,88,320,52,{0,0,0,175});
+            const std::string label="GAME SET";
+            float x=71;
+            for (char c:label) {
+                if (c!=' ') r.sprite_rect("textures/IFCommonAnnounceCommon/Letter"+std::string(1,c)+".png",x,97,19,24,{255,235,100,255});
+                x+=23;
+            }
+            if (winner_>=0) r.sprite_rect("textures/MNPlayersPortraits/"+std::string(fighter_portrait_file(bodies_[winner_].kind)),144,146,32,32);
         }
         r.end();
     }
@@ -367,8 +397,40 @@ private:
         model.position=body.position;model.rotation.y=body.lr*std::numbers::pi_v<float>/2;
         model.scale={body.attr.size,body.attr.size,body.attr.size};return model;
     }
+    struct Particle { Vec3 position,velocity; Color color; int age{},life{}; float size{}; bool spark{}; };
+    std::vector<Particle> particles_;
+    void emit(Vec3 origin,Color color,int count,bool spark) {
+        for (int i=0;i<count;++i) {
+            const float angle=(i*2.39996323f+tic_*.7f);
+            const float speed=spark?18.f+(i%4)*10.f:6.f+(i%3)*4.f;
+            particles_.push_back({origin,{std::cos(angle)*speed,std::abs(std::sin(angle))*speed,0},color,0,spark?14:22,spark?34.f:50.f,spark});
+        }
+        if (particles_.size()>256) particles_.erase(particles_.begin(),particles_.end()-256);
+    }
+    void update_particles() {
+        for (auto& p:particles_) {++p.age;p.position.x+=p.velocity.x;p.position.y+=p.velocity.y;p.velocity.y-=p.spark?2.f:.3f;}
+        std::erase_if(particles_,[](const auto& p){return p.age>=p.life;});
+    }
+    void draw_particles(RenderEngine& r,const Camera3D& camera) {
+        const auto normalize=[](Vec3 v){float n=std::sqrt(v.x*v.x+v.y*v.y+v.z*v.z);return Vec3{v.x/n,v.y/n,v.z/n};};
+        const auto cross=[](Vec3 a,Vec3 b){return Vec3{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};};
+        const auto dot=[](Vec3 a,Vec3 b){return a.x*b.x+a.y*b.y+a.z*b.z;};
+        const auto forward=normalize(Vec3{camera.at.x-camera.eye.x,camera.at.y-camera.eye.y,camera.at.z-camera.eye.z});
+        const auto right=normalize(cross(forward,camera.up)),up=cross(right,forward);
+        for (const auto& p:particles_) {
+            const Vec3 delta{p.position.x-camera.eye.x,p.position.y-camera.eye.y,p.position.z-camera.eye.z};
+            const float depth=dot(delta,forward);if (depth<=camera.near_plane) continue;
+            const float factor=120/(depth*std::tan(camera.fov_y*std::numbers::pi_v<float>/360));
+            const float x=160+dot(delta,right)*factor*.75f,y=120-dot(delta,up)*factor;
+            const float size=p.size*factor*(p.spark?1.f:1.f+p.age*.05f);
+            auto color=p.color;color.a=static_cast<std::uint8_t>(color.a*(1.f-float(p.age)/p.life));
+            const std::array<TriangleVertex,6> shape{{{{x-size,y},color,{}},{{x,y-size},color,{}},{{x+size,y},color,{}},
+                {{x-size,y},color,{}},{{x+size,y},color,{}},{{x,y+size},color,{}}}};
+            r.triangles(shape);
+        }
+    }
     int stock_,tic_{},previous_stick_y_{},winner_{-1},finish_tics_{};
-    bool done_{};
+    bool done_{},finished_{};
     std::vector<FighterBody> bodies_;
     Stage3D stage_;
     BattleCamera camera_;

@@ -689,6 +689,39 @@ int main() {
         auto reaction=scene_loader.fighter_motion(victim.kind,victim.damage_motion,sagas::fighter_motion_flags(victim.damage_motion));
         assert(!reaction.animation.empty());
     }
+    // Tumble landings must enter knockdown, buffer attacks during the bounce,
+    // and offer both roll directions, neutral get-up and timed auto get-up.
+    for (unsigned kind=0;kind<12;++kind) for (unsigned face=0;face<2;++face) {
+        sagas::FighterBody down;down.kind=static_cast<sagas::FighterKind>(kind);
+        down.attr=sagas::fighter_attributes(down.kind);down.status=sagas::FighterStatus::Tumble;
+        down.grounded=false;down.down_face=face;down.position.y=1;down.vel_air.y=-10;
+        sagas::FighterPhysics::tick(down,0);
+        assert(down.status==sagas::FighterStatus::DownBounce && down.grounded);
+        assert(down.down_motion==sagas::fighter_source_data[kind].down[face]);
+        for (int choice=0;choice<5;++choice) {
+            auto action=down;
+            sagas::FighterCombat::advance_down(action,choice==0,false,false);
+            assert(action.status==sagas::FighterStatus::DownBounce);
+            action.stick_x=choice==1?40:choice==2?-40:0;
+            sagas::FighterCombat::advance_down(action,false,choice==3,true);
+            if (choice==4) for (int frame=0;frame<180;++frame)
+                sagas::FighterCombat::advance_down(action,false,false,false);
+            const unsigned offset=choice==0?10:choice==1?6:choice==2?8:2;
+            assert(action.down_motion==sagas::fighter_source_data[kind].down[offset+face]);
+            if (choice==0) assert(std::any_of(sagas::source_jab_hitboxes.begin(),sagas::source_jab_hitboxes.end(),
+                [&](const auto& box){return box.kind==kind && box.motion==action.down_motion;}));
+            if (choice==1 || choice==2) {
+                const auto roll=scene_loader.fighter_motion(action.kind,action.down_motion,sagas::fighter_motion_flags(action.down_motion));
+                assert(roll.fighter_wrapper==sagas::Model3D::FighterWrapper::TransN && roll.fighter_root_animation);
+                const auto rest=animation_decoder.pose(roll.fighter_root);
+                const auto start=animation_decoder.sample16(*roll.fighter_root_animation,0,rest);
+                const auto finish=animation_decoder.sample16(*roll.fighter_root_animation,20,rest);
+                assert((finish.tracks[6]-start.tracks[6])*(choice==1?1:-1)>10);
+            }
+            sagas::FighterCombat::advance_down(action,false,false,true);
+            assert(action.status==sagas::FighterStatus::Wait);
+        }
+    }
     // Fox forward-smash TransN displacement belongs to physics, in either facing.
     const auto fox_smash=sagas::fighter_source_data[9].smash[0];
     const auto fox_motion=scene_loader.fighter_motion(sagas::FighterKind::Fox,fox_smash,sagas::fighter_motion_flags(fox_smash));

@@ -48,7 +48,7 @@ for idx,name in enumerate(names):
  walk_lengths=[num(k) for k in ('walkslow_anim_length','walkmiddle_anim_length','walkfast_anim_length')]
  dash_attack=clip('DashAttack');turn=clip('Turn')
  table=re.search(r'FTMotionDesc dFT'+name+r'MotionDescs\[\]\s*=\s*\{(.*?)\n\};',(d/'src/ft/ftdata.c').read_text(),re.S).group(1)
- motions=re.findall(r'\{\s*&ll(\w+)FileID,',table)
+ motions=re.findall(r'\{\s*(?:&ll(\w+)FileID|0x00000000),',table)
  down=[ids[m] for m in motions[58:70]]
  reactions=[ids[m] for m in motions[31:51]]
  assert len(reactions)==20

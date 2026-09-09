@@ -876,7 +876,7 @@ inline constexpr std::array<SourceHitbox,870> source_jab_hitboxes{{
     {1461,15,20,1,23,10,280,140,0,0,361,120,0,10,31,1,0,11},
 }};
 struct SourceJabFollowup { unsigned motion; int frame; unsigned kind; };
-inline constexpr std::array<SourceJabFollowup,380> source_jab_followups{{
+inline constexpr std::array<SourceJabFollowup,382> source_jab_followups{{
     {507,6,0},
     {543,-1,0},
     {544,-1,0},
@@ -1131,6 +1131,8 @@ inline constexpr std::array<SourceJabFollowup,380> source_jab_followups{{
     {1937,9,7},
     {1938,4,7},
     {1267,6,8},
+    {1306,-1,8},
+    {1307,-1,8},
     {1308,26,8},
     {1309,26,8},
     {1310,-1,8},
@@ -1141,7 +1143,6 @@ inline constexpr std::array<SourceJabFollowup,380> source_jab_followups{{
     {1315,-1,8},
     {1316,-1,8},
     {1317,-1,8},
-    {1318,-1,8},
     {1324,-1,8},
     {1373,10,8},
     {1374,8,8},
@@ -1226,6 +1227,8 @@ inline constexpr std::array<SourceJabFollowup,380> source_jab_followups{{
     {2070,-1,10},
     {2074,-1,10},
     {2075,-1,10},
+    {1306,-1,11},
+    {1307,-1,11},
     {1308,26,11},
     {1309,26,11},
     {1310,-1,11},
@@ -1255,7 +1258,6 @@ inline constexpr std::array<SourceJabFollowup,380> source_jab_followups{{
     {1459,-1,11},
     {1460,-1,11},
     {1461,-1,11},
-    {1482,-1,11},
     {1491,6,11},
 }};
 struct SourceMotionFlag { unsigned motion,frame; int value; unsigned kind; };
@@ -1456,7 +1458,7 @@ inline constexpr std::array<SourceMotionFlag,194> source_motion_flags{{
     {1491,6,1,11},
 }};
 struct SourceHitStatus { unsigned motion,frame,status,kind; };
-inline constexpr std::array<SourceHitStatus,216> source_hit_status{{
+inline constexpr std::array<SourceHitStatus,212> source_hit_status{{
     {545,0,3,0},
     {545,22,1,0},
     {546,0,3,0},
@@ -1609,8 +1611,6 @@ inline constexpr std::array<SourceHitStatus,216> source_hit_status{{
     {1316,24,1,8},
     {1317,0,3,8},
     {1317,24,1,8},
-    {1318,0,3,8},
-    {1318,24,1,8},
     {688,0,3,9},
     {688,18,1,9},
     {689,0,3,9},
@@ -1671,7 +1671,5 @@ inline constexpr std::array<SourceHitStatus,216> source_hit_status{{
     {1316,24,1,11},
     {1317,0,3,11},
     {1317,24,1,11},
-    {1482,0,3,11},
-    {1482,24,1,11},
 }};
 }

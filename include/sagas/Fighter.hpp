@@ -94,7 +94,8 @@ struct FighterBody {
     FighterStatus status{FighterStatus::Wait};
     float damage{};
     int jumps_used{}, action_frame{}, hitlag{}, hitstun{}, invincible{}, drop_frames{};
-    unsigned motion{};
+    unsigned motion{},audio_motion{};
+    int audio_frame{-1};
     bool attack_pressed{}, jump_pressed{}, shield_held{};
     unsigned hit_mask{};
     std::array<unsigned,8> hit_group_masks{};

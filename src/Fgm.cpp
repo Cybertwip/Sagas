@@ -42,6 +42,7 @@ Bytes entry(Bytes file, std::uint32_t index) {
 struct Articulation {
     int wave{-1}, pitch{}, duration{};
     std::vector<FgmEnvelopePoint> envelope{{0, 1}};
+    std::vector<FgmPitchPoint> pitch_events;
 };
 
 Articulation decode_articulation(Bytes table, int index) {
@@ -70,6 +71,7 @@ Articulation decode_articulation(Bytes table, int index) {
                 if (value & 0x8000) value -= 0x10000;
                 if (value <= 1200) result.pitch = std::max(value, -1200);
                 else result.pitch = std::clamp(result.pitch + value - 2400, -1200, 1200);
+                result.pitch_events.push_back({tick,static_cast<float>(result.pitch)});
                 break;
             }
             case 0x30: (void)u8(code, at); break;
@@ -95,7 +97,7 @@ void decode_voice(Bytes ucd, Bytes table, std::uint32_t voice_id, int base_tick,
     std::array<int, 6> durations{};
     const auto first_voice = cue.voices.size();
     std::optional<std::size_t> active_voice;
-    float active_articulation_pitch{};
+
     int tick = base_tick, articulation{}, volume = 127, transpose{};
     while (at < code.size()) {
         const auto instruction = u8(code, at);
@@ -111,14 +113,14 @@ void decode_voice(Bytes ucd, Bytes table, std::uint32_t voice_id, int base_tick,
                 const float note_pitch = static_cast<float>(pitch_code * 100 - 1300 + transpose);
                 if (active_voice) {
                     auto& voice = cue.voices[*active_voice];
-                    voice.pitch.push_back({tick - voice.start_tick, note_pitch + active_articulation_pitch});
+                    voice.pitch.push_back({tick - voice.start_tick, note_pitch});
                 } else {
                     const auto art = decode_articulation(table, articulation);
                     if (art.wave >= 0) {
                         cue.voices.push_back({art.wave, tick, 0, volume / 255.0f,
-                                             art.envelope, {{0, note_pitch + art.pitch}}});
+                                             art.envelope, {{0, note_pitch}}, art.pitch_events});
                         active_voice = cue.voices.size() - 1;
-                        active_articulation_pitch = static_cast<float>(art.pitch);
+
                     }
                 }
             }
@@ -157,7 +159,9 @@ void decode_voice(Bytes ucd, Bytes table, std::uint32_t voice_id, int base_tick,
 float fgm_pitch_cents(const FgmVoice& voice,int tick) noexcept {
     float value=0;
     for (const auto& point:voice.pitch) {if (point.tick>tick) break;value=point.cents;}
-    return value;
+    float articulation=0;
+    for (const auto& point:voice.articulation_pitch) {if (point.tick>tick) break;articulation=point.cents;}
+    return value+articulation;
 }
 float fgm_envelope(const FgmVoice& voice,float tick) noexcept {
     if (voice.envelope.empty()) return 1;

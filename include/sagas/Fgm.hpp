@@ -19,6 +19,7 @@ struct FgmVoice {
     float gain{1};
     std::vector<FgmEnvelopePoint> envelope;
     std::vector<FgmPitchPoint> pitch;
+    std::vector<FgmPitchPoint> articulation_pitch;
 };
 
 struct FgmCue {

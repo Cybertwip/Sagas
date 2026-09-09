@@ -24,8 +24,8 @@ def extract(decomp, manifest):
     source=(decomp/'src/ft/ftdata.c').read_text()
     for kind,name in enumerate(names):
         table=re.search(r'FTMotionDesc dFT'+name+r'MotionDescs\[\]\s*=\s*\{(.*?)\n\};',source,re.S).group(1)
-        entries=re.findall(r'\{\s*&ll(\w+)FileID,',table)
-        recovery_clips.update(ids[n] for n in entries[58:70])
+        entries=re.findall(r'\{\s*(?:&ll(\w+)FileID|0x00000000),',table)
+        recovery_clips.update(ids[n] for n in entries[58:70] if n)
         for clip,script,offset in re.findall(r'\{\s*&ll(\w+)FileID,\s*(\w+)(?:\s*\+\s*(0x[0-9A-Fa-f]+))?,',table):
             if clip in ids and script in scripts:
                 if offset:

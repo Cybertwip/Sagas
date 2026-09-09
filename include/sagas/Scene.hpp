@@ -41,7 +41,7 @@ private:
 [[nodiscard]] std::unique_ptr<Scene> make_menu_scene();
 [[nodiscard]] std::unique_ptr<Scene> make_character_select_scene(int stock = 3, bool team = false,
                                                                 bool one_player = false);
-[[nodiscard]] std::unique_ptr<Scene> make_battle_scene(std::vector<FighterKind> fighters, int stock = 3, std::vector<int> ports = {});
+[[nodiscard]] std::unique_ptr<Scene> make_battle_scene(std::vector<FighterKind> fighters, int stock = 3, std::vector<int> ports = {}, std::vector<std::string> models = {});
 [[nodiscard]] std::unique_ptr<Scene> make_battle_scene(FighterKind p1, FighterKind p2, int stock = 3);
 
 } // namespace sagas

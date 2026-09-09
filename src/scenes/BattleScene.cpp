@@ -18,14 +18,16 @@ namespace sagas {
 namespace {
 class BattleScene final : public Scene {
 public:
-    BattleScene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports={}):ports_(std::move(ports)),stock_(stock) {
+    BattleScene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports={},std::vector<std::string> models={}):ports_(std::move(ports)),stock_(stock) {
         if (ports_.empty()) {ports_.assign(fighters.size(),-1);if (!ports_.empty()) ports_[0]=0;}
         for (const auto kind:fighters) {
             FighterBody body; body.kind=kind; body.attr=fighter_attributes(kind); body.stocks=stock;
+            if (bodies_.size()<models.size()) body.custom_model=models[bodies_.size()];
             bodies_.push_back(body);
         }
     }
     void enter(Services& services) override {
+        assets_=&services.assets;
         loader_=std::make_unique<Scene3DLoader>(services.resources.archive());
         renderer_=std::make_unique<Scene3DRenderer>(services.resources.archive());
         archive_=&services.resources.archive();
@@ -544,6 +546,14 @@ private:
             models_.emplace(key,loader_->fighter_motion(body.kind,clip,flags));
         }
         auto model=models_.at(key);
+        if (!body.custom_model.empty()) {
+            const auto custom_key=body.custom_model+":"+std::to_string(key);
+            if (!custom_models_.contains(custom_key)) {
+                auto imported=model;const auto bytes=assets_->blob(body.custom_model);
+                loader_->apply_custom_mesh(imported,*bytes);custom_models_.emplace(custom_key,std::move(imported));
+            }
+            model=custom_models_.at(custom_key);
+        }
         if (!with_root && model.fighter_wrapper==Model3D::FighterWrapper::TransN) model.fighter_root_animation.reset();
         model.position=body.position;model.rotation.y=body.lr*std::numbers::pi_v<float>/2;
         if (body.status==FighterStatus::Captured) model.rotation.z=body.capture_rotation;
@@ -639,6 +649,8 @@ private:
             }
         }
     }
+    AssetRepository* assets_{};
+    std::unordered_map<std::string,Model3D> custom_models_;
     std::vector<int> ports_;
     int stock_,tic_{},winner_{-1},finish_tics_{};
     bool done_{},finished_{};
@@ -652,8 +664,8 @@ private:
     std::unique_ptr<Scene3DRenderer> renderer_;
 };
 }
-std::unique_ptr<Scene> make_battle_scene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports) {
-    return std::make_unique<BattleScene>(std::move(fighters),stock,std::move(ports));
+std::unique_ptr<Scene> make_battle_scene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports,std::vector<std::string> models) {
+    return std::make_unique<BattleScene>(std::move(fighters),stock,std::move(ports),std::move(models));
 }
 std::unique_ptr<Scene> make_battle_scene(FighterKind p1,FighterKind p2,int stock) {
     return make_battle_scene(std::vector<FighterKind>{p1,p2},stock);

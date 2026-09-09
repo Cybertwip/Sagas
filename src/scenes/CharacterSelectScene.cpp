@@ -40,27 +40,30 @@ public:
         slots_[0].puck=constrained_puck(cursor_x_,cursor_y_);
     }
     void enter(Services& services) override {
+        assets_=&services.assets;
         if (services.assets.exists("mods/roster.tsv")) {
             const auto bytes=services.assets.blob("mods/roster.tsv");
             std::istringstream input(std::string(reinterpret_cast<const char*>(bytes->data()),bytes->size()));
             std::string line;std::getline(input,line);
             int columns=6;try {columns=std::clamp(std::stoi(line),3,12);} catch (...) {}
-            std::vector<FighterKind> kinds;std::vector<std::string> portraits;
+            std::vector<FighterKind> kinds;std::vector<std::string> portraits,models;std::vector<int> cells;
             while (std::getline(input,line) && kinds.size()<120) {
-                std::istringstream fields(line);std::string base,name,portrait;
+                std::istringstream fields(line);std::string base,name,portrait,model,cell;
                 if (!std::getline(fields,base,'\t') || !std::getline(fields,name,'\t')) continue;
-                std::getline(fields,portrait);
+                std::getline(fields,portrait,'\t');std::getline(fields,model,'\t');std::getline(fields,cell,'\t');
                 int index=-1;try {index=std::stoi(base);} catch (...) {continue;}
                 if (index<0 || index>=12) continue;
                 if (!portrait.empty() && (portrait.find("mods/")!=0 || portrait.find("..")!=std::string::npos || !services.assets.exists(portrait))) portrait.clear();
-                kinds.push_back(static_cast<FighterKind>(index));portraits.push_back(portrait);
+                if (!model.empty() && (model.find("mods/")!=0 || model.find("..")!=std::string::npos || !services.assets.exists(model))) model.clear();
+                int position=static_cast<int>(kinds.size());try {if (!cell.empty()) position=std::clamp(std::stoi(cell),0,119);} catch (...) {}
+                kinds.push_back(static_cast<FighterKind>(index));portraits.push_back(portrait);models.push_back(model);cells.push_back(position);
             }
             if (!kinds.empty()) {
-                kPortraitKind=std::move(kinds);custom_portraits_=std::move(portraits);
-                const int rows=(static_cast<int>(kPortraitKind.size())+columns-1)/columns;
+                kPortraitKind=std::move(kinds);custom_portraits_=std::move(portraits);custom_models_=std::move(models);
+                const int rows=(*std::max_element(cells.begin(),cells.end())+columns)/columns;
                 portrait_width_=270.f/columns;portrait_height_=86.f/rows;
                 kPortraitX.clear();kPortraitY.clear();
-                for (unsigned i=0;i<kPortraitKind.size();++i) {kPortraitX.push_back(25+(i%columns)*portrait_width_);kPortraitY.push_back(36+(i/columns)*portrait_height_);}
+                for (unsigned i=0;i<kPortraitKind.size();++i) {kPortraitX.push_back(25+(cells[i]%columns)*portrait_width_);kPortraitY.push_back(36+(cells[i]/columns)*portrait_height_);}
             }
         }
         archive_=&services.resources.archive();
@@ -85,7 +88,7 @@ public:
         if (hover!=hover_) {
             hover_=hover;
             if (hover>=0 && held_slot_>=0) {
-                slots_[active_slot_].fkind=kPortraitKind[hover];
+                slots_[active_slot_].entry=hover;slots_[active_slot_].fkind=kPortraitKind[hover];
                 load_preview(slots_[active_slot_].fkind,active_slot_,false);
                 services.audio.play(AudioCue::MenuScroll);
             }
@@ -93,7 +96,7 @@ public:
         const auto place=[&] {
             if (held_slot_<0 || hover_<0) return;
             auto& slot=slots_[held_slot_];
-            slot.fkind=kPortraitKind[hover_];slot.selected=true;
+            slot.entry=hover_;slot.fkind=kPortraitKind[hover_];slot.selected=true;
             load_preview(slot.fkind,held_slot_,true);
             selected_tick_[held_slot_]=tic_;
             services.audio.play_fgm(fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);
@@ -149,12 +152,12 @@ public:
             if (!slot.selected) {
                 slot.puck=constrained_puck(cursor.x,cursor.y);
                 if (portrait>=0 && (slot.fkind!=kPortraitKind[portrait] || previews_[player].nodes.empty())) {
-                    slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,false);
+                    slot.entry=portrait;slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,false);
                 }
             }
             if (c.cancel && slot.selected) {slot.selected=false;load_preview(slot.fkind,player,false);}
             if (c.attack) {
-                if (!slot.selected && portrait>=0) {slot.selected=true;slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,true);}
+                if (!slot.selected && portrait>=0) {slot.selected=true;slot.entry=portrait;slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,true);}
                 else if (slot.selected && cursor.x>=slot.puck.x && cursor.x<slot.puck.x+26 && cursor.y>=slot.puck.y && cursor.y<slot.puck.y+24) {slot.selected=false;load_preview(slot.fkind,player,false);}
             }
             if (c.start && ready()) start_=true;
@@ -260,13 +263,14 @@ public:
 private:
     std::vector<FighterKind> kPortraitKind{kBuiltinKinds.begin(),kBuiltinKinds.end()};
     std::vector<float> kPortraitX{kBuiltinX.begin(),kBuiltinX.end()},kPortraitY{kBuiltinY.begin(),kBuiltinY.end()};
-    std::vector<std::string> custom_portraits_;
+    std::vector<std::string> custom_portraits_,custom_models_;
+    AssetRepository* assets_{};
     float portrait_width_{45},portrait_height_{43};
     static Vec2 constrained_puck(float x,float y) {
         // The hand can visit settings and Back; the whole token stays on portraits.
         return {std::clamp(x-6,25.f,269.f),std::clamp(y-6,36.f,98.f)};
     }
-    struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{}; };
+    struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{};int entry{1}; };
     [[nodiscard]] int portrait_at(float x, float y) const {
         for (unsigned i = 0; i < kPortraitKind.size(); ++i) {
             if (x >= kPortraitX[static_cast<std::size_t>(i)] &&
@@ -290,6 +294,10 @@ private:
         const auto& data=fighter_source_data[static_cast<unsigned>(kind)];
         auto preview=loader_->fighter_motion(kind,selected?data.selected:data.idle,
                                              selected?data.selected_flags:0);
+        const auto entry=slots_[player].entry;
+        if (entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() && !custom_models_[entry].empty()) {
+            const auto bytes=assets_->blob(custom_models_[entry]);loader_->apply_custom_mesh(preview,*bytes);
+        }
         previews_[player]=std::move(preview);
         selected_tick_[player]=tic_;
     }
@@ -316,12 +324,13 @@ private:
 std::unique_ptr<Scene> CharacterSelectScene::next() {
     if (back_) return make_menu_scene();
     if (start_) {
-        std::vector<FighterKind> fighters;std::vector<int> ports;
+        std::vector<FighterKind> fighters;std::vector<int> ports;std::vector<std::string> models;
         for (unsigned i=0;i<slots_.size();++i) if (slots_[i].kind!=SlotKind::None && slots_[i].selected) {
+            models.push_back(static_cast<unsigned>(slots_[i].entry)<custom_models_.size()?custom_models_[slots_[i].entry]:"");
             fighters.push_back(slots_[i].fkind);ports.push_back(slots_[i].kind==SlotKind::Human?static_cast<int>(i):-1);
         }
         if (one_player_) {fighters.push_back(FighterKind::Donkey);ports.push_back(-1);}
-        return make_battle_scene(std::move(fighters),stock_,std::move(ports));
+        return make_battle_scene(std::move(fighters),stock_,std::move(ports),std::move(models));
     }
     return {};
 }

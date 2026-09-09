@@ -157,7 +157,7 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
 
 } // namespace
 
-void Scene3DLoader::apply_custom_mesh(Model3D& model,std::span<const std::uint8_t> bytes) {
+void Scene3DLoader::apply_custom_mesh(Model3D& model,std::span<const std::byte> bytes) {
     std::istringstream input(std::string(reinterpret_cast<const char*>(bytes.data()),bytes.size()));
     std::string magic;unsigned count{};input>>magic>>count;
     if (magic!="SGMESH1" || count>128) throw std::runtime_error("Invalid custom mesh header");

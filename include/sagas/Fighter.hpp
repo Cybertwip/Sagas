@@ -53,6 +53,7 @@ struct FighterModelSpec {
 };
 
 struct FighterBody {
+    std::string custom_model;
     FighterKind kind{FighterKind::Mario};
     FighterAttributes attr{};
     Vec3 position{};

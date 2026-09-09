@@ -109,17 +109,36 @@ Pcm render_fgm(AssetRepository& assets, std::uint32_t voice_id, float gain) {
             const auto index=static_cast<std::size_t>(phase);
             const double fraction=phase-index;
             const auto next=std::min(index+1,wave.samples.size()-1);
-            const double sample=wave.samples[index]*(1-fraction)+wave.samples[next]*fraction;
+            const double step=std::pow(2.0,fgm_pitch_cents(voice,static_cast<int>(tick))/1200.0);
+            double sample=wave.samples[index]*(1-fraction)+wave.samples[next]*fraction;
+            if (step>1.0) {
+                // Band-limit pitched-up samples before downsampling, avoiding
+                // folded high frequencies from the former linear resampler.
+                const double cutoff=1.0/step;double weighted=0,total=0;
+                for (int tap=-12;tap<=12;++tap) {
+                    const auto at=static_cast<long long>(index)+tap;
+                    if (at<0 || at>=static_cast<long long>(wave.samples.size())) continue;
+                    const double x=(at-phase)*cutoff;
+                    const double sinc=std::abs(x)<1e-8?1.0:std::sin(3.141592653589793*x)/(3.141592653589793*x);
+                    const double window=.5+.5*std::cos(3.141592653589793*(at-phase)/13.0);
+                    const double weight=cutoff*sinc*window;
+                    weighted+=wave.samples[at]*weight;total+=weight;
+                }
+                if (std::abs(total)>1e-8) sample=weighted/total;
+            }
             // A scheduled stop can cut a waveform between nonzero samples.
             // Taper only the final 2 ms to avoid a discontinuity at voice removal.
             const double tail=std::clamp(std::min(double(end-frame),double(wave.samples.size())-phase)/64.0,0.0,1.0);
             mixed[frame]+=sample*voice.gain*fgm_envelope(voice,tick)*gain*.55*tail;
-            phase+=std::pow(2.0,fgm_pitch_cents(voice,static_cast<int>(tick))/1200.0);
+            phase+=step;
         }
     }
+    double peak=1;
+    for (double sample:mixed) peak=std::max(peak,std::abs(sample));
+    const double headroom=std::min(1.0,32700.0/peak);
     Pcm result{output_rate,std::vector<std::int16_t>(count)};
     for (std::size_t frame=0;frame<count;++frame)
-        result.samples[frame]=static_cast<std::int16_t>(std::clamp(mixed[frame],-32768.0,32767.0));
+        result.samples[frame]=static_cast<std::int16_t>(std::clamp(mixed[frame]*headroom,-32768.0,32767.0));
     return result;
 }
 

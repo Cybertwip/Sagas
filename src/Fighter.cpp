@@ -492,7 +492,7 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
     ++body.special_tics;
     const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
     const auto index=body.special_index;
-    if (body.kind==FighterKind::Fox && index%3==2 && body.special_tics>=4 && body.jump_pressed) {
+    if (body.kind==FighterKind::Fox && index%3==2 && body.special_tics>=4 && body.jump_pressed && (body.grounded || body.jumps_used<body.attr.jumps_max)) {
         body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;return;
     }
     if (body.kind==FighterKind::Captain && index%3==1) {

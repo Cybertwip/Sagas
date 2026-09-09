@@ -19,12 +19,15 @@ def extract(decomp, manifest):
         source=re.sub(r'/\*.*?\*/|//[^\n]*','','\n'.join(lines),flags=re.S)
         for name,body in re.findall(r'(\w+)\s*\[\s*\]\s*=\s*\{(.*?)\};',source,re.S):
             scripts[name]=re.findall(r'(ftMotion\w+)\(([^()]*)\)',body)
-    mapping={}; recovery_clips=set()
+    mapping={}; recovery_clips=set();special_clips=set()
     names=['Luigi','Mario','Donkey','Link','Samus','Captain','Ness','Yoshi','Kirby','Fox','Pikachu','Purin']
     source=(decomp/'src/ft/ftdata.c').read_text()
     for kind,name in enumerate(names):
         table=re.search(r'FTMotionDesc dFT'+name+r'MotionDescs\[\]\s*=\s*\{(.*?)\n\};',source,re.S).group(1)
         entries=re.findall(r'\{\s*(?:&ll(\w+)FileID|0x00000000),',table)
+        common=(decomp/'src/ft/ftdef.h').read_text().split('typedef enum FTCommonMotion')[1].split('}')[0]
+        special_base=re.findall(r'nFTCommonMotion(\w+)',common).index('SpecialStart')-1
+        special_clips.update(ids[n] for n in entries[special_base:] if n in ids)
         recovery_clips.update(ids[n] for n in entries[58:70] if n)
         for clip,script,offset in re.findall(r'\{\s*&ll(\w+)FileID,\s*(\w+)(?:\s*\+\s*(0x[0-9A-Fa-f]+))?,',table):
             if clip in ids and script in scripts:
@@ -51,9 +54,9 @@ def extract(decomp, manifest):
                 else:loops.pop()
             elif command in ('ftMotionCommandReturn','ftMotionCommandEnd','ftMotionCommandPauseScript'):break
             else:yield command,arg
-    hits=[]; followups=[]; flags=[]; hit_status=[]
+    hits=[]; followups=[]; flags=[]; hit_status=[];special_flags=[]
     supported={v for k,v in ids.items() if re.fullmatch(r'FT(?:Mario|Fox|Donkey|Samus|Luigi|Link|Yoshi|Captain|Kirby|Pikachu|Purin|Ness)Anim(?:Jab[123]|JabLoop(?:Start|End)?|FSmash|USmash|DSmash|AttackAir[NFBUD]|DashAttack|Turn|[UD]Tilt|FTilt(?:High|MidHigh|MidLow|Low)?|Catch)',k)}
-    supported.update(recovery_clips)
+    supported.update(recovery_clips|special_clips)
     for kind,clip in sorted(key for key in mapping if key[1] in supported):
         active={};definitions={};frame=0;followup=-1;epoch=0;refresh_epochs={}
         def close(i):
@@ -67,11 +70,13 @@ def extract(decomp, manifest):
             elif command=='ftMotionCommandMakeAttackColl':
                 a=[int(v.strip(),0) for v in arg.split(',')]
                 previous=active.get(a[0])
-                shared=next((args[-2] for _,args in active.values() if args[-1]==a[1]),None)
-                if previous and previous[1][-1]==a[1]:record=previous[1][-2]
+                shared=next((args[-3] for _,args in active.values() if args[-2]==a[1]),None)
+                if previous and previous[1][-2]==a[1]:record=previous[1][-3]
                 elif shared is not None:record=shared
                 else:epoch+=1;record=epoch
-                close(a[0]);active[a[0]]=(frame,[a[0],a[2],a[3],a[6],a[7],a[8],a[9],(a[10]+512)%1024-512,a[11],a[12],a[17],hit_sounds[a[16]*3+a[15]],record,a[1]])
+                close(a[0]);active[a[0]]=(frame,[a[0],a[2],a[3],a[6],a[7],a[8],a[9],(a[10]+512)%1024-512,a[11],a[12],a[17],hit_sounds[a[16]*3+a[15]],record,a[1],a[5]])
+            elif command in ('ftMotionCommandSetFlag0','ftMotionCommandSetFlag2','ftMotionCommandSetFlag3'):
+                special_flags.append((clip,frame,int(command[-1]),int(arg,0),kind))
             elif command=='ftMotionCommandSetHitStatusAll':
                 hit_status.append((clip,frame,int(arg,0),kind))
             elif command=='ftMotionCommandSetFlag1':
@@ -87,9 +92,9 @@ def extract(decomp, manifest):
                 i=int(arg,0)
                 if i in active or i in definitions:
                     args=(active[i][1] if i in active else definitions[i]).copy();close(i)
-                    key=(args[-1],frame)
+                    key=(args[-2],frame)
                     if key not in refresh_epochs:epoch+=1;refresh_epochs[key]=epoch
-                    args[-2]=refresh_epochs[key];active[i]=(frame,args)
+                    args[-3]=refresh_epochs[key];active[i]=(frame,args)
             elif command=='ftMotionCommandClearAttackCollAll':
                 epoch+=1
                 for i in list(active):close(i)
@@ -98,12 +103,12 @@ def extract(decomp, manifest):
         followups.append((clip,followup,kind))
         frame=max(frame,30)
         for i in list(active):close(i)
-    return hits,followups,flags,hit_status
+    return hits,followups,flags,hit_status,special_flags
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--decomp',type=Path,required=True);p.add_argument('--manifest',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
-    hits,followups,flags,hit_status=extract(a.decomp,a.manifest)
-    text='// Generated from US jab scripts by tools/extract_battle_attacks.py.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct SourceHitbox { unsigned motion,begin,end,id,joint; int damage,radius,x,y,z,angle,growth,weight,base; unsigned fgm,epoch,group,kind; };\n'
+    hits,followups,flags,hit_status,special_flags=extract(a.decomp,a.manifest)
+    text='// Generated from US jab scripts by tools/extract_battle_attacks.py.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct SourceHitbox { unsigned motion,begin,end,id,joint; int damage,radius,x,y,z,angle,growth,weight,base; unsigned fgm,epoch,group,element,kind; };\n'
     text+=f'inline constexpr std::array<SourceHitbox,{len(hits)}> source_jab_hitboxes{{{{\n'
     text+=''.join('    {'+','.join(map(str,h))+'},\n' for h in hits)+'}};\n'
     text+='struct SourceJabFollowup { unsigned motion; int frame; unsigned kind; };\n'
@@ -115,4 +120,7 @@ if __name__=='__main__':
     text=text[:-2]+'struct SourceHitStatus { unsigned motion,frame,status,kind; };\n'
     text+=f'inline constexpr std::array<SourceHitStatus,{len(hit_status)}> source_hit_status{{{{\n'
     text+=''.join('    {'+','.join(map(str,f))+'},\n' for f in hit_status)+'}};\n}\n'
+    text=text[:-2]+'struct SourceSpecialFlag { unsigned motion,frame,flag,value,kind; };\n'
+    text+=f'inline constexpr std::array<SourceSpecialFlag,{len(special_flags)}> source_special_flags{{{{\n'
+    text+=''.join('    {'+','.join(map(str,f))+'},\n' for f in special_flags)+'}};\n}\n'
     a.output.write_text(text)

@@ -103,6 +103,9 @@ public:
                 } else if (body.status==FighterStatus::CrouchEnd && body.action_frame>=motion_length(body)) {
                     body.status=FighterStatus::Wait;body.action_frame=0;
                 }
+                if (body.status==FighterStatus::Special)
+                    FighterCombat::advance_special(body,human && player_input.special_pressed,body.action_frame>=motion_length(body));
+                const bool special=FighterCombat::start_special(body,human && player_input.special_pressed);
                 const bool grab=FighterCombat::start_grab(body,(human && player_input.grab_pressed) || (attack && body.shield_held));
                 const bool aerial=FighterCombat::start_aerial(body,attack && !grab);
                 const bool dash_attack=FighterCombat::start_dash_attack(body,attack && !grab && !aerial);
@@ -123,7 +126,7 @@ public:
                 FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab && !tilt && !dash_attack,ended,human && player_input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status==FighterStatus::Dash && ended) {body.status=FighterStatus::Wait;body.vel_ground*=.75f;}
-                if (!fighter_is_down(body.status) && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
+                if (!fighter_is_down(body.status) && body.status!=FighterStatus::Special && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
                     if (body.shield_held && body.grounded && body.shield>0) {
                         body.status=FighterStatus::Shield; body.shield=std::max(0.0f,body.shield-.15f);
                     } else if (body.status==FighterStatus::Shield) body.status=FighterStatus::Wait;
@@ -150,11 +153,11 @@ public:
                 if (!model.fighter_root_animation || (jumping.grounded && model.fighter_wrapper!=Model3D::FighterWrapper::TransN)) return {};
                 n64::AnimationDecoder decoder(*archive_);
                 float ended=-1;
-                const int frame=jumping.grounded?std::max(0,jumping.action_frame-1):jumping.jump_frames;
+                const int frame=(jumping.grounded || jumping.status==FighterStatus::Special)?std::max(0,jumping.action_frame-1):jumping.jump_frames;
                 const auto previous=decoder.sample16(*model.fighter_root_animation,frame,
                                                      decoder.pose(model.fighter_root),&ended);
                 if (ended>=0) return {};
-                const auto current=decoder.sample16(*model.fighter_root_animation,jumping.grounded?jumping.action_frame:frame+1,
+                const auto current=decoder.sample16(*model.fighter_root_animation,(jumping.grounded || jumping.status==FighterStatus::Special)?jumping.action_frame:frame+1,
                                                     decoder.pose(model.fighter_root));
                 const float z=(current.tracks[6]-previous.tracks[6])*jumping.lr*jumping.attr.size;
                 const float y=(current.tracks[5]-previous.tracks[5])*jumping.attr.size;
@@ -163,7 +166,13 @@ public:
                 return Vec3{z*std::cos(angle)-y*std::sin(angle),z*std::sin(angle)+y*std::cos(angle),0};
             });
             if (!on_cliff && FighterPhysics::try_ledge(body,before,stage_.collision,bodies_)) update_cliff(body,false);
-            if (!was_grounded && body.grounded) emit(body.position,{215,225,235,220},body.status==FighterStatus::DownBounce?16:7,false);
+            if (!was_grounded && body.grounded) {
+                emit(body.position,{215,225,235,220},body.status==FighterStatus::DownBounce?16:7,false);
+                if (!services.deterministic_clock) {
+                    const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+                    services.audio.play_fgm(body.status==FighterStatus::DownBounce?data.down_sfx:data.landing_sfx);
+                }
+            }
             if (body.grounded && (body.status==FighterStatus::Dash || body.status==FighterStatus::RunBrake) && tic_%4==0)
                 emit(body.position,{225,225,220,170},3,false);
             const auto& bounds=stage_.blast_bounds;
@@ -246,20 +255,20 @@ public:
         std::vector<AttackVolume> volumes;
         for (unsigned i=0;i<bodies_.size();++i) {
             auto& body=bodies_[i];
-            if ((body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::DownAttack) || body.hitlag || body.stocks<=0) continue;
+            if ((body.status!=FighterStatus::Attack && body.status!=FighterStatus::Special && body.status!=FighterStatus::Catch && body.status!=FighterStatus::DownAttack) || body.hitlag || body.stocks<=0) continue;
             const auto model=posed(body);
             for (const auto& box:source_jab_hitboxes)
                 if (box.kind==static_cast<unsigned>(body.kind) && box.motion==body.motion && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
                     const auto position=renderer_->joint_point(model,body.action_frame,box.joint,
                         {static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
-                    volumes.push_back({i,position,box.radius*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm,body.status==FighterStatus::Catch,box.group,box.epoch});
+                    volumes.push_back({i,position,box.radius*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm,body.status==FighterStatus::Catch,box.group,box.epoch,box.element});
                 }
         }
         const auto hits=FighterCombat::resolve(bodies_,volumes);
         for (const auto& hit:hits) {
             const auto& victim=bodies_[hit.defender];
             emit({victim.position.x,victim.position.y+victim.attr.height*.5f,0},
-                 hit.shield?Color{100,175,255,255}:Color{255,235,130,255},hit.shield?6:12,true);
+                 hit.shield?Color{100,175,255,255}:hit.element==2?Color{125,195,255,255}:Color{255,235,130,255},hit.shield?6:12,true);
             if (!services.deterministic_clock && !hit.shield) services.audio.play_fgm(hit.fgm);
         }
         int alive=0;
@@ -366,6 +375,7 @@ private:
             case FighterStatus::CatchWait:return data.grab[1];
             case FighterStatus::Captured:return data.damage;
             case FighterStatus::Throw:return data.grab[body.throw_backward?3:2];
+            case FighterStatus::Special:return body.special_motion;
             case FighterStatus::Attack:
                 if (body.attack_motion) return body.attack_motion;
                 if (body.jab_stage>=4) return data.rapid[body.jab_stage-4];
@@ -434,8 +444,14 @@ private:
             const float x=160+dot(delta,right)*factor*.75f,y=120-dot(delta,up)*factor;
             const float size=p.size*factor*(p.spark?1.f:1.f+p.age*.05f);
             auto color=p.color;color.a=static_cast<std::uint8_t>(color.a*(1.f-float(p.age)/p.life));
-            const std::array<TriangleVertex,6> shape{{{{x-size,y},color,{}},{{x,y-size},color,{}},{{x+size,y},color,{}},
-                {{x-size,y},color,{}},{{x+size,y},color,{}},{{x,y+size},color,{}}}};
+            std::vector<TriangleVertex> shape;shape.reserve(48);
+            Color edge=color;edge.a=0;
+            for (int segment=0;segment<16;++segment) {
+                const float a=segment*2*std::numbers::pi_v<float>/16,b=(segment+1)*2*std::numbers::pi_v<float>/16;
+                shape.push_back({{x,y},color,{}});
+                shape.push_back({{x+std::cos(a)*size,y+std::sin(a)*size},edge,{}});
+                shape.push_back({{x+std::cos(b)*size,y+std::sin(b)*size},edge,{}});
+            }
             r.triangles(shape);
         }
     }

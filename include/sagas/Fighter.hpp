@@ -35,7 +35,7 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Tumble, DownBounce, DownWait, DownStand, DownRoll, DownAttack, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
+enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Special, Hitstun, Tumble, DownBounce, DownWait, DownStand, DownRoll, DownAttack, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
 
 [[nodiscard]] constexpr bool fighter_is_down(FighterStatus status) {
     return status==FighterStatus::DownBounce || status==FighterStatus::DownWait ||
@@ -73,6 +73,8 @@ struct FighterBody {
     bool jab_queued{};
     unsigned attack_motion{},attack_epoch{~0U};
     int aerial_attack{-1}, shield_tics{255};
+    unsigned special_motion{},special_index{},special_phase{},special_tics{};
+    bool special_projectile{};
     unsigned damage_motion{};
     bool damage_tumble{};
     unsigned down_face{1},down_motion{};
@@ -135,13 +137,15 @@ struct AttackVolume {
     int damage{}, angle{}, growth{}, weight{}, base{};
     unsigned fgm{};
     bool grab{};
-    unsigned group{},epoch{~0U};
+    unsigned group{},epoch{~0U},element{};
 };
-struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; unsigned fgm{}; };
+struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; unsigned fgm{},element{}; };
 class FighterCombat final {
 public:
     static void advance_down(FighterBody& body,bool attack,bool stand,bool animation_ended);
     static void advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released=false);
+    static bool start_special(FighterBody& body,bool pressed);
+    static void advance_special(FighterBody& body,bool pressed,bool animation_ended);
     static bool start_aerial(FighterBody& body,bool pressed);
     static bool start_grab(FighterBody& body,bool pressed);
     static bool start_dash_attack(FighterBody& body,bool pressed);

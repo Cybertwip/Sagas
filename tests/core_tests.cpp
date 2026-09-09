@@ -134,6 +134,17 @@ int main() {
         }
         assert(platform && solid);
     }
+    for (unsigned offset:{0U,52U}) {
+        const sagas::n64::Address attr{244,offset};
+        const auto weapon=scene_loader.model(*archive.resolve(attr),archive.resolve({244,offset+8}),sagas::GeometryLayout::DisplayListLinks,
+            archive.resolve({244,offset+4}),archive.resolve({244,offset+12}));
+        for (unsigned joint=0;joint<weapon.nodes.size();++joint) {
+            for(int frame:{0,10,120,145,180}) {
+                if(weapon.animation[joint]) (void)animation_decoder.sample(*weapon.animation[joint],frame,animation_decoder.pose(weapon.nodes[joint]));
+                for(const auto& script:weapon.material_animation[joint]) if(script) (void)animation_decoder.sample_material(*script,frame,{});
+            }
+        }
+    }
     for (const auto* name:{"Castle","Jungle","Hyrule","Zebes","Yoster","Pupupu","Sector","Yamabuki"}) {
         const auto stage=scene_loader.stage(std::string("llGR")+name+"MapMapHeader");
         for (const auto& layer:stage.layers)

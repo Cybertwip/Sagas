@@ -9,19 +9,20 @@
 #include <array>
 #include <cmath>
 #include <string>
+#include <sstream>
 
 namespace sagas {
 namespace {
 
-constexpr std::array<FighterKind,12> kPortraitKind{
+constexpr std::array<FighterKind,12> kBuiltinKinds{
     FighterKind::Luigi, FighterKind::Mario, FighterKind::Donkey, FighterKind::Link,
     FighterKind::Samus, FighterKind::Captain, FighterKind::Ness, FighterKind::Yoshi,
     FighterKind::Kirby, FighterKind::Fox, FighterKind::Pikachu, FighterKind::Purin
 };
-constexpr std::array<float,12> kPortraitX{
+constexpr std::array<float,12> kBuiltinX{
     25, 70, 115, 160, 205, 250, 25, 70, 115, 160, 205, 250
 };
-constexpr std::array<float,12> kPortraitY{
+constexpr std::array<float,12> kBuiltinY{
     36, 36, 36, 36, 36, 36, 79, 79, 79, 79, 79, 79
 };
 
@@ -39,6 +40,29 @@ public:
         slots_[0].puck=constrained_puck(cursor_x_,cursor_y_);
     }
     void enter(Services& services) override {
+        if (services.assets.exists("mods/roster.tsv")) {
+            const auto bytes=services.assets.blob("mods/roster.tsv");
+            std::istringstream input(std::string(reinterpret_cast<const char*>(bytes->data()),bytes->size()));
+            std::string line;std::getline(input,line);
+            int columns=6;try {columns=std::clamp(std::stoi(line),3,12);} catch (...) {}
+            std::vector<FighterKind> kinds;std::vector<std::string> portraits;
+            while (std::getline(input,line) && kinds.size()<120) {
+                std::istringstream fields(line);std::string base,name,portrait;
+                if (!std::getline(fields,base,'\t') || !std::getline(fields,name,'\t')) continue;
+                std::getline(fields,portrait);
+                int index=-1;try {index=std::stoi(base);} catch (...) {continue;}
+                if (index<0 || index>=12) continue;
+                if (!portrait.empty() && (portrait.find("mods/")!=0 || portrait.find("..")!=std::string::npos || !services.assets.exists(portrait))) portrait.clear();
+                kinds.push_back(static_cast<FighterKind>(index));portraits.push_back(portrait);
+            }
+            if (!kinds.empty()) {
+                kPortraitKind=std::move(kinds);custom_portraits_=std::move(portraits);
+                const int rows=(static_cast<int>(kPortraitKind.size())+columns-1)/columns;
+                portrait_width_=270.f/columns;portrait_height_=86.f/rows;
+                kPortraitX.clear();kPortraitY.clear();
+                for (unsigned i=0;i<kPortraitKind.size();++i) {kPortraitX.push_back(25+(i%columns)*portrait_width_);kPortraitY.push_back(36+(i/columns)*portrait_height_);}
+            }
+        }
         archive_=&services.resources.archive();
         loader_ = std::make_unique<Scene3DLoader>(*archive_);
         renderer_ = std::make_unique<Scene3DRenderer>(services.resources.archive());
@@ -155,12 +179,13 @@ public:
             if (team_) r.sprite_at("textures/MNPlayersGameModes/TeamBattleText.png", {140,18});
         }
 
-        for (int portrait = 0; portrait < 12; ++portrait) {
+        for (unsigned portrait = 0; portrait < kPortraitKind.size(); ++portrait) {
             const auto kind = kPortraitKind[static_cast<std::size_t>(portrait)];
             const Vec2 pos{kPortraitX[static_cast<std::size_t>(portrait)],
                            kPortraitY[static_cast<std::size_t>(portrait)]};
-            r.sprite_at("textures/MNPlayersPortraits/PortraitFireBg.png", pos);
-            r.sprite_at(std::string("textures/MNPlayersPortraits/") + std::string(fighter_portrait_file(kind)), pos);
+            r.sprite_rect("textures/MNPlayersPortraits/PortraitFireBg.png",pos.x,pos.y,portrait_width_,portrait_height_);
+            const auto portrait_file=portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty()?custom_portraits_[portrait]:std::string("textures/MNPlayersPortraits/")+std::string(fighter_portrait_file(kind));
+            r.sprite_rect(portrait_file,pos.x,pos.y,portrait_width_,portrait_height_);
         }
 
         const int gates = one_player_ ? 1 : 4;
@@ -233,17 +258,21 @@ public:
     }
     std::unique_ptr<Scene> next() override;
 private:
+    std::vector<FighterKind> kPortraitKind{kBuiltinKinds.begin(),kBuiltinKinds.end()};
+    std::vector<float> kPortraitX{kBuiltinX.begin(),kBuiltinX.end()},kPortraitY{kBuiltinY.begin(),kBuiltinY.end()};
+    std::vector<std::string> custom_portraits_;
+    float portrait_width_{45},portrait_height_{43};
     static Vec2 constrained_puck(float x,float y) {
         // The hand can visit settings and Back; the whole token stays on portraits.
         return {std::clamp(x-6,25.f,269.f),std::clamp(y-6,36.f,98.f)};
     }
     struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{}; };
-    [[nodiscard]] static int portrait_at(float x, float y) {
-        for (int i = 0; i < 12; ++i) {
+    [[nodiscard]] int portrait_at(float x, float y) const {
+        for (unsigned i = 0; i < kPortraitKind.size(); ++i) {
             if (x >= kPortraitX[static_cast<std::size_t>(i)] &&
-                x < kPortraitX[static_cast<std::size_t>(i)] + 45 &&
+                x < kPortraitX[static_cast<std::size_t>(i)] + portrait_width_ &&
                 y >= kPortraitY[static_cast<std::size_t>(i)] &&
-                y < kPortraitY[static_cast<std::size_t>(i)] + 43)
+                y < kPortraitY[static_cast<std::size_t>(i)] + portrait_height_)
                 return i;
         }
         return -1;

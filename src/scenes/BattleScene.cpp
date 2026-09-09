@@ -371,10 +371,7 @@ public:
         for (const auto& shot:projectiles_) if (shot.weapon==6 || shot.weapon==8 || shot.weapon==7) {
             if (!weapon_models_.contains(shot.weapon)) {
                 const n64::Address attributes{shot.weapon==7?243U:244U,shot.weapon==7?64U:shot.weapon==8?52U:0U};
-                const auto descriptor=archive_->resolve(attributes);
-                if (shot.weapon==7) weapon_models_.emplace(shot.weapon,loader_->display_list("llPikachuModelThunderTrailDObjDesc",GeometryLayout::DisplayListLinks,"llPikachuModelThunderTrailMObjSub"));
-                else if (descriptor) weapon_models_.emplace(shot.weapon,loader_->model(*descriptor,archive_->resolve({attributes.file,attributes.offset+8}),GeometryLayout::DisplayListLinks,
-                    archive_->resolve({attributes.file,attributes.offset+4}),archive_->resolve({attributes.file,attributes.offset+12})));
+                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,shot.weapon==6?0:shot.weapon==8?3:2));
             }
             if (weapon_models_.contains(shot.weapon)) {
                 auto weapon=weapon_models_.at(shot.weapon);weapon.position=shot.position;weapon.rotation.y=shot.facing*std::numbers::pi_v<float>/2;

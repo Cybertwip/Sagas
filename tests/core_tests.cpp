@@ -136,8 +136,7 @@ int main() {
     }
     for (unsigned offset:{0U,52U}) {
         const sagas::n64::Address attr{244,offset};
-        const auto weapon=scene_loader.model(*archive.resolve(attr),archive.resolve({244,offset+8}),sagas::GeometryLayout::DisplayListLinks,
-            archive.resolve({244,offset+4}),archive.resolve({244,offset+12}));
+        const auto weapon=scene_loader.weapon(attr,offset==0?0:3);
         for (unsigned joint=0;joint<weapon.nodes.size();++joint) {
             for(int frame:{0,10,120,145,180}) {
                 if(weapon.animation[joint]) (void)animation_decoder.sample(*weapon.animation[joint],frame,animation_decoder.pose(weapon.nodes[joint]));

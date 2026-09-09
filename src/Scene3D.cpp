@@ -200,6 +200,27 @@ Model3D Scene3DLoader::model(n64::Address desc,std::optional<n64::Address> anima
     return model;
 }
 
+Model3D Scene3DLoader::weapon(n64::Address attributes,unsigned render_flags) {
+    const auto data=archive_.resolve(attributes);
+    if (!data) throw std::runtime_error("weapon has no display data");
+    const auto materials=archive_.resolve({attributes.file,attributes.offset+4});
+    const auto animation=archive_.resolve({attributes.file,attributes.offset+8});
+    const auto matanim=archive_.resolve({attributes.file,attributes.offset+12});
+    const auto layout=(render_flags&2)?GeometryLayout::DisplayListLinks:GeometryLayout::Direct;
+    if (render_flags&1) return model(*data,animation,layout,materials,matanim);
+    // WPDesc flags distinguish a raw display list from a DObjDesc tree.
+    // Thunder Jolt Air uses a raw list; interpreting it as nodes overruns its file.
+    Model3D result;result.nodes.push_back({0,0,{}, {0,0,0},{0,0,0},{1,1,1},data});
+    result.parent_meshes.resize(1);result.materials.resize(1);result.material_animation.resize(1);
+    n64::DisplayListDecoder decoder(archive_);
+    if (materials) result.materials=decoder.materials(*materials,1);
+    if (matanim) result.material_animation=material_animation_table(archive_,*matanim,result.materials);
+    const std::array<std::optional<n64::Address>,1> lists{data};
+    result.meshes=decoder.decode_model_tree(lists,result.materials,(render_flags&2)!=0);
+    if (animation) result.animation=n64::AnimationDecoder(archive_).table(*animation,1);else result.animation.resize(1);
+    return result;
+}
+
 Stage3D Scene3DLoader::stage(std::string_view header) {
     const auto address=archive_.symbol(header);
     if (!address) throw std::runtime_error("missing stage header: "+std::string(header));

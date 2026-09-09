@@ -34,12 +34,13 @@ def extract(decomp, manifest):
     hit_table=(decomp/'src/ft/ftmain.c').read_text().split('dFTMainHitCollisionFGMs')[1].split('};')[0]
     hit_sounds=[voices[name] for name in re.findall(r'nSYAudio\w+',hit_table)]
     def commands(name,depth=0):
-        if depth>16:raise ValueError('recursive motion script')
+        if depth>16:raise ValueError('recursive motion script: '+name)
         index=0;loops=[];budget=10000
         while index<len(scripts[name]) and budget:
             budget-=1;command,arg=scripts[name][index];index+=1
             if command=='ftMotionCommandSubroutine':yield from commands(arg,depth+1)
             elif command=='ftMotionCommandGoto':
+                if arg==name:break
                 yield from commands(arg,depth+1);break
             elif command=='ftMotionCommandLoopBegin':loops.append([index,int(arg,0)])
             elif command=='ftMotionCommandLoopEnd':
@@ -49,7 +50,7 @@ def extract(decomp, manifest):
             elif command in ('ftMotionCommandReturn','ftMotionCommandEnd','ftMotionCommandPauseScript'):break
             else:yield command,arg
     hits=[]; followups=[]; flags=[]
-    supported={v for k,v in ids.items() if re.fullmatch(r'FT(?:Mario|Fox|Donkey|Samus|Luigi|Link|Yoshi|Captain|Kirby|Pikachu|Purin|Ness)Anim(?:Jab[123]|JabLoop(?:Start|End)?|FSmash|USmash|DSmash|AttackAir[NFBUD]|Catch)',k)}
+    supported={v for k,v in ids.items() if re.fullmatch(r'FT(?:Mario|Fox|Donkey|Samus|Luigi|Link|Yoshi|Captain|Kirby|Pikachu|Purin|Ness)Anim(?:Jab[123]|JabLoop(?:Start|End)?|FSmash|USmash|DSmash|AttackAir[NFBUD]|[UD]Tilt|FTilt(?:High|MidHigh|MidLow|Low)?|Catch)',k)}
     for kind,clip in sorted(key for key in mapping if key[1] in supported):
         active={};definitions={};frame=0;followup=-1;epoch=0;refresh_epochs={}
         def close(i):

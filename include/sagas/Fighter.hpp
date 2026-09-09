@@ -132,6 +132,7 @@ public:
     static void advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released=false);
     static bool start_aerial(FighterBody& body,bool pressed);
     static bool start_grab(FighterBody& body,bool pressed);
+    static bool start_tilt(FighterBody& body,bool pressed);
     static bool start_smash(FighterBody& body,bool pressed);
     [[nodiscard]] static std::vector<FighterHit> resolve(std::span<FighterBody> bodies,
                                                         std::span<const AttackVolume> attacks);

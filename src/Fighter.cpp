@@ -219,6 +219,9 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             apply_ground_friction(body);
             if (!locked) body.status=FighterStatus::Wait;
         }
+        if (body.status==FighterStatus::Attack && motion) {
+            if (const auto authored=motion(body)) body.vel_ground=authored->x*body.lr;
+        }
         body.vel_air.x=body.vel_ground*body.lr*body.floor_tangent.x;
         body.vel_air.y=body.vel_ground*body.lr*body.floor_tangent.y;
     } else {
@@ -365,6 +368,27 @@ bool FighterCombat::start_grab(FighterBody& body,bool pressed) {
          body.status!=FighterStatus::Run && body.status!=FighterStatus::Shield)) return false;
     body.status=FighterStatus::Catch;body.action_frame=0;body.hit_mask=0;body.attack_epoch=~0U;body.hit_group_epochs.fill(~0U);
     body.attack_motion=0;body.jab_stage=0;body.aerial_attack=-1;
+    return true;
+}
+
+bool FighterCombat::start_tilt(FighterBody& body,bool pressed) {
+    if (!pressed || body.hitlag || !body.grounded ||
+        (body.status!=FighterStatus::Wait && body.status!=FighterStatus::Walk && body.status!=FighterStatus::Crouch &&
+         body.status!=FighterStatus::CrouchWait && body.status!=FighterStatus::CrouchEnd)) return false;
+    const auto& tilts=fighter_source_data[static_cast<unsigned>(body.kind)].tilt;
+    const float angle=std::atan2(static_cast<float>(body.stick_y),static_cast<float>(std::abs(body.stick_x)));
+    unsigned clip=0;
+    if (body.stick_y>=20 && angle>.87266463f) clip=tilts[5];
+    else if (body.stick_y<=-20 && angle<-.87266463f) clip=tilts[6];
+    else if (body.stick_x*body.lr>=20 && std::abs(angle)<=.87266463f) {
+        unsigned index=2;
+        if (tilts[1]) index=angle>.5235988f?0:angle>.17453294f?1:angle<-.5235988f?4:angle<-.17453294f?3:2;
+        else if (tilts[0]) index=angle>.296706f?0:angle<-.296706f?4:2;
+        clip=tilts[index];
+    }
+    if (!clip) return false;
+    body.attack_motion=clip;body.status=FighterStatus::Attack;body.action_frame=0;
+    body.hit_mask=0;body.hit_group_epochs.fill(~0U);body.jab_stage=0;body.jab_followup_left=0;
     return true;
 }
 

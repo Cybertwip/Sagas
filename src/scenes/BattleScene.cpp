@@ -91,9 +91,10 @@ public:
                     body.throw_backward=!attack && body.capture_tics<60 && body.stick_x*body.lr<0;
                     body.status=FighterStatus::Throw;body.action_frame=0;
                 }
+                const bool tilt=FighterCombat::start_tilt(body,attack && !grab && !aerial && !smash);
                 const bool ended=(body.status==FighterStatus::Attack || body.status==FighterStatus::Jump || body.status==FighterStatus::Dash) &&
                                   body.action_frame>=motion_length(body);
-                FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab,ended,i==0 && input.attack_released);
+                FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab && !tilt,ended,i==0 && input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status==FighterStatus::Dash && ended) {body.status=FighterStatus::Wait;body.vel_ground*=.75f;}
                 if (body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
@@ -106,13 +107,14 @@ public:
             const auto before=body.position;
             if (!on_cliff) FighterPhysics::tick(body,stage_.collision,[&](const FighterBody& jumping) -> std::optional<Vec3> {
                 const auto model=posed(jumping,true);
-                if (!model.fighter_root_animation) return {};
+                if (!model.fighter_root_animation || (jumping.grounded && model.fighter_wrapper!=Model3D::FighterWrapper::TransN)) return {};
                 n64::AnimationDecoder decoder(*archive_);
                 float ended=-1;
-                const auto previous=decoder.sample16(*model.fighter_root_animation,jumping.jump_frames,
+                const int frame=jumping.grounded?std::max(0,jumping.action_frame-1):jumping.jump_frames;
+                const auto previous=decoder.sample16(*model.fighter_root_animation,frame,
                                                      decoder.pose(model.fighter_root),&ended);
                 if (ended>=0) return {};
-                const auto current=decoder.sample16(*model.fighter_root_animation,jumping.jump_frames+1,
+                const auto current=decoder.sample16(*model.fighter_root_animation,jumping.grounded?jumping.action_frame:frame+1,
                                                     decoder.pose(model.fighter_root));
                 const float z=(current.tracks[6]-previous.tracks[6])*jumping.lr*jumping.attr.size;
                 const float y=(current.tracks[5]-previous.tracks[5])*jumping.attr.size;
@@ -307,7 +309,6 @@ private:
         const unsigned clip=motion(body);
         const unsigned key=static_cast<unsigned>(body.kind)*4096+clip;
         if (!models_.contains(key)) {
-            const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
             const unsigned flags=fighter_motion_flags(clip);
             models_.emplace(key,loader_->fighter_motion(body.kind,clip,flags));
         }

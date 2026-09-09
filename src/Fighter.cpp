@@ -621,13 +621,13 @@ void FighterCombat::buffer_smash(FighterBody& body,bool pressed) {
 }
 
 bool FighterCombat::start_smash(FighterBody& body,bool pressed) {
-    if ((!pressed && body.smash_buffer<=0) || body.hitlag || !body.grounded || (body.status!=FighterStatus::Wait && body.status!=FighterStatus::Crouch && body.status!=FighterStatus::CrouchWait && body.status!=FighterStatus::CrouchEnd && body.status!=FighterStatus::Walk && body.status!=FighterStatus::Dash && body.status!=FighterStatus::Run)) return false;
+    if ((!pressed && body.smash_buffer<=0) || body.hitlag || !body.grounded || (body.status!=FighterStatus::Wait && body.status!=FighterStatus::Crouch && body.status!=FighterStatus::CrouchWait && body.status!=FighterStatus::CrouchEnd && body.status!=FighterStatus::Walk && body.status!=FighterStatus::Dash && body.status!=FighterStatus::Run && body.status!=FighterStatus::RunBrake && body.status!=FighterStatus::KneeBend)) return false;
     int direction=-1;
     if (body.tap_stick_y<4 && body.stick_y>=53) direction=1;
     else if (body.tap_stick_y<4 && body.stick_y<=-53) direction=2;
     else if (body.tap_stick_x<3 && std::abs(body.stick_x)>=56) {direction=0;body.lr=body.stick_x>0?1:-1;}
     if (direction<0 && body.smash_buffer>0) {direction=body.buffered_smash;body.lr=body.buffered_facing;}
-    if (direction<0) return false;
+    if (direction<0 || (body.status==FighterStatus::KneeBend && direction!=1)) return false;
     body.smash_buffer=0;
     body.attack_motion=fighter_source_data[static_cast<unsigned>(body.kind)].smash[direction];
     body.status=FighterStatus::Attack;body.action_frame=0;body.hit_mask=0;body.attack_epoch=~0U;body.hit_group_epochs.fill(~0U);

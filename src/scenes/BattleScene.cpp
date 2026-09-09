@@ -304,9 +304,29 @@ public:
                 if (before.y>=y && shot.position.y<y) {
                     shot.position.y=y+10;
                     if (shot.weapon==0 || shot.weapon==1) shot.velocity.y=std::abs(shot.velocity.y)*.85f;
-                    else if (shot.weapon==6) {shot.velocity.y=0;shot.gravity=0;}
+                    else if (shot.weapon==6) {shot.weapon=8;shot.velocity={55.f*shot.facing,0,0};shot.gravity=0;}
                     else shot.life=0;
                 }
+            }
+            if (shot.weapon==7) {
+                auto& owner=bodies_[shot.owner];
+                if (owner.status!=FighterStatus::Special || owner.special_index%3!=2) shot.life=0;
+                else if (std::abs(owner.position.x-shot.position.x)<200 && std::abs(owner.position.y-shot.position.y-225)<800) {
+                    owner.special_phase=4;owner.special_motion=fighter_source_data[static_cast<unsigned>(owner.kind)].special_hit[owner.special_index];owner.action_frame=0;
+                    if (!owner.grounded) owner.vel_air.y=20;
+                    shot.life=0;emit(owner.position,{130,200,255,255},24,true);
+                }
+                // Thunder leaves damaging segments behind the descending head.
+                for (int segment=0;segment<5;++segment)
+                    particles_.push_back({{shot.position.x,shot.position.y+segment*90.f,0},{},{160,215,255,255},0,10,110,true});
+            }
+            if (shot.weapon==8) {
+                bool supported=false;
+                for (const auto& floor:stage_.collision) if (floor.type==0 && floor.a.x!=floor.b.x && shot.position.x>=std::min(floor.a.x,floor.b.x) && shot.position.x<=std::max(floor.a.x,floor.b.x)) {
+                    const float y=floor.a.y+(floor.b.y-floor.a.y)*(shot.position.x-floor.a.x)/(floor.b.x-floor.a.x);
+                    if (std::abs(y-shot.position.y)<120) {shot.position.y=y+10;supported=true;break;}
+                }
+                if (!supported) {shot.weapon=6;shot.velocity={28.28427f*shot.facing,-28.28427f,0};}
             }
             if (shot.weapon==4 && shot.life<80) shot.velocity.x+=(bodies_[shot.owner].position.x>shot.position.x?3.f:-3.f);
             for (unsigned target=0;target<bodies_.size();++target) {
@@ -317,10 +337,11 @@ public:
                     emit(shot.position,{120,210,255,255},10,true);break;
                 }
             }
+            if (shot.life<=0) continue;
             const auto& a=weapon_source_data[shot.weapon];
             AttackVolume contact{shot.owner,shot.position,a.size*.5f,a.damage,a.angle,a.growth,a.weight,a.base,static_cast<unsigned>(a.sfx),false,0,~0U,static_cast<unsigned>(a.element),true,shot.facing};
             auto contacts=FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&contact,1));
-            if (!contacts.empty()) {shot.life=0;hits.insert(hits.end(),contacts.begin(),contacts.end());}
+            if (!contacts.empty()) {if (shot.weapon!=7) shot.life=0;hits.insert(hits.end(),contacts.begin(),contacts.end());}
             const Color color=a.element==2?Color{130,200,255,255}:shot.weapon==2?Color{255,80,80,255}:Color{255,160,55,255};
             particles_.push_back({shot.position,{},color,0,3,shot.weapon==2?50.f:90.f,true});
         }
@@ -484,6 +505,10 @@ private:
     struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity; };
     std::vector<Projectile> projectiles_;
     void spawn_projectile(unsigned owner,const FighterBody& body) {
+        if (body.kind==FighterKind::Pikachu && body.special_index%3==2) {
+            const auto anchor=renderer_->joint_point(posed(body),body.action_frame,11);
+            projectiles_.push_back({owner,7,{anchor.x,stage_.blast_bounds[0]-500,0},{0,-450,0},40,body.lr,0});return;
+        }
         if (body.special_index%3!=0) return;
         unsigned weapon;
         switch (body.kind) {
@@ -493,8 +518,9 @@ private:
             case FighterKind::Pikachu:weapon=6;break;default:return;
         }
         const float speed=weapon==2?160.f:weapon==4?85.f:weapon==6?28.28427f:50.f;
-        const Vec3 origin{body.position.x+body.lr*(body.attr.width+60),body.position.y+body.attr.height*.6f,0};
-        projectiles_.push_back({owner,weapon,origin,{body.lr*speed,weapon==1?-4.3578f:weapon==6?-28.28427f:0,0},weapon==0?80:weapon==1?140:160,body.lr,weapon==1?1.2f:0.f});
+        Vec3 origin{body.position.x+body.lr*(body.attr.width+60),body.position.y+body.attr.height*.6f,0};
+        if (weapon==6) origin=renderer_->joint_point(posed(body),body.action_frame,11);
+        projectiles_.push_back({owner,weapon,origin,{body.lr*speed,weapon==1?-4.3578f:weapon==6?-28.28427f:0,0},weapon==0?80:weapon==1?140:weapon==6?100:160,body.lr,weapon==1?1.2f:0.f});
     }
     struct Particle { Vec3 position,velocity; Color color; int age{},life{}; float size{}; bool spark{},ring{}; int sides{16}; };
     std::vector<Particle> particles_;

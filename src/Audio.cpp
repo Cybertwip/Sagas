@@ -110,7 +110,10 @@ Pcm render_fgm(AssetRepository& assets, std::uint32_t voice_id, float gain) {
             const double fraction=phase-index;
             const auto next=std::min(index+1,wave.samples.size()-1);
             const double sample=wave.samples[index]*(1-fraction)+wave.samples[next]*fraction;
-            mixed[frame]+=sample*voice.gain*fgm_envelope(voice,tick)*gain*.55;
+            // A scheduled stop can cut a waveform between nonzero samples.
+            // Taper only the final 2 ms to avoid a discontinuity at voice removal.
+            const double tail=std::clamp(std::min(double(end-frame),double(wave.samples.size())-phase)/64.0,0.0,1.0);
+            mixed[frame]+=sample*voice.gain*fgm_envelope(voice,tick)*gain*.55*tail;
             phase+=std::pow(2.0,fgm_pitch_cents(voice,static_cast<int>(tick))/1200.0);
         }
     }

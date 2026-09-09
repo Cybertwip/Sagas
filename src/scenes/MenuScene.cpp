@@ -39,6 +39,7 @@ constexpr std::array<MenuItem,3> data_items{{
 
 class MenuScene final : public Scene {
 public:
+    void enter(Services& services) override { services.audio.stop(); }
     void update(Services& services, const InputState& input, float) override {
         ++tic_;
         const auto count = item_count();

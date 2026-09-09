@@ -50,7 +50,8 @@ Articulation decode_articulation(Bytes table, int index) {
     const auto code = entry(table, index);
     std::size_t at{};
     int tick{}, volume = 127;
-    while (at < code.size()) {
+    std::size_t loop=0;unsigned steps=0;
+    while (at < code.size() && tick<2000 && ++steps<20000) {
         const auto instruction = u8(code, at);
         int wait = instruction & 0xf;
         if (wait & 8) {
@@ -79,8 +80,8 @@ Articulation decode_articulation(Bytes table, int index) {
             case 0x50: (void)u8(code, at); break;
             case 0x60: result.wave = varint(code, at); break;
             case 0x70: result.duration = tick; return result;
-            case 0x80: break;
-            case 0x90: return result; // looping articulations hold their current state
+            case 0x80: loop=at; break;
+            case 0x90: at=loop; break;
             default: throw std::runtime_error("unknown FGM articulation opcode");
         }
         tick += wait;

@@ -60,7 +60,7 @@ public:
                 const float dx=target!=bodies_.end()?target->position.x-body.position.x:0;
                 const float dy=target!=bodies_.end()?target->position.y-body.position.y:0;
                 body.stick_x=std::abs(dx)>260?(dx>0?60:-60):0; body.stick_y=0;
-                if (std::abs(dx)>1 && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Tumble) body.lr=dx>0?1:-1;
+                if (std::abs(dx)>1 && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Tumble && !fighter_is_down(body.status)) body.lr=dx>0?1:-1;
                 body.jump_pressed=body.grounded && dy>300 && tic_%40==0;
                 body.jump_button=true; body.jump_released=false;
                 attack=std::abs(dx)<420 && tic_%32==static_cast<int>(i)*3;
@@ -70,7 +70,9 @@ public:
             const bool on_cliff=body.status==FighterStatus::CliffCatch || body.status==FighterStatus::CliffWait || body.status==FighterStatus::CliffClimb;
             if (on_cliff) update_cliff(body);
             if (!on_cliff && !body.hitlag && body.status!=FighterStatus::Captured) {
-                ++body.action_frame;
+                if (body.status!=FighterStatus::DownWait) ++body.action_frame;
+                if (fighter_is_down(body.status))
+                    FighterCombat::advance_down(body,attack,i==0 && input.shield_pressed,body.action_frame>=motion_length(body));
                 if (body.status==FighterStatus::Hitstun) {
                     body.hitstun=std::max(0,body.hitstun-1);
                     if (!body.hitstun && body.action_frame>=motion_length(body)) {
@@ -104,12 +106,25 @@ public:
                 FighterCombat::advance_jab(body,attack && !smash && !aerial && !grab && !tilt && !dash_attack,ended,i==0 && input.attack_released);
                 if (body.status==FighterStatus::Jump && ended) body.status=FighterStatus::Fall;
                 if (body.status==FighterStatus::Dash && ended) {body.status=FighterStatus::Wait;body.vel_ground*=.75f;}
-                if (body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
+                if (!fighter_is_down(body.status) && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
                     if (body.shield_held && body.grounded && body.shield>0) {
                         body.status=FighterStatus::Shield; body.shield=std::max(0.0f,body.shield-.15f);
                     } else if (body.status==FighterStatus::Shield) body.status=FighterStatus::Wait;
                 }
                 if (body.status!=FighterStatus::Shield) body.shield=std::min(55.0f,body.shield+.05f);
+            }
+            // Source DownBounce chooses the side from joint 4's current X rotation.
+            if (body.status==FighterStatus::Hitstun || body.status==FighterStatus::Tumble) {
+                const auto actor=posed(body,true);
+                const auto found=std::find(actor.source_joint_ids.begin(),actor.source_joint_ids.end(),4U);
+                if (found!=actor.source_joint_ids.end()) {
+                    const auto joint=static_cast<unsigned>(found-actor.source_joint_ids.begin());
+                    n64::AnimationDecoder decoder(*archive_);
+                    auto pose=decoder.pose(actor.nodes[joint]);
+                    if (actor.animation[joint]) pose=decoder.sample16(*actor.animation[joint],body.action_frame,pose);
+                    const float turns=std::fmod(pose.tracks[0]/(2*std::numbers::pi_v<float>),1.f);
+                    body.down_face=(turns<-.5f || (turns>0 && turns<.5f))?0:1;
+                }
             }
             const auto before=body.position;
             if (!on_cliff) FighterPhysics::tick(body,stage_.collision,[&](const FighterBody& jumping) -> std::optional<Vec3> {
@@ -147,6 +162,13 @@ public:
                     body.action_frame=static_cast<int>(body.action_frame*data.walk_lengths[next-data.walks.begin()]/data.walk_lengths[old-data.walks.begin()]);
                 else body.action_frame=0;
                 body.motion=clip;
+            }
+            body.recovery_invulnerable=false;
+            if (fighter_is_down(body.status)) {
+                unsigned hit_status=1;
+                for (const auto& event:source_hit_status)
+                    if (event.kind==static_cast<unsigned>(body.kind) && event.motion==clip && event.frame<=static_cast<unsigned>(body.action_frame)) hit_status=event.status;
+                body.recovery_invulnerable=hit_status!=1;
             }
             if (!body.hitlag && !services.deterministic_clock)
                 for (const auto& sound:battle_motion_sounds)
@@ -200,7 +222,7 @@ public:
         std::vector<AttackVolume> volumes;
         for (unsigned i=0;i<bodies_.size();++i) {
             auto& body=bodies_[i];
-            if ((body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch) || body.hitlag || body.stocks<=0) continue;
+            if ((body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::DownAttack) || body.hitlag || body.stocks<=0) continue;
             const auto model=posed(body);
             for (const auto& box:source_jab_hitboxes)
                 if (box.kind==static_cast<unsigned>(body.kind) && box.motion==body.motion && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
@@ -310,6 +332,8 @@ private:
                 return body.jab_stage==3?data.jab3:body.jab_stage==2?data.jab2:data.jab;
             case FighterStatus::Hitstun:return body.damage_motion?body.damage_motion:data.damage_reactions[3];
             case FighterStatus::Tumble:return data.damage_reactions[19];
+            case FighterStatus::DownBounce:case FighterStatus::DownWait:case FighterStatus::DownStand:
+            case FighterStatus::DownRoll:case FighterStatus::DownAttack:return body.down_motion;
             default:return data.idle;
         }
     }

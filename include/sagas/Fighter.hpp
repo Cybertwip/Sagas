@@ -35,7 +35,12 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Tumble, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
+enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, Land, Attack, Hitstun, Tumble, DownBounce, DownWait, DownStand, DownRoll, DownAttack, Shield, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
+
+[[nodiscard]] constexpr bool fighter_is_down(FighterStatus status) {
+    return status==FighterStatus::DownBounce || status==FighterStatus::DownWait ||
+           status==FighterStatus::DownStand || status==FighterStatus::DownRoll || status==FighterStatus::DownAttack;
+}
 
 struct FighterModelSpec {
     std::string_view descriptor;
@@ -70,6 +75,9 @@ struct FighterBody {
     int aerial_attack{-1}, shield_tics{255};
     unsigned damage_motion{};
     bool damage_tumble{};
+    unsigned down_face{1},down_motion{};
+    int down_wait{},down_attack_buffer{};
+    bool recovery_invulnerable{};
     unsigned landing_motion{};
     float landing_speed{1};
     int capture_target{-1}, captured_by{-1}, capture_tics{};
@@ -131,6 +139,7 @@ struct AttackVolume {
 struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; unsigned fgm{}; };
 class FighterCombat final {
 public:
+    static void advance_down(FighterBody& body,bool attack,bool stand,bool animation_ended);
     static void advance_jab(FighterBody& body,bool pressed,bool animation_ended,bool released=false);
     static bool start_aerial(FighterBody& body,bool pressed);
     static bool start_grab(FighterBody& body,bool pressed);

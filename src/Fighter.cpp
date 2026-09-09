@@ -161,7 +161,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     }
     const Vec3 before=body.position;
     const bool was_grounded=body.grounded;
-    if (body.jump_pressed && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
+    if (body.jump_pressed && !fighter_is_down(body.status) && body.status!=FighterStatus::Hitstun && body.status!=FighterStatus::Attack && body.status!=FighterStatus::Catch && body.status!=FighterStatus::CatchWait && body.status!=FighterStatus::Throw) {
         if (body.grounded && body.status!=FighterStatus::KneeBend) {
             body.status=FighterStatus::KneeBend; body.jump_frames=0;
             body.short_hop=false; body.jump_force=body.stick_y;
@@ -203,7 +203,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             }
         }
         if (body.status==FighterStatus::Land && !body.landing_motion && --body.land_frames<=0) body.status=FighterStatus::Wait;
-        const bool locked=body.status==FighterStatus::Turn || body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::CrouchEnd || body.status==FighterStatus::KneeBend || body.status==FighterStatus::Attack ||
+        const bool locked=fighter_is_down(body.status) || body.status==FighterStatus::Turn || body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::CrouchEnd || body.status==FighterStatus::KneeBend || body.status==FighterStatus::Attack ||
                           body.status==FighterStatus::Shield || body.status==FighterStatus::Hitstun || body.status==FighterStatus::Land ||
                           body.status==FighterStatus::Catch || body.status==FighterStatus::CatchWait || body.status==FighterStatus::Throw;
         if (!locked && body.status==FighterStatus::Run && body.stick_x*body.lr<44) {body.status=FighterStatus::RunBrake;body.action_frame=0;}
@@ -233,7 +233,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             if (!locked) body.status=FighterStatus::Wait;
         }
         body.vel_air.z=0;
-        if (body.status==FighterStatus::Attack && motion) {
+        if ((body.status==FighterStatus::Attack || body.status==FighterStatus::DownRoll || body.status==FighterStatus::DownAttack) && motion) {
             if (const auto authored=motion(body)) {body.vel_ground=authored->x*body.lr;body.vel_air.z=authored->z;}
         }
         body.vel_air.x=body.vel_ground*body.lr*body.floor_tangent.x;
@@ -314,7 +314,12 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         if (!was_grounded) {
             // Landing transfers world velocity back into facing-relative ground velocity.
             body.vel_ground=body.vel_air.x*body.lr;
-            if (body.status==FighterStatus::Attack && body.aerial_attack>=0) {
+            if (body.status==FighterStatus::Tumble || (body.status==FighterStatus::Hitstun && body.damage_tumble)) {
+                body.status=FighterStatus::DownBounce;body.action_frame=0;body.hitstun=0;
+                body.down_motion=fighter_source_data[static_cast<unsigned>(body.kind)].down[body.down_face];
+                body.down_attack_buffer=0;body.down_wait=180;body.vel_ground=0;
+                body.attack_motion=0;body.aerial_attack=-1;
+            } else if (body.status==FighterStatus::Attack && body.aerial_attack>=0) {
                 int flag=0;
                 for (const auto& event:source_motion_flags)
                     if (event.kind==static_cast<unsigned>(body.kind) && event.motion==body.attack_motion && event.frame<=static_cast<unsigned>(body.action_frame)) flag=event.value;
@@ -329,7 +334,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 body.status=FighterStatus::Land; body.land_frames=4;body.landing_motion=0;body.action_frame=0;
             }
         }
-    } else if (body.status==FighterStatus::Wait || body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::CrouchEnd || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash || body.status==FighterStatus::Run || body.status==FighterStatus::RunBrake)
+    } else if (fighter_is_down(body.status) || body.status==FighterStatus::Wait || body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait || body.status==FighterStatus::CrouchEnd || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash || body.status==FighterStatus::Run || body.status==FighterStatus::RunBrake)
         body.status=FighterStatus::Fall;
     if (was_grounded && !body.grounded && body.jumps_used==0) body.jumps_used=1;
     body.jump_pressed=false;
@@ -359,6 +364,34 @@ bool FighterPhysics::try_ledge(FighterBody& body,Vec3 before,std::span<const Col
         return true;
     }
     return false;
+}
+
+void FighterCombat::advance_down(FighterBody& body,bool attack,bool stand,bool animation_ended) {
+    if (!fighter_is_down(body.status) || body.hitlag) return;
+    const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+    if (body.status==FighterStatus::DownBounce) {
+        body.down_attack_buffer=std::max(0,body.down_attack_buffer-1);
+        if (attack) body.down_attack_buffer=60;
+        if (!animation_ended) return;
+        attack=body.down_attack_buffer>0;
+        body.status=FighterStatus::DownWait;body.down_wait=180;
+        // Keep the final bounce pose while lying down (source motion ID -2).
+    } else if (body.status!=FighterStatus::DownWait) {
+        if (animation_ended) {
+            body.status=FighterStatus::Wait;body.action_frame=0;body.recovery_invulnerable=false;
+        }
+        return;
+    }
+    const float angle=std::atan2(static_cast<float>(std::abs(body.stick_y)),static_cast<float>(std::abs(body.stick_x)));
+    if (attack) {
+        body.status=FighterStatus::DownAttack;body.down_motion=data.down[10+body.down_face];
+        body.hit_mask=0;body.hit_group_masks.fill(0);body.hit_group_epochs.fill(~0U);
+    } else if (std::abs(body.stick_x)>=20 && angle<.872664626f) {
+        body.status=FighterStatus::DownRoll;body.down_motion=data.down[(body.stick_x*body.lr>=0?6:8)+body.down_face];
+    } else if (stand || (body.stick_y>=20 && angle>=.872664626f) || --body.down_wait<=0) {
+        body.status=FighterStatus::DownStand;body.down_motion=data.down[2+body.down_face];
+    } else return;
+    body.action_frame=0;body.vel_ground=0;body.jump_pressed=false;
 }
 
 bool FighterCombat::start_aerial(FighterBody& body,bool pressed) {
@@ -487,7 +520,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
         }
         for (unsigned i=0;i<bodies.size();++i) {
             auto& defender=bodies[i];
-            if (i==hit.owner || defender.stocks<=0 || defender.invincible || (mask&(1U<<i))) continue;
+            if (i==hit.owner || defender.stocks<=0 || defender.invincible || defender.recovery_invulnerable || (mask&(1U<<i))) continue;
             // Capsule around the map collision body. Per-joint hurtboxes
             // remain a separate fidelity task; attacks already follow joints.
             const float y=std::clamp(hit.position.y,defender.position.y+defender.attr.width,
@@ -497,7 +530,7 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             if (dx*dx+dy*dy>radius*radius) continue;
             if (defender.status==FighterStatus::Captured) continue;
             if (hit.grab) {
-                if (attacker.capture_target>=0) continue;
+                if (attacker.capture_target>=0 || defender.status==FighterStatus::DownBounce || defender.status==FighterStatus::DownWait) continue;
                 attacker.capture_target=static_cast<int>(i);attacker.status=FighterStatus::CatchWait;
                 attacker.action_frame=0;attacker.capture_tics=0;attacker.vel_ground=0;
                 defender.captured_by=static_cast<int>(hit.owner);defender.status=FighterStatus::Captured;

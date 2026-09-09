@@ -28,7 +28,7 @@ def convert(project_path, destination):
     worker('inspect',source,manifest,working)
     project.source_manifest=json.loads(manifest.read_text())
     auto_map_bones(project);project.save(working)
-    worker('retarget',source,destination/'retargeted.fbx',working)
+    worker('retarget',source,destination/'retargeted.blend',working)
     return destination/'rigid_mesh.json'
 
 if __name__=='__main__':

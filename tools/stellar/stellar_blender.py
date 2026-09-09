@@ -983,7 +983,7 @@ def blender_worker(operation: str, input_path: Path, output_path: Path,
     source_image = next((cached for cached in image_cache.values() if cached is not None), None)
     if source_image is not None:
         try:
-            texture_size = 40
+            texture_size = 512
             source_width, source_height, source_pixels, source_image_name = source_image
             samples: list[tuple[int, int, int, int]] = []
             for y in range(texture_size):

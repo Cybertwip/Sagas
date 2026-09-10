@@ -1,28 +1,31 @@
-# Sagas Studio / Stellar port
+# Sagas Stellar Studio
 
-Run `python3 sagas/tools/stellar/server.py` from the workspace, then open
-http://127.0.0.1:8765. The server only binds to localhost. Use `--assets` to edit
-another Sagas asset bundle.
+Run `python3 sagas/tools/stellar/server.py` from the workspace and open
+http://127.0.0.1:8765. Restart an existing server after updating its code.
 
-Import a character's Stellar JSON, FBX/GLB/GLTF model, PNG portrait and WAV files.
-Arrange the roster by dragging entries, hide entries, set its column count,
-and save. Reopening character select loads `build/assets/mods/roster.tsv` and
-fits its portraits into the selection area. Original gameplay remains Sagas.
+Import an original `stellar_project.json`, its character directory, or a parent
+Characters directory. Source FBX conversion uses Blender at
+`/Applications/Blender.app/Contents/MacOS/Blender`. No StellarExport project or
+Remix overlay build is required. Reimporting updates the package by name.
 
-This begins the tool port; it is not the completed custom fighter runtime.
-Imported models, animations and sounds are preserved in portable character
-packages. Until model conversion and runtime character definitions are ported,
-imported entries explicitly use the selected original fighter as their base.
-No generated C, `game_overlay` directories, registry overrides, or broken Remix
-build integration are imported or executed.
+Drag roster entries into grid cells; holes are preserved in the game. Select
+checkboxes and use **Remove selected** to remove individual or multiple roster
+slots. Package files remain available in the package list. Save the roster and
+reopen character select to apply changes.
 
-The `stellar_project`, `stellar_shared`, `stellar_audio`, `stellar_validation`
-and `stellar_batch` modules were copied unchanged from
-`remix/game/custom/Toolset`. They retain the existing project schema and reusable
-authoring services. `server.py` and `index.html` are the Sagas editor/integration.
+Sagas loads converted models in hover previews, selected poses, and battle.
+The converter uses Remix's base-specific joint mappings and target-rest-pose
+preparation, with two skin influences per vertex and a 512-pixel texture atlas.
+Custom portraits receive frame and name labels. Selection WAV audio, gain,
+trimming, and inherited fighter pitch overrides are exported to Sagas audio
+packages. As in the original tooling, announcer clips do not inherit voice pitch.
 
-Next: adapt Blender conversion to Sagas model assets; load character attributes,
-motions, hitboxes and audio by package ID; pass package identities through CSS
-and battle; add package validation and an animation/combat preview. Port
-Smash Remix gameplay and intro systems separately against the working Sagas
-engine, retaining the decomp as the physics/state reference.
+The project editor preserves bones, animations, hitboxes, physics, sounds,
+stages, and controls. Model settings and audio export are connected to the
+runtime; custom animation, hitbox, physics, and stage overrides still need
+runtime adapters. The full tool/gameplay port is not complete. The embedded
+preview renderer and full 1P campaign are deferred.
+
+Authoring helpers were ported from `remix/game/custom/Toolset`; no generated C,
+overlay registry overrides, or broken Remix build integration is executed.
+Tests: `python3 -m unittest discover -s sagas/tools/stellar -p 'test_*.py'`.

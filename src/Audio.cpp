@@ -219,8 +219,11 @@ void AudioEngine::queue(SDL_AudioStream*& stream, std::span<const std::int16_t> 
     if (!SDL_ResumeAudioStreamDevice(stream)) fail("audio resume failed");
 }
 void AudioEngine::play(std::string_view logical, float gain) {
-    auto pcm = synthesize_music(std::string(logical),gain);
-    queue(effect_stream_, pcm.samples, pcm.rate,pcm.channels);
+    if (logical.ends_with(".sgpcm")) {
+        auto pcm=synthesize_music(std::string(logical),gain);queue(effect_stream_,pcm.samples,pcm.rate,pcm.channels);
+    } else {
+        auto pcm=load_aiff(*assets_.blob(logical),gain);queue(effect_stream_,pcm.samples,pcm.rate);
+    }
 }
 void AudioEngine::play(AudioCue cue) {
     const auto voice_id = cue == AudioCue::TitlePressStart ? 157U :

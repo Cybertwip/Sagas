@@ -49,7 +49,7 @@ def export_native(proxy_path):
     for v in vertices:
         skin=v['skin'];a=skin[0];b=skin[1] if len(skin)>1 else a
         lines.append(' '.join(map(str,[a['joint'],a['weight'],*a['position'],b['joint'],*b['position'],*v['uv'],*v['color']])))
-    path=Path(proxy_path).with_name('model.sgmesh');path.write_text('\n'.join(lines)+'\n');return path
+    path=Path(proxy_path).with_name('model.sgmesh');temporary=path.with_suffix('.tmp');temporary.write_text('\n'.join(lines)+'\n');temporary.replace(path);return path
 
 def export_audio(project_path,destination):
     import re, struct

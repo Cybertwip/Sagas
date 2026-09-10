@@ -46,6 +46,7 @@ def package_id(name):
     return slug
 
 def import_project(root,source):
+    root=Path(root).resolve()
     source=Path(source).expanduser().resolve()
     if source.is_dir(): source=source/'stellar_project.json'
     raw=json.loads(source.read_text());name=raw.get('name',source.parent.name);slug=package_id(name)

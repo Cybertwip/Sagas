@@ -36,6 +36,9 @@ if __name__=='__main__':
 
 def export_native(proxy_path):
     raw=json.loads(Path(proxy_path).read_text())
+    from stellar_retarget import prepare_rigid_for_base
+    project=StellarProject.load(Path(proxy_path).with_name('stellar_project.json'))
+    raw=prepare_rigid_for_base(project,raw)
     lines=['SGMESH1',str(len(raw['bind_joints']))]
     for joint,point in raw['bind_joints'].items(): lines.append(' '.join(map(str,[joint,*point])))
     tex=raw.get('texture') or {};pixels=tex.get('pixels',[])

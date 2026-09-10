@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <sstream>
 
 int main() {
     sagas::InputState held;
@@ -970,6 +971,33 @@ int main() {
                 const auto point=pose_renderer.joint_point(actor,10,joint,{});
                 assert(std::isfinite(point.x) && std::isfinite(point.y));
             }
+        }
+    }
+    // Imported feet use their deform parent rather than Mario's helper chain.
+    // Verify pose deltas through every aerial, without changing limb geometry.
+    for (auto motion:sagas::fighter_source_data[1].attack_air) {
+        auto target=scene_loader.fighter_motion(sagas::FighterKind::Mario,motion);
+        auto rest=target;rest.animation.clear();rest.fighter_root_animation.reset();
+        const auto pelvis=pose_renderer.joint_point(rest,0,5,{});
+        const auto root=pose_renderer.joint_point(rest,0,4,{});
+        const auto foot=pose_renderer.joint_point(rest,0,22,{});
+        const auto displaced=pose_renderer.joint_point(rest,0,5,{40,80,0});
+        const sagas::Vec3 source_foot{foot.x+displaced.x-pelvis.x,foot.y+displaced.y-pelvis.y,foot.z+displaced.z-pelvis.z};
+        std::ostringstream mesh;mesh.precision(9);
+        mesh<<"SGMESH2\n3\n4 -1 "<<root.x<<' '<<root.y<<' '<<root.z
+            <<"\n5 4 "<<pelvis.x<<' '<<pelvis.y<<' '<<pelvis.z
+            <<"\n22 5 "<<source_foot.x<<' '<<source_foot.y<<' '<<source_foot.z<<"\n0 0\n0\n";
+        const auto data=mesh.str();auto imported=target;
+        scene_loader.apply_custom_mesh(imported,std::as_bytes(std::span(data.data(),data.size())));
+        assert(imported.imported_rest_offsets.empty());
+        for (float frame:{0.f,5.f,10.f,20.f}) {
+            const auto base=pose_renderer.joint_point(target,frame,22,{});
+            const auto parent=pose_renderer.joint_point(target,frame,5,{});
+            const auto extended=pose_renderer.joint_point(target,frame,5,{40,80,0});
+            const auto actual=pose_renderer.joint_point(imported,frame,22,{});
+            assert(std::abs(actual.x-(base.x+extended.x-parent.x))<.02f);
+            assert(std::abs(actual.y-(base.y+extended.y-parent.y))<.02f);
+            assert(std::abs(actual.z-(base.z+extended.z-parent.z))<.02f);
         }
     }
     std::cout << "Sagas core tests passed\n";

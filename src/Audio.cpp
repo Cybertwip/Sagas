@@ -1,3 +1,4 @@
+#include <sstream>
 #include <sagas/Audio.hpp>
 #include <sagas/Fgm.hpp>
 
@@ -218,8 +219,8 @@ void AudioEngine::queue(SDL_AudioStream*& stream, std::span<const std::int16_t> 
     if (!SDL_ResumeAudioStreamDevice(stream)) fail("audio resume failed");
 }
 void AudioEngine::play(std::string_view logical, float gain) {
-    auto pcm = load_aiff(*assets_.blob(logical), gain);
-    queue(effect_stream_, pcm.samples, pcm.rate);
+    auto pcm = synthesize_music(std::string(logical),gain);
+    queue(effect_stream_, pcm.samples, pcm.rate,pcm.channels);
 }
 void AudioEngine::play(AudioCue cue) {
     const auto voice_id = cue == AudioCue::TitlePressStart ? 157U :
@@ -227,7 +228,7 @@ void AudioEngine::play(AudioCue cue) {
     auto pcm = render_fgm(assets_, voice_id, 1.0f);
     queue(effect_stream_, pcm.samples, pcm.rate);
 }
-void AudioEngine::play_fgm(unsigned id,float gain) {
+void AudioEngine::play_fgm(unsigned id,float gain,float pitch) {
     std::erase_if(motion_streams_,[](SDL_AudioStream* stream) {
         if (SDL_GetAudioStreamQueued(stream)>0) return false;
         SDL_DestroyAudioStream(stream);
@@ -241,8 +242,29 @@ void AudioEngine::play_fgm(unsigned id,float gain) {
     auto samples=pcm.samples;
     for (auto& sample:samples) sample=static_cast<std::int16_t>(std::clamp(sample*gain,-32768.0f,32767.0f));
     SDL_AudioStream* stream{};
-    queue(stream,samples,pcm.rate);
+    queue(stream,samples,static_cast<int>(pcm.rate*std::pow(2.0f,std::clamp(pitch,-36.f,36.f)/12.f)));
     motion_streams_.push_back(stream);
+}
+void AudioEngine::play_character_fgm(std::string_view model,unsigned id) {
+    if (!model.empty()) {
+        const auto folder=std::filesystem::path(model).parent_path();
+        const auto table=(folder/"audio.tsv").generic_string();
+        if (assets_.exists(table)) {
+            const auto bytes=assets_.blob(table);
+            std::istringstream lines(std::string(reinterpret_cast<const char*>(bytes->data()),bytes->size()));
+            std::string line;
+            while (std::getline(lines,line)) {
+                std::istringstream row(line);unsigned key;float pitch;std::string file;
+                if (!(row>>key>>pitch) || key!=id) continue;
+                row>>file;
+                if (!file.empty() && file.find('/')==std::string::npos && file.find("..") == std::string::npos) {
+                    play((folder/file).generic_string());return;
+                }
+                play_fgm(id,1,pitch);return;
+            }
+        }
+    }
+    play_fgm(id);
 }
 AudioEngine::PreparedAudio AudioEngine::synthesize_music(std::string logical, float gain) {
     const auto bytes = assets_.blob(logical);

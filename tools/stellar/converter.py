@@ -50,3 +50,32 @@ def export_native(proxy_path):
         skin=v['skin'];a=skin[0];b=skin[1] if len(skin)>1 else a
         lines.append(' '.join(map(str,[a['joint'],a['weight'],*a['position'],b['joint'],*b['position'],*v['uv'],*v['color']])))
     path=Path(proxy_path).with_name('model.sgmesh');path.write_text('\n'.join(lines)+'\n');return path
+
+def export_audio(project_path,destination):
+    import re, struct
+    from types import SimpleNamespace
+    from stellar_audio import process_sound, read_wav_mono
+    project_path=Path(project_path);destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
+    raw=json.loads(project_path.read_text());base={'Donkey Kong':'Donkey','Captain Falcon':'Captain','Jigglypuff':'Purin'}.get(raw.get('base_character'),raw.get('base_character','Mario'))
+    catalog=Path(__file__).resolve().parents[3]/'remix/build/generated/audio_fgm_catalog.inc'
+    entries={};symbols={}
+    if catalog.exists():
+        for identifier,symbol in re.findall(r'\{\s*(\d+),\s*"([^"]+)"',catalog.read_text()):
+            symbols[symbol]=int(identifier)
+            if symbol.startswith((f'nSYAudioFGM{base}',f'nSYAudioVoice{base}',f'nSYAudioVoicePublic{base}')):
+                entries[int(identifier)]=[float(raw.get('global_pitch_semitones',0))+float(raw.get('inherited_pitch_overrides',{}).get(symbol,0)),'']
+    for i,sound in enumerate(raw.get('sounds',[])):
+        identifier=int(sound.get('fgm_id',-1));symbol=sound.get('game_voice_id','')
+        if identifier<0: identifier=symbols.get(symbol,-1)
+        if sound.get('kind','').lower()=='announcer': identifier=symbols.get('nSYAudioVoiceAnnounce'+base,-1)
+        if identifier<0: continue
+        if sound.get('inherited'):
+            entries[identifier]=[float(raw.get('global_pitch_semitones',0))+float(sound.get('pitch_semitones',0)),''];continue
+        if not sound.get('path'): continue
+        source=Path(sound['path']);source=source if source.is_absolute() else project_path.parent/source
+        settings={'trim_start':0,'trim_end':0,'gain_db':0,'pitch_semitones':0,'kind':'voice'};settings.update(sound)
+        wav=destination/f'sound-{i}.wav';process_sound(source,wav,SimpleNamespace(**settings),float(raw.get('global_pitch_semitones',0)))
+        rate,samples=read_wav_mono(wav);pcm=[max(-32768,min(32767,round(sample*32767))) for sample in samples]
+        filename=f'sound-{i}.sgpcm';(destination/filename).write_bytes(b'SGPC'+struct.pack('<III',rate,1,len(pcm))+struct.pack('<'+'h'*len(pcm),*pcm))
+        entries[identifier]=[0,filename]
+    (destination/'audio.tsv').write_text(''.join(f'{key}\t{pitch}\t{path}\n' for key,(pitch,path) in sorted(entries.items())))

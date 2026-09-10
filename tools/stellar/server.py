@@ -5,7 +5,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import unquote, urlsplit, parse_qs
 import argparse, base64, json, re, shutil, subprocess, tempfile, mimetypes
 from stellar_shared import atomic_json
-from converter import convert, export_native
+from converter import convert, export_native, export_audio
 
 ROOT=Path(__file__).resolve().parents[2]
 KINDS=['Luigi','Mario','Donkey','Link','Samus','Captain','Ness','Yoshi','Kirby','Fox','Pikachu','Purin']
@@ -70,7 +70,7 @@ def import_project(root,source):
         for key in ('model_path','collision_path','preview_path'):
             if stage.get(key): stage[key]=copy_asset(stage[key])
     project=project_dir/'stellar_project.json';atomic_json(project,raw)
-    proxy=convert(project,folder/'converted');model=export_native(proxy)
+    proxy=convert(project,folder/'converted');model=export_native(proxy);export_audio(project,folder/'converted')
     character={'id':slug,'name':name,'base':base,'enabled':True,'builtin':False,'model_status':'ready','model':str(model.relative_to(root)),'project':str(project.relative_to(root)),'source_project':str(source)}
     if raw.get('portrait_path'): character['portrait']=str(Path(raw['portrait_path']).relative_to(root))
     atomic_json(folder/'character.json',character);return character
@@ -161,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path=='/api/project':
                 path=project_file(root,request['id']);raw=request['project']
                 if not isinstance(raw,dict) or not raw.get('model_path'): raise ValueError('Invalid project')
-                atomic_json(path,raw);result={'saved':True}
+                atomic_json(path,raw);export_audio(path,path.parent.parent/'converted');result={'saved':True}
                 if request.get('convert'): result=import_project(root,path)
             else: return self.reply(404,{'error':'Not found'})
             self.reply(200,result)

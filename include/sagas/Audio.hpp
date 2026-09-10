@@ -23,7 +23,8 @@ public:
     AudioEngine& operator=(const AudioEngine&) = delete;
     void play(std::string_view logical, float gain = 1.0f);
     void play(AudioCue cue);
-    void play_fgm(unsigned id, float gain = 1.0f);
+    void play_fgm(unsigned id, float gain = 1.0f, float pitch = 0.0f);
+    void play_character_fgm(std::string_view model, unsigned id);
     void preload_music(std::string_view logical, float gain = 1.0f);
     [[nodiscard]] bool music_ready(std::string_view logical) const;
     void play_music(std::string_view logical, float gain = 1.0f, bool loop = false);

@@ -92,7 +92,7 @@ public:
             cursor_x_=std::clamp(input.pointer_x,0.f,300.f);
             cursor_y_=std::clamp(input.pointer_y,10.f,230.f);
         }
-        if (held_slot_>=0) slots_[held_slot_].puck=constrained_puck(cursor_x_,cursor_y_);
+        if (held_slot_>=0 && portrait_at(cursor_x_,cursor_y_)>=0) slots_[held_slot_].puck=constrained_puck(cursor_x_,cursor_y_);
         const int hover = portrait_at(cursor_x_,cursor_y_);
         if (hover!=hover_) {
             hover_=hover;
@@ -108,7 +108,7 @@ public:
             slot.entry=hover_;slot.fkind=kPortraitKind[hover_];slot.selected=true;
             load_preview(slot.fkind,held_slot_,true);
             selected_tick_[held_slot_]=tic_;
-            services.audio.play_fgm(fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);
+            services.audio.play_character_fgm(static_cast<unsigned>(slot.entry)<custom_models_.size()?custom_models_[slot.entry]:"",fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);
             held_slot_=-1;
         };
         if (input.accept_pressed || input.pointer_pressed) {
@@ -159,14 +159,14 @@ public:
             auto& cursor=cursors_[player];cursor.x=std::clamp(cursor.x+c.x/20,0.f,300.f);cursor.y=std::clamp(cursor.y-c.y/20,10.f,230.f);
             const int portrait=portrait_at(cursor.x,cursor.y);
             if (!slot.selected) {
-                slot.puck=constrained_puck(cursor.x,cursor.y);
-                if (portrait>=0 && (slot.fkind!=kPortraitKind[portrait] || previews_[player].nodes.empty())) {
+                if (portrait>=0) slot.puck=constrained_puck(cursor.x,cursor.y);
+                if (portrait>=0 && (slot.entry!=portrait || previews_[player].nodes.empty())) {
                     slot.entry=portrait;slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,false);
                 }
             }
             if (c.cancel && slot.selected) {slot.selected=false;load_preview(slot.fkind,player,false);}
             if (c.attack) {
-                if (!slot.selected && portrait>=0) {slot.selected=true;slot.entry=portrait;slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,true);}
+                if (!slot.selected && portrait>=0) {slot.selected=true;slot.entry=portrait;slot.fkind=kPortraitKind[portrait];load_preview(slot.fkind,player,true);services.audio.play_character_fgm(static_cast<unsigned>(slot.entry)<custom_models_.size()?custom_models_[slot.entry]:"",fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);}
                 else if (slot.selected && cursor.x>=slot.puck.x && cursor.x<slot.puck.x+26 && cursor.y>=slot.puck.y && cursor.y<slot.puck.y+24) {slot.selected=false;load_preview(slot.fkind,player,false);}
             }
             if (c.start && ready()) start_=true;

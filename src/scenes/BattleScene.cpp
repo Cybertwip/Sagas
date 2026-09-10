@@ -226,7 +226,7 @@ public:
                         if (body.kind==FighterKind::Luigi)
                             for (unsigned v=0;v<3;++v)
                                 if (fgm==fighter_source_data[static_cast<unsigned>(FighterKind::Mario)].smash_voices[v]) {fgm=voices[v];break;}
-                        services.audio.play_fgm(fgm);
+                        services.audio.play_character_fgm(body.custom_model,fgm);
                     }
             }
         }
@@ -449,7 +449,7 @@ private:
         body.vel_air={};body.vel_damage={};body.vel_ground=0;body.grounded=false;
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
         if (upward) {
-            if (!services.deterministic_clock && data.deadup_sfx!=~0U) services.audio.play_fgm(data.deadup_sfx);
+            if (!services.deterministic_clock && data.deadup_sfx!=~0U) services.audio.play_character_fgm(body.custom_model,data.deadup_sfx);
             if (body.ko_mode==1) body.vel_air={0,(stage_.camera_bounds[0]*.6f-body.position.y)/180.f,-83.333336f};
             else {
                 const auto& eye=camera_.view().eye;
@@ -459,7 +459,7 @@ private:
         } else {
             --body.stocks;
             emit({std::clamp(body.position.x,stage_.camera_bounds[3],stage_.camera_bounds[2]),std::clamp(body.position.y,stage_.camera_bounds[1],stage_.camera_bounds[0]),0},{255,230,120,255},32,true);
-            if (!services.deterministic_clock) {services.audio.play_fgm(dead_explode_sfx);for(auto sound:data.dead_sfx) if(sound!=~0U) services.audio.play_fgm(sound);}
+            if (!services.deterministic_clock) {services.audio.play_fgm(dead_explode_sfx);for(auto sound:data.dead_sfx) if(sound!=~0U) services.audio.play_character_fgm(body.custom_model,sound);}
         }
     }
     void advance_ko(FighterBody& body,Services& services) {
@@ -475,8 +475,8 @@ private:
             }
         }
         if (body.ko_tics>=(body.ko_mode==3?45:225) && body.stocks>0) {
-            const auto kind=body.kind;const auto attr=body.attr;const int stocks=body.stocks;
-            body={};body.kind=kind;body.attr=attr;body.stocks=stocks;
+            const auto kind=body.kind;const auto attr=body.attr;const int stocks=body.stocks;const auto package=body.custom_model;
+            body={};body.custom_model=package;body.kind=kind;body.attr=attr;body.stocks=stocks;
             body.position={0,1500,0};body.grounded=false;body.status=FighterStatus::Fall;body.invincible=120;
         }
     }

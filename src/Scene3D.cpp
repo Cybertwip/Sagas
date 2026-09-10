@@ -152,6 +152,29 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
         result.parent.push_back(parent);
         result.world.push_back(world);
     }
+    // Retain target animation rotations and translations. Reconstruct imported
+    // pivot positions through the mapped deform hierarchy, which can skip the
+    // target's hip/ankle helpers. Offsetting local target nodes instead makes
+    // those helpers swing long imported feet around the wrong pivot in aerials.
+    const auto stock=result.world;
+    std::vector<bool> resolved(model.nodes.size());
+    for (unsigned i=0;i<resolved.size();++i)
+        resolved[i]=i>=model.imported_pivots.size() || model.imported_pivots[i].parent<0;
+    for (unsigned pass=0;pass<model.nodes.size();++pass) {
+        bool changed=false;
+        for (unsigned i=0;i<model.imported_pivots.size();++i) {
+            if (resolved[i]) continue;
+            const auto& pivot=model.imported_pivots[i];const unsigned parent=pivot.parent;
+            if (parent>=resolved.size() || !resolved[parent]) continue;
+            const auto offset=transform_direction(stock[parent],pivot.segment_delta);
+            const auto parent_delta=sub(transform(result.world[parent],{}),transform(stock[parent],{}));
+            result.world[i].m[3]+=offset.x+parent_delta.x;
+            result.world[i].m[7]+=offset.y+parent_delta.y;
+            result.world[i].m[11]+=offset.z+parent_delta.z;
+            resolved[i]=true;changed=true;
+        }
+        if (!changed) break;
+    }
     return result;
 }
 
@@ -160,9 +183,12 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
 void Scene3DLoader::apply_custom_mesh(Model3D& model,std::span<const std::byte> bytes) {
     std::istringstream input(std::string(reinterpret_cast<const char*>(bytes.data()),bytes.size()));
     std::string magic;unsigned count{};input>>magic>>count;
-    if (magic!="SGMESH1" || count>128) throw std::runtime_error("Invalid custom mesh header");
-    std::map<unsigned,Vec3> binds;
-    for (unsigned i=0;i<count;++i) {unsigned id;Vec3 point;input>>id>>point.x>>point.y>>point.z;binds[id]=point;}
+    if ((magic!="SGMESH1" && magic!="SGMESH2") || count>128) throw std::runtime_error("Invalid custom mesh header");
+    std::map<unsigned,Vec3> binds;std::map<unsigned,int> source_parents;
+    for (unsigned i=0;i<count;++i) {
+        unsigned id;Vec3 point;int parent=-1;input>>id;if (magic=="SGMESH2") input>>parent;
+        input>>point.x>>point.y>>point.z;binds[id]=point;source_parents[id]=parent;
+    }
     auto rest=model;rest.animation.clear();rest.fighter_root_animation.reset();
     n64::AnimationDecoder decoder(archive_);
     const auto matrices=world_matrices(decoder,rest,0);
@@ -183,6 +209,24 @@ void Scene3DLoader::apply_custom_mesh(Model3D& model,std::span<const std::byte> 
         const std::array<float,3> local{m[0]*delta.x+m[4]*delta.y+m[8]*delta.z,m[1]*delta.x+m[5]*delta.y+m[9]*delta.z,m[2]*delta.x+m[6]*delta.y+m[10]*delta.z};
         for (unsigned axis=0;axis<3;++axis) model.imported_rest_offsets[i][axis]=local[axis]-model.nodes[i].translate[axis];
         ancestors.push_back(i);
+    }
+    if (magic=="SGMESH2") {
+        model.imported_rest_offsets.clear();model.imported_pivots.resize(model.nodes.size());
+        for (unsigned i=0;i<model.nodes.size();++i) {
+            const auto id=model.source_joint_ids[i];int parent_id=source_parents.contains(id)?source_parents[id]:-1;
+            // The imported pelvis height belongs to the stable root frame,
+            // so a spinning pelvis cannot orbit the whole mesh around itself.
+            if (id==5) parent_id=4;
+            const auto found=std::find(model.source_joint_ids.begin(),model.source_joint_ids.end(),parent_id);
+            if (parent_id<0 || found==model.source_joint_ids.end() || !binds.contains(id)) continue;
+            const unsigned parent=found-model.source_joint_ids.begin();
+            Vec3 difference=sub(binds[id],transform(matrices.world[i],{}));
+            if (id!=5 && binds.contains(parent_id))
+                difference=sub(difference,sub(binds[parent_id],transform(matrices.world[parent],{})));
+            const auto& m=matrices.world[parent].m;
+            model.imported_pivots[i]={static_cast<int>(parent),{m[0]*difference.x+m[4]*difference.y+m[8]*difference.z,
+                m[1]*difference.x+m[5]*difference.y+m[9]*difference.z,m[2]*difference.x+m[6]*difference.y+m[10]*difference.z}};
+        }
     }
     auto texture=std::make_shared<RasterImage>();input>>texture->width>>texture->height;
     if (texture->width<0 || texture->height<0 || texture->width>2048 || texture->height>2048) throw std::runtime_error("Invalid custom texture size");

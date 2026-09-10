@@ -27,6 +27,8 @@ struct Model3D {
     std::vector<n64::Node> nodes;
     std::vector<unsigned> source_joint_ids;
     std::vector<std::array<float,3>> imported_rest_offsets;
+    struct ImportedPivot { int parent{-1}; Vec3 segment_delta{}; };
+    std::vector<ImportedPivot> imported_pivots;
     std::vector<n64::Mesh> meshes;
     // Fighter JointPairs slot 0 is drawn in the parent matrix; slot 1 is
     // drawn after applying the current joint matrix.

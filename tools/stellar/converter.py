@@ -36,11 +36,12 @@ if __name__=='__main__':
 
 def export_native(proxy_path):
     raw=json.loads(Path(proxy_path).read_text())
-    from stellar_retarget import prepare_rigid_for_base
+    from stellar_retarget import prepare_rigid_for_base, mapped_runtime_parents
     project=StellarProject.load(Path(proxy_path).with_name('stellar_project.json'))
     raw=prepare_rigid_for_base(project,raw)
-    lines=['SGMESH1',str(len(raw['bind_joints']))]
-    for joint,point in raw['bind_joints'].items(): lines.append(' '.join(map(str,[joint,*point])))
+    parents=mapped_runtime_parents(project.base_character,project.bone_mappings)
+    lines=['SGMESH2',str(len(raw['bind_joints']))]
+    for joint,point in raw['bind_joints'].items(): lines.append(' '.join(map(str,[joint,parents.get(int(joint),-1),*point])))
     tex=raw.get('texture') or {};pixels=tex.get('pixels',[])
     lines.append(f"{tex.get('width',0)} {tex.get('height',0)}")
     lines.append(' '.join(map(str,pixels)))

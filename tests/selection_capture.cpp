@@ -1,6 +1,8 @@
 // Native integration check: exercise selection input and capture selected poses.
 // Run manually with a graphics session; deliberately excluded from ctest.
 #include <sagas/Engine.hpp>
+#include <sagas/Scene3D.hpp>
+#include <sagas/FighterSourceData.hpp>
 #include <sagas/SceneResources.hpp>
 #include <SDL3/SDL.h>
 #include <cassert>
@@ -173,6 +175,28 @@ int main(int argc,char** argv) {
         sagas::InputState input;input.pointer_moved=true;input.pointer_x=272;input.pointer_y=107;input.accept_pressed=true;
         scene->update(services,input,1.f/60);render.request_capture(output/"roster-18.png");scene->draw(services);
         input={};input.start_pressed=true;scene->update(services,input,1.f/60);assert(scene->next());
+    }
+    // Optional source-package visual regression; never alter the saved roster.
+    {
+        sagas::AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);
+        const std::string mesh="mods/characters/mia/converted/model.sgmesh";
+        if (assets.exists(mesh)) {
+            sagas::RenderEngine render(window,assets);sagas::SceneResourceManager resources(assets);
+            sagas::Scene3DLoader loader(resources.archive());sagas::Scene3DRenderer renderer(resources.archive());
+            const auto bytes=assets.blob(mesh);
+            for (unsigned direction=0;direction<5;++direction) {
+                auto target=loader.fighter_motion(sagas::FighterKind::Mario,sagas::fighter_source_data[1].attack_air[direction]);
+                auto imported=target;loader.apply_custom_mesh(imported,*bytes);
+                target.position={-500,-300,0};imported.position={500,-300,0};
+                target.rotation.y=imported.rotation.y=1.5707963f;
+                sagas::Camera3D camera{{0,250,3200},{0,250,0},{0,1,0},35,16,20000,{0,0,320,240}};
+                for (int frame:{5,10,20}) {
+                    render.request_capture(output/("mia-air-"+std::to_string(direction)+"-"+std::to_string(frame)+".png"));
+                    render.begin({24,28,36,255});renderer.begin();
+                    renderer.draw(render,target,camera,frame);renderer.draw(render,imported,camera,frame);renderer.end(render);render.end();
+                }
+            }
+        }
     }
     SDL_DestroyWindow(window); SDL_Quit();
     // Exercise the actual SDL controls panel, saving and reloading a mapping.

@@ -27,5 +27,8 @@ rows.append([200,7,361,20,0,10,2,23]);names.append('Pikachu grounded Thunder Jol
 size_angle,combat,flags,base=struct.unpack_from('>4I',(root/'sagas/build/assets/reloc/0229.bin').read_bytes(),8+36)
 rows.append([size_angle>>16,(combat>>14)&255,(size_angle>>6)&1023,combat>>22,combat&1023,base>>22,(combat>>10)&15,(flags>>11)&1023])
 names.append('Kirby Final Cutter')
+# Ness PK Thunder and the US PK Fire flame item contact fields.
+rows.append([150,6,100,30,0,50,2,23]);names.append('Ness PK Thunder head')
+rows.append([200,3,70,10,0,4,1,28]);names.append('Ness PK Fire flame')
 out=root/'sagas/include/sagas/WeaponSourceData.hpp'
-out.write_text('// Generated from US WPAttributes by extract_weapon_data.py.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct WeaponSourceData { int size,damage,angle,growth,weight,base,element,sfx; };\ninline constexpr std::array<WeaponSourceData,10> weapon_source_data{{\n'+''.join('    {'+','.join(map(str,row))+'}, // '+name+'\n' for name,row in zip(names,rows))+'}};\n}\n')
+out.write_text('// Generated from US WPAttributes by extract_weapon_data.py.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct WeaponSourceData { int size,damage,angle,growth,weight,base,element,sfx; };\ninline constexpr std::array<WeaponSourceData,12> weapon_source_data{{\n'+''.join('    {'+','.join(map(str,row))+'}, // '+name+'\n' for name,row in zip(names,rows))+'}};\n}\n')

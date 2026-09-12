@@ -144,6 +144,10 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
             if (have_parent[static_cast<std::size_t>(ancestor)])
                 parent=parents[static_cast<std::size_t>(ancestor)];
         }
+        if (node_index<model.source_parent_ids.size() && model.source_parent_ids[node_index]>=0) {
+            const auto found=std::find(model.source_joint_ids.begin(),model.source_joint_ids.end(),static_cast<unsigned>(model.source_parent_ids[node_index]));
+            parent=(found!=model.source_joint_ids.end() && static_cast<std::size_t>(found-model.source_joint_ids.begin())<result.world.size())?result.world[found-model.source_joint_ids.begin()]:model_matrix;
+        }
         const Matrix world=multiply(parent,local);
         if (node.depth>=0 && node.depth<kMaxDepth) {
             parents[static_cast<std::size_t>(node.depth)]=world;
@@ -440,6 +444,7 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
     if (!desc) throw std::runtime_error("missing fighter descriptor symbol: "+std::string(descriptor));
     Model3D model;
     const auto source_nodes=n64::SkeletonDecoder(archive_).decode(*desc);
+    std::unordered_map<unsigned,int> attachment_parents;
     n64::DisplayListDecoder decoder(archive_);
     auto source_materials=decoder.materials({desc->file,0},source_nodes.size());
     // FTData.o_attributes and FTCommonPart.p_costume_matanim_joints from
@@ -459,6 +464,7 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
             for (unsigned bit=3;bit<27;++bit) if (animation_flags&(0x80000000U>>bit)) {
                 const auto joint=archive_.u32({hidden->file,hidden->offset+bit*16});
                 if (joint>=4 && joint-4<source_nodes.size()) {
+                    attachment_parents[joint]=static_cast<int>(archive_.u32({hidden->file,hidden->offset+bit*16+4}));
                     const unsigned index=joint-4;
                     setup_parts[index/32]|=0x80000000U>>(index%32);
                 }
@@ -501,6 +507,7 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
         if (!enabled(i)) continue;
         model.nodes.push_back(source_nodes[i]);
         model.source_joint_ids.push_back(static_cast<unsigned>(i)+4);
+        model.source_parent_ids.push_back(attachment_parents.contains(i+4)?attachment_parents.at(i+4):-1);
         model.materials.push_back(source_materials[i]);
     }
     model.meshes.resize(model.nodes.size());

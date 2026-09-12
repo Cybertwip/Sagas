@@ -227,6 +227,11 @@ public:
             const unsigned event_clip=body.status==FighterStatus::Special?FighterCombat::special_event_motion(body):clip;
             if (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_index%3==1 && tic_%3==0)
                 emit({body.position.x,body.position.y+body.attr.height*.5f,0},{255,160,60,220},3,true);
+            if (!body.hitlag && body.status==FighterStatus::Special && body.kind==FighterKind::Ness && body.special_index%3==1 && body.special_phase==1 && !body.special_projectile) {
+                spawn_projectile(i,body);body.special_projectile=true;
+            }
+            if (!body.hitlag && body.status==FighterStatus::Special && (body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi) && body.special_index%3==2 && FighterCombat::special_flag(body,3) && tic_%4==0)
+                emit({body.position.x,body.position.y+30,0},{225,225,225,170},3,false);
             if (!body.hitlag && body.status==FighterStatus::Special && body.kind==FighterKind::Pikachu && body.special_index%3==2 && body.special_phase==1 && !body.special_projectile) {
                 spawn_projectile(i,body);body.special_projectile=true;
             }
@@ -280,9 +285,13 @@ public:
                 captive.capture_motion=captive.capture_next;captive.capture_next=0;
                 captive.capture_frame_origin=holder.action_frame;captive.action_frame=0;
             }
-            const auto attached=captured_model(captive);
-            const auto& matrix=*attached.root_transform;
-            captive.position={matrix[3],matrix[7],matrix[11]};
+            if (inhale) {
+                captive.position={holder.position.x+holder.lr*10,holder.position.y,holder.position.z};
+            } else {
+                const auto attached=captured_model(captive);
+                const auto& matrix=*attached.root_transform;
+                captive.position={matrix[3],matrix[7],matrix[11]};
+            }
             if (inhale) {
                 // Hold the swallowed target until spit input or timeout; links remain interruptible.
                 ++holder.capture_tics;
@@ -300,7 +309,7 @@ public:
                 const int facing=holder.lr;
                 if (holder.throw_backward) holder.lr=-holder.lr;
                 AttackVolume hit{i,{captive.position.x,captive.position.y+captive.attr.width,0},1,
-                    dive?20:inhale?10:damage.damage,dive?361:inhale?361:damage.angle,dive?82:damage.growth,dive?0:damage.weight,dive?30:damage.base,source_jab_hitboxes.front().fgm};
+                    dive?20:inhale?10:damage.damage,dive?361:inhale?361:damage.angle,dive?82:damage.growth,dive?0:damage.weight,dive?30:damage.base,~0U};
                 const auto released=FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&hit,1));
                 hits.insert(hits.end(),released.begin(),released.end());
                 holder.lr=facing;holder.hit_mask=saved;holder.capture_target=-1;
@@ -331,6 +340,18 @@ public:
         hits.insert(hits.end(),fighter_hits.begin(),fighter_hits.end());
         for (auto& shot:projectiles_) {
             ++shot.age;
+            if (shot.weapon==11 && shot.age%16==0) shot.hit_mask=0;
+            if (shot.weapon==10) {
+                const auto& owner=bodies_[shot.owner];
+                if (owner.status!=FighterStatus::Special || owner.special_index%3!=1 || owner.special_phase!=1) shot.life=0;
+                if (std::hypot(owner.stick_x,owner.stick_y)>=45) {
+                    const float angle=std::atan2(shot.velocity.y,shot.velocity.x);
+                    const float desired=std::atan2(float(owner.stick_y),float(owner.stick_x));
+                    const float delta=std::remainder(desired-angle,2*std::numbers::pi_v<float>);
+                    const float next=angle+std::clamp(delta/7.5f,-.104719755f,.104719755f);
+                    shot.velocity={std::cos(next)*60,std::sin(next)*60,0};
+                }
+            }
             if (shot.weapon==9) {
                 bool supported=false;
                 for (const auto& floor:stage_.collision) if (floor.type==0 && floor.a.x!=floor.b.x && shot.position.x>=std::min(floor.a.x,floor.b.x) && shot.position.x<=std::max(floor.a.x,floor.b.x)) {
@@ -348,7 +369,18 @@ public:
                     shot.position.y=y+10;
                     if (shot.weapon==0 || shot.weapon==1) shot.velocity.y=std::abs(shot.velocity.y)*.85f;
                     else if (shot.weapon==6) {shot.weapon=8;shot.velocity={55.f*shot.facing,0,0};shot.gravity=0;}
+                    else if (shot.weapon==5) {shot.weapon=11;shot.velocity={};shot.life=100;shot.gravity=.45f;shot.hit_mask=0;shot.age=0;}
+                    else if (shot.weapon==11) {shot.velocity={};shot.gravity=0;}
                     else shot.life=0;
+                }
+            }
+            if (shot.weapon==10 && shot.age>=30) {
+                auto& owner=bodies_[shot.owner];
+                if (owner.status==FighterStatus::Special && owner.special_phase==1 && std::abs(owner.position.x-shot.position.x)<250 && std::abs(owner.position.y+150-shot.position.y)<370) {
+                    owner.special_velocity={shot.velocity.x*(200.f/60),shot.velocity.y*(200.f/60)};
+                    owner.special_phase=3;owner.special_index=4;owner.special_motion=fighter_source_data[6].special_active[4];owner.action_frame=0;
+                    owner.grounded=false;owner.jumps_used=owner.attr.jumps_max;owner.lr=shot.velocity.x>=0?1:-1;owner.hit_group_epochs.fill(~0U);
+                    shot.life=0;emit(owner.position,{130,170,255,255},12,true);
                 }
             }
             if (shot.weapon==7) {
@@ -374,6 +406,12 @@ public:
             if (shot.weapon==4 && shot.life<80) shot.velocity.x+=(bodies_[shot.owner].position.x>shot.position.x?3.f:-3.f);
             for (unsigned target=0;target<bodies_.size();++target) {
                 const auto& reflector=bodies_[target];
+                if (target!=shot.owner && reflector.kind==FighterKind::Ness && reflector.status==FighterStatus::Special && reflector.special_index%3==2 && reflector.special_phase==1 &&
+                    (shot.weapon==0 || shot.weapon==1 || shot.weapon==2 || shot.weapon==3 || shot.weapon==5 || shot.weapon==6 || shot.weapon==10) &&
+                    std::hypot(shot.position.x-reflector.position.x,shot.position.y-reflector.position.y-reflector.attr.height*.5f)<500) {
+                    bodies_[target].damage=std::max(0.f,reflector.damage-weapon_source_data[shot.weapon].damage*2.f);shot.life=0;
+                    emit(shot.position,{100,220,255,255},8,true);break;
+                }
                 if (target==shot.owner || reflector.kind!=FighterKind::Fox || reflector.status!=FighterStatus::Special || reflector.special_index%3!=2) continue;
                 if (std::hypot(shot.position.x-reflector.position.x,shot.position.y-reflector.position.y-reflector.attr.height*.5f)<reflector.attr.height*.6f) {
                     shot.owner=target;shot.velocity.x=-shot.velocity.x;shot.velocity.y=-shot.velocity.y;shot.facing=-shot.facing;
@@ -382,12 +420,22 @@ public:
             }
             if (shot.life<=0) continue;
             const auto& a=weapon_source_data[shot.weapon];
-            AttackVolume contact{shot.owner,shot.position,a.size*.5f,a.damage,a.angle,a.growth,a.weight,a.base,static_cast<unsigned>(a.sfx),false,0,~0U,static_cast<unsigned>(a.element),true,shot.facing,shot.hit_mask};
+            AttackVolume contact{shot.owner,{shot.position.x,shot.position.y+(shot.weapon==11?200:0),shot.position.z},a.size*.5f,a.damage,a.angle,a.growth,a.weight,a.base,static_cast<unsigned>(a.sfx),false,0,~0U,static_cast<unsigned>(a.element),true,shot.facing,shot.hit_mask};
             auto contacts=FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&contact,1));
             for (const auto& contact_hit:contacts) shot.hit_mask|=1U<<contact_hit.defender;
-            if (!contacts.empty()) {if (shot.weapon!=7) shot.life=0;hits.insert(hits.end(),contacts.begin(),contacts.end());}
+            if (!contacts.empty()) {
+                if (shot.weapon==5 && !contacts.front().shield) {shot.weapon=11;shot.velocity={};shot.life=100;shot.gravity=.45f;shot.age=0;shot.hit_mask=0;}
+                else if (shot.weapon!=7 && shot.weapon!=11) shot.life=0;
+                hits.insert(hits.end(),contacts.begin(),contacts.end());
+            }
             const Color color=a.element==2?Color{130,200,255,255}:shot.weapon==2?Color{255,80,80,255}:Color{255,160,55,255};
             if (shot.weapon<6 && shot.weapon!=2) particles_.push_back({shot.position,{},color,0,3,60.f,true});
+        }
+        for (const auto& shot:projectiles_) if (shot.weapon==10 && shot.life<=0) {
+            auto& owner=bodies_[shot.owner];
+            if(owner.kind==FighterKind::Ness && owner.status==FighterStatus::Special && owner.special_index%3==1 && owner.special_phase==1) {
+                owner.special_phase=2;owner.special_motion=fighter_source_data[6].special_end[owner.special_index];owner.action_frame=0;
+            }
         }
         std::erase_if(projectiles_,[](const auto& shot){return shot.life<=0;});
         for (const auto& hit:hits) {
@@ -395,7 +443,7 @@ public:
             emit({victim.position.x,victim.position.y+victim.attr.height*.5f,0},
                  hit.shield?Color{100,175,255,255}:hit.element==2?Color{125,195,255,255}:Color{255,235,130,255},hit.shield?6:12,true);
             if (!services.deterministic_clock) {
-                services.audio.play_fgm(victim.status==FighterStatus::Captured?nSYAudioFGMCatch:hit.fgm);
+                if(hit.fgm!=~0U)services.audio.play_fgm(victim.status==FighterStatus::Captured?nSYAudioFGMCatch:hit.fgm);
                 const float knockback=std::hypot(victim.vel_damage.x,victim.vel_damage.y);
                 if (!hit.shield && knockback>=100 && tic_>=crowd_next_) {
                     services.audio.play_fgm(knockback>=160?nSYAudioVoicePublicCheer:knockback>=130?nSYAudioVoicePublicAmazed:nSYAudioVoicePublicGaspClap);
@@ -421,16 +469,18 @@ public:
             renderer_->draw(r,model,camera,body.action_frame*(body.status==FighterStatus::Land?body.landing_speed:1.f),
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
         }
-        for (const auto& shot:projectiles_) if (shot.weapon==2 || shot.weapon>=6) {
+        for (const auto& shot:projectiles_) if (shot.weapon==2 || shot.weapon==5 || shot.weapon>=6) {
             if (!weapon_models_.contains(shot.weapon)) {
-                const n64::Address attributes{shot.weapon==2?210U:shot.weapon==9?229U:shot.weapon==7?243U:244U,shot.weapon==9?8U:shot.weapon==7?64U:shot.weapon==8?52U:0U};
-                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon==6 || shot.weapon==2)?0:(shot.weapon==8 || shot.weapon==9)?3:2));
+                const n64::Address attributes{(shot.weapon==5 || shot.weapon==11)?240U:shot.weapon==10?239U:shot.weapon==2?210U:shot.weapon==9?229U:shot.weapon==7?243U:244U,shot.weapon==10?12U:shot.weapon==11?52U:shot.weapon==9?8U:shot.weapon==7?64U:shot.weapon==8?52U:0U};
+                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon==6 || shot.weapon==2 || shot.weapon==5)?0:shot.weapon==11?1:(shot.weapon==8 || shot.weapon==9 || shot.weapon==10)?3:2));
             }
             if (weapon_models_.contains(shot.weapon)) {
                 auto weapon=weapon_models_.at(shot.weapon);weapon.position=shot.position;weapon.rotation.y=shot.facing*std::numbers::pi_v<float>/2;
+                if (shot.weapon==10 || shot.weapon==5) weapon.rotation={0,0,std::atan2(shot.velocity.y,shot.velocity.x)};
+                if (shot.weapon==11) {weapon.rotation={};const float scale=.5f+.5f*shot.life/100.f;weapon.scale={scale,scale,scale};}
                 if (shot.weapon==2) {weapon.rotation={0,0,shot.facing<0?std::numbers::pi_v<float>:0};weapon.scale.x=std::min(160.f/3,1+shot.age*(16.f/3));}
                 if (shot.weapon==7) weapon.scale={.5f,.5f,.5f};
-                renderer_->draw(r,weapon,camera,static_cast<float>(tic_));
+                renderer_->draw(r,weapon,camera,static_cast<float>(shot.age));
             }
         }
         renderer_->end(r);
@@ -632,6 +682,8 @@ private:
         if (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_phase==3)
             model.rotation.z=body.lr*std::numbers::pi_v<float>/2-std::atan2(body.special_velocity.x,body.special_velocity.y);
         model.scale={body.attr.size,body.attr.size,body.attr.size};
+        if (body.kind==FighterKind::Ness && body.status==FighterStatus::Special && body.special_index%3==1 && body.special_phase==3)
+            model.rotation.z=std::atan2(body.special_velocity.y,body.special_velocity.x)-(body.lr<0?std::numbers::pi_v<float>:0);
         if (body.kind==FighterKind::Pikachu && body.status==FighterStatus::Special && body.special_index%3==1 && body.special_phase==3) {
             model.rotation.z=body.lr*std::numbers::pi_v<float>/2-std::atan2(body.special_velocity.x,body.special_velocity.y);
             model.scale={body.attr.size*.8f,body.attr.size*.8f,body.attr.size*1.2f};
@@ -643,6 +695,14 @@ private:
     struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity;unsigned hit_mask{};int age{}; };
     std::vector<Projectile> projectiles_;
     void spawn_projectile(unsigned owner,const FighterBody& body) {
+        if (body.kind==FighterKind::Ness && body.special_index%3==1 && body.special_phase==1) {
+            const auto origin=renderer_->joint_point(posed(body),body.action_frame,12);
+            projectiles_.push_back({owner,10,{origin.x,origin.y,0},{0,60,0},160,body.lr,0});return;
+        }
+        if (body.kind==FighterKind::Ness && body.special_index%3==0) {
+            const float angle=body.grounded?-.06283185f:-.6632251f,speed=body.grounded?73.f:95.f;
+            projectiles_.push_back({owner,5,{body.position.x+body.lr*100,body.position.y+180,0},{std::cos(angle)*speed*body.lr,std::sin(angle)*speed,0},20,body.lr,0});return;
+        }
         if (body.kind==FighterKind::Kirby && body.special_index%3==1 && body.special_phase==2) {
             projectiles_.push_back({owner,9,{body.position.x+body.lr*200,body.position.y,0},{body.lr*100.f,0,0},20,body.lr,0});return;
         }
@@ -724,7 +784,7 @@ private:
             }
         }
         auto displayed=particles_;
-        for (const auto& body:bodies_) if (body.status==FighterStatus::Shield || (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_index%3==2)) {
+        for (const auto& body:bodies_) if (body.status==FighterStatus::Shield || (body.status==FighterStatus::Special && (body.kind==FighterKind::Fox || body.kind==FighterKind::Ness) && body.special_index%3==2)) {
             const bool shield=body.status==FighterStatus::Shield;
             const float radius=body.attr.height*(shield?.42f+.25f*body.shield/55.f:.6f);
             displayed.push_back({{body.position.x,body.position.y+body.attr.height*.5f,body.position.z},{},shield?Color{255,100,120,180}:Color{100,210,255,210},0,1,radius,false,true,shield?32:6});

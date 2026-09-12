@@ -85,6 +85,8 @@ for idx,name in enumerate(names):
     loop=special_ids['SpecialAirHiFall'];end=special_ids['SpecialHiLanding']
     event_names[1]='SpecialAirHiFall';event_names[2]='SpecialHiLanding'
    for phase,event_name in enumerate(event_names):special_events[phase].append(special_event_ids.get(event_name,0))
+   if name=='Ness' and direction=='Hi':
+    special_active[-1]=special_ids[stem+'Jibaku'];special_events[3][-1]=special_event_ids[stem+'Jibaku']
    special_start.append(start);special_loop.append(loop);special_end.append(end)
  capture=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('CapturePulled','ThrownCommon','CaptureCaptain')]
  guard=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('GuardOn','GuardOff','EscapeF','EscapeB')]

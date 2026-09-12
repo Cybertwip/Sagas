@@ -3,7 +3,7 @@
 #include <array>
 namespace sagas {
 struct WeaponSourceData { int size,damage,angle,growth,weight,base,element,sfx; };
-inline constexpr std::array<WeaponSourceData,10> weapon_source_data{{
+inline constexpr std::array<WeaponSourceData,12> weapon_source_data{{
     {200,6,361,25,0,10,1,28}, // Luigi
     {200,7,361,25,0,10,1,28}, // Mario
     {40,6,10,100,1,0,0,2}, // Fox
@@ -14,5 +14,7 @@ inline constexpr std::array<WeaponSourceData,10> weapon_source_data{{
     {400,12,70,50,0,80,2,23}, // Pikachu Thunder trail
     {200,7,361,20,0,10,2,23}, // Pikachu grounded Thunder Jolt (US)
     {250,6,361,50,0,70,3,262}, // Kirby Final Cutter
+    {150,6,100,30,0,50,2,23}, // Ness PK Thunder head
+    {200,3,70,10,0,4,1,28}, // Ness PK Fire flame
 }};
 }

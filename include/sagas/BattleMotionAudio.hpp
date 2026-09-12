@@ -3,11 +3,7 @@
 #include <array>
 namespace sagas {
 struct BattleMotionSound { unsigned motion, frame, fgm; };
-inline constexpr std::array<BattleMotionSound,1832> battle_motion_sounds{{
-    {501,10,122},
-    {501,40,122},
-    {502,10,122},
-    {502,30,122},
+inline constexpr std::array<BattleMotionSound,1828> battle_motion_sounds{{
     {504,0,121},
     {505,2,110},
     {505,17,110},

@@ -27,7 +27,10 @@ def extract(decomp, manifest, battle=False):
             scripts[name] = re.findall(r'(ftMotion\w+)\(([^()]*)\)', body)
     desc = (decomp/'src/ft/ftdata.c').read_text()
     mapping = {}
-    for clip, script in re.findall(r'\{?\s*&ll(\w+)FileID,\s*(\w+),', desc):
+    audio_desc=desc
+    if battle:
+        audio_desc='\n'.join(re.search(r'FTMotionDesc dFT'+name+r'MotionDescs\[\]\s*=\s*\{(.*?)\n\};',desc,re.S)[1] for name in ['Mario','Luigi','Donkey','Link','Samus','Captain','Ness','Yoshi','Kirby','Fox','Pikachu','Purin'])
+    for clip, script in re.findall(r'\{?\s*&ll(\w+)FileID,\s*(\w+),', audio_desc):
         if clip in ids and script in scripts:
             mapping.setdefault(ids[clip], script)
     if battle:

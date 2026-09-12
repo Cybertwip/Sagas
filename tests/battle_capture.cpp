@@ -7,7 +7,7 @@
 #include <iostream>
 using namespace sagas;
 int main(int argc,char** argv) {
-    if(argc!=2)return 2;
+    if(argc<2)return 2;
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER,"dummy");assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO));
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_CORE);SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24);
@@ -16,8 +16,10 @@ int main(int argc,char** argv) {
     {
         AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);RenderEngine render(window,assets);AudioEngine audio(assets);
         PhysicsWorld physics;SceneResourceManager resources(assets);Services services{assets,render,audio,physics,resources,true};
-        for(auto kind:{FighterKind::Mario,FighterKind::Fox,FighterKind::Samus,FighterKind::Link,FighterKind::Yoshi,FighterKind::Kirby,FighterKind::Captain,FighterKind::Pikachu,FighterKind::Purin}) {
+        for(auto kind:{FighterKind::Luigi,FighterKind::Mario,FighterKind::Ness,FighterKind::Fox,FighterKind::Samus,FighterKind::Link,FighterKind::Yoshi,FighterKind::Kirby,FighterKind::Captain,FighterKind::Pikachu,FighterKind::Purin}) {
+            if(argc>2 && fighter_kind_name(kind)!=argv[2])continue;
             for(int move=0;move<4;++move) {
+                if(argc>3 && move!=std::stoi(argv[3]))continue;
                 auto battle=make_battle_scene(std::vector<FighterKind>{kind,FighterKind::Mario},3,{0,1});battle->enter(services);
                 bool saw_projectile=false;
                 for(int frame=0;frame<170;++frame) {
@@ -30,13 +32,14 @@ int main(int argc,char** argv) {
                     if(frame==90)assert(battle_fighters(*battle)[0].status==(move==0?FighterStatus::Catch:FighterStatus::Special));
                     if(kind==FighterKind::Kirby && move==2)saw_projectile|=battle_projectile_count(*battle,9)>0;
                     if(kind==FighterKind::Pikachu && move==3)saw_projectile|=battle_projectile_count(*battle,7)>0;
+                    if(kind==FighterKind::Ness && move==2)saw_projectile|=battle_projectile_count(*battle,10)>0;
                     if(kind==FighterKind::Fox && move==1)saw_projectile|=battle_projectile_count(*battle,2)>0;
                     if(frame==96 || frame==110 || frame==120 || frame==135 || frame==155) {
                         render.request_capture(out/(std::string(fighter_kind_name(kind))+"-"+std::to_string(move)+"-"+std::to_string(frame-90)+".png"));
                         battle->draw(services);
                     }
                 }
-                if((kind==FighterKind::Kirby && move==2) || (kind==FighterKind::Pikachu && move==3) || (kind==FighterKind::Fox && move==1))assert(saw_projectile);
+                if((kind==FighterKind::Kirby && move==2) || (kind==FighterKind::Pikachu && move==3) || (kind==FighterKind::Fox && move==1) || (kind==FighterKind::Ness && move==2))assert(saw_projectile);
                 std::cout<<fighter_kind_name(kind)<<" "<<move<<std::endl;
             }
         }

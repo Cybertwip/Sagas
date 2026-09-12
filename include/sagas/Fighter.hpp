@@ -78,7 +78,7 @@ struct FighterBody {
     bool special_projectile{},special_held{};
     Vec2 special_velocity{};
     int aerial_buffer{};
-    bool special_second{},special_direction_checked{};
+    bool special_second{},special_direction_checked{},tornado_spent{};
     unsigned damage_motion{};
     bool damage_tumble{};
     unsigned down_face{1},down_motion{};

@@ -26,6 +26,7 @@ struct Model3D {
     enum class FighterWrapper { None, TransN, XRotN };
     std::vector<n64::Node> nodes;
     std::vector<unsigned> source_joint_ids;
+    std::optional<float> joint4_rotation_x;
     std::vector<int> source_parent_ids; // Runtime-added FTHiddenPart attachment parents.
     std::vector<std::array<float,3>> imported_rest_offsets;
     struct ImportedPivot { int parent{-1}; Vec3 segment_delta{}; };

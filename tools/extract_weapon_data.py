@@ -29,6 +29,6 @@ rows.append([size_angle>>16,(combat>>14)&255,(size_angle>>6)&1023,combat>>22,com
 names.append('Kirby Final Cutter')
 # Ness PK Thunder and the US PK Fire flame item contact fields.
 rows.append([150,6,100,30,0,50,2,23]);names.append('Ness PK Thunder head')
-rows.append([200,3,70,10,0,4,1,28]);names.append('Ness PK Fire flame')
+rows.append([200,3,70,10,0,4,1,27]);names.append('Ness PK Fire flame')
 out=root/'sagas/include/sagas/WeaponSourceData.hpp'
 out.write_text('// Generated from US WPAttributes by extract_weapon_data.py.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct WeaponSourceData { int size,damage,angle,growth,weight,base,element,sfx; };\ninline constexpr std::array<WeaponSourceData,12> weapon_source_data{{\n'+''.join('    {'+','.join(map(str,row))+'}, // '+name+'\n' for name,row in zip(names,rows))+'}};\n}\n')

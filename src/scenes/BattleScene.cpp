@@ -30,6 +30,7 @@ public:
         }
     }
     std::span<const FighterBody> fighters() const {return bodies_;}
+    std::vector<BattleProjectileView> projectiles() const {std::vector<BattleProjectileView> out;for(const auto& p:projectiles_)out.push_back({p.weapon,p.owner,p.position,p.velocity});return out;}
     std::size_t projectile_count(unsigned weapon) const {return std::count_if(projectiles_.begin(),projectiles_.end(),[&](const auto& shot){return shot.weapon==weapon;});}
     void enter(Services& services) override {
         assets_=&services.assets;
@@ -680,7 +681,7 @@ private:
         model.position=body.position;model.rotation.y=body.lr*std::numbers::pi_v<float>/2;
         if (body.status==FighterStatus::Captured) model.rotation.z=body.capture_rotation;
         if (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_phase==3)
-            model.rotation.z=body.lr*std::numbers::pi_v<float>/2-std::atan2(body.special_velocity.x,body.special_velocity.y);
+            model.joint4_rotation_x=std::atan2(body.special_velocity.x,body.special_velocity.y)*body.lr-std::numbers::pi_v<float>/2;
         model.scale={body.attr.size,body.attr.size,body.attr.size};
         if (body.kind==FighterKind::Ness && body.status==FighterStatus::Special && body.special_index%3==1 && body.special_phase==3)
             model.rotation.z=std::atan2(body.special_velocity.y,body.special_velocity.x)-(body.lr<0?std::numbers::pi_v<float>:0);
@@ -758,7 +759,7 @@ private:
         };
         for (const auto& body:bodies_) {
             if ((body.status==FighterStatus::Catch || body.status==FighterStatus::CatchWait) &&
-                (body.kind==FighterKind::Samus || body.kind==FighterKind::Link || body.kind==FighterKind::Yoshi)) {
+                (body.kind==FighterKind::Samus || body.kind==FighterKind::Link)) {
                 const bool samus=body.kind==FighterKind::Samus,yoshi=body.kind==FighterKind::Yoshi;
                 const auto model=posed(body);
                 const auto hand=renderer_->joint_point(model,body.action_frame,samus?16:yoshi?4:16);
@@ -842,6 +843,9 @@ private:
 }
 std::span<const FighterBody> battle_fighters(const Scene& scene) {
     const auto* battle=dynamic_cast<const BattleScene*>(&scene);return battle?battle->fighters():std::span<const FighterBody>{};
+}
+std::vector<BattleProjectileView> battle_projectiles(const Scene& scene) {
+    const auto* battle=dynamic_cast<const BattleScene*>(&scene);return battle?battle->projectiles():std::vector<BattleProjectileView>{};
 }
 std::size_t battle_projectile_count(const Scene& scene,unsigned weapon) {
     const auto* battle=dynamic_cast<const BattleScene*>(&scene);return battle?battle->projectile_count(weapon):0;

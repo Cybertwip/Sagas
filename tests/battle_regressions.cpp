@@ -11,6 +11,13 @@ int main() {
     AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);
     n64::RelocArchive archive(assets);
     Scene3DLoader loader(archive);Scene3DRenderer renderer(archive);
+    {
+        auto m=loader.fighter_motion(FighterKind::Donkey,844,fighter_motion_flags(844));
+        loader.set_fighter_part(m,FighterKind::Donkey,12,1);
+        auto i=std::find(m.source_joint_ids.begin(),m.source_joint_ids.end(),12)-m.source_joint_ids.begin();
+        for(auto& a:m.materials[i])std::cout<<"mat "<<a.flags<<" "<<int(a.primitive.r)<<" light "<<(a.light1?int(a.light1->r):-1)<<" "<<(a.light2?int(a.light2->r):-1)<<std::endl;
+        for(unsigned v=0;v<m.meshes[i].vertices.size();v+=30) {auto& a=m.meshes[i].vertices[v];std::cout<<"vertex "<<v<<" mat "<<a.material_index<<" lit "<<a.lit<<" tex "<<bool(a.texture)<<" shade "<<int(a.shade.r)<<" light "<<(a.light1?int(a.light1->r):-1)<<" "<<(a.light2?int(a.light2->r):-1)<<" prim "<<int(a.rdp.primitive.r)<<std::endl;}
+    }
     for(unsigned kind=0;kind<12;++kind) {
         const auto& data=fighter_source_data[kind];
         auto model=loader.fighter_motion(static_cast<FighterKind>(kind),data.grab[0],fighter_motion_flags(data.grab[0]));
@@ -74,6 +81,23 @@ int main() {
         assert(weapon_source_data[9].damage>0);
         auto blade=loader.weapon({229,8},3);assert(!blade.nodes.empty());
         auto laser=loader.weapon({210,0},0);assert(!laser.meshes.empty());
+    }
+    for(auto kind:{FighterKind::Mario,FighterKind::Luigi}) {
+        FighterBody b;b.kind=kind;b.attr=fighter_attributes(kind);b.stick_y=-80;
+        assert(FighterCombat::start_special(b,true));
+        for(int frame=0;frame<80;++frame) {
+            b.action_frame=frame;
+            if(!FighterCombat::special_flag(b,3) || FighterCombat::special_flag(b,2))continue;
+            b.vel_air.y=0;
+            FighterCombat::advance_special(b,true,false);
+            assert(!b.grounded && b.vel_air.y==22 && b.special_index==5);
+            b.tornado_spent=true;b.vel_air.y=0;
+            FighterCombat::advance_special(b,true,false);
+            assert(b.vel_air.y==0);
+            break;
+        }
+        b={};b.kind=kind;b.attr=fighter_attributes(kind);b.grounded=false;b.lr=1;b.stick_x=-80;b.stick_y=80;
+        assert(FighterCombat::start_special(b,true));assert(b.lr==-1);
     }
     std::cout<<"Battle regressions passed\n";
 }

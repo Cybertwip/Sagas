@@ -127,6 +127,8 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
             n64::AnimationDecoder::apply(node, model.fighter_animation
                 ? animation.sample16(*model.animation[node_index],frame,animation.pose(node))
                 : animation.sample(*model.animation[node_index],frame,animation.pose(node)));
+        if (model.joint4_rotation_x && node_index<model.source_joint_ids.size() && model.source_joint_ids[node_index]==4)
+            node.rotate[0]=*model.joint4_rotation_x;
         if (node_index<model.imported_rest_offsets.size())
             for (unsigned axis=0;axis<3;++axis) node.translate[axis]+=model.imported_rest_offsets[node_index][axis];
         const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));

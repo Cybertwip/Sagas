@@ -7,7 +7,7 @@
 #include <iostream>
 using namespace sagas;
 int main(int argc,char** argv) {
-    if(argc!=2)return 2;
+    if(argc<2)return 2;
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER,"dummy");assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO));
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_CORE);SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24);
@@ -17,8 +17,10 @@ int main(int argc,char** argv) {
         AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);RenderEngine render(window,assets);AudioEngine audio(assets);
         PhysicsWorld physics;SceneResourceManager resources(assets);Services services{assets,render,audio,physics,resources,true};
         for(auto kind:{FighterKind::Mario,FighterKind::Fox,FighterKind::Samus,FighterKind::Link,FighterKind::Yoshi,FighterKind::Kirby}) for(int direction=0;direction<(kind==FighterKind::Kirby?3:2);++direction) {
+            if(argc>2 && fighter_kind_name(kind)!=argv[2])continue;
+            if(argc>3 && direction!=std::stoi(argv[3]))continue;
             auto battle=make_battle_scene(std::vector<FighterKind>{kind,FighterKind::Donkey},3,{0,1});battle->enter(services);
-            bool initiated=false,caught=false,released=false,thrown=false;int caught_at=0;
+            bool initiated=false,caught=false,released=false,thrown=false;int caught_at=0,released_at=0;
             for(int frame=0;frame<650;++frame) {
                 InputState input;input.controllers[0].connected=true;
                 const auto before=battle_fighters(*battle);
@@ -47,7 +49,11 @@ int main(int argc,char** argv) {
                 if(caught && (frame==caught_at+1 || frame==caught_at+15 || (thrown && after[0].action_frame==5))) {
                     render.request_capture(out/(std::string(fighter_kind_name(kind))+"-"+std::to_string(direction)+"-"+std::to_string(frame-caught_at)+".png"));battle->draw(services);
                 }
-                if(caught && after[1].captured_by<0 && after[1].damage>0) {released=true;assert(!after[1].swallowed);break;}
+                if(caught && !released && after[1].captured_by<0 && after[1].damage>0) {released=true;released_at=frame;assert(!after[1].swallowed);}
+                if(released && (frame==released_at+30 || frame==released_at+90)) {
+                    render.request_capture(out/(std::string(fighter_kind_name(kind))+"-"+std::to_string(direction)+"-released-"+std::to_string(frame-released_at)+".png"));battle->draw(services);
+                    if(frame==released_at+90)break;
+                }
             }
             std::cout<<fighter_kind_name(kind)<<" direction "<<direction<<" caught "<<caught<<" released "<<released<<std::endl;
             assert(initiated && caught && released);

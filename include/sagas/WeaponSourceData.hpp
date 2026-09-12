@@ -15,6 +15,6 @@ inline constexpr std::array<WeaponSourceData,12> weapon_source_data{{
     {200,7,361,20,0,10,2,23}, // Pikachu grounded Thunder Jolt (US)
     {250,6,361,50,0,70,3,262}, // Kirby Final Cutter
     {150,6,100,30,0,50,2,23}, // Ness PK Thunder head
-    {200,3,70,10,0,4,1,28}, // Ness PK Fire flame
+    {200,3,70,10,0,4,1,27}, // Ness PK Fire flame
 }};
 }

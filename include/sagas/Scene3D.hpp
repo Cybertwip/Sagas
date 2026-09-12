@@ -83,6 +83,7 @@ public:
                                 std::string_view material_animation = {});
     void apply_custom_mesh(Model3D& model, std::span<const std::byte> bytes);
     [[nodiscard]] Model3D weapon(n64::Address attributes,unsigned render_flags);
+    void set_fighter_part(Model3D& model, FighterKind kind, unsigned joint, int part);
     [[nodiscard]] Stage3D stage(std::string_view header);
     [[nodiscard]] Model3D model(n64::Address descriptor,
                                 std::optional<n64::Address> animation, GeometryLayout layout,

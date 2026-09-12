@@ -10,6 +10,7 @@
 #include <sagas/BattleMotionAudio.hpp>
 #include <sagas/BattleCallbackData.hpp>
 #include <unordered_set>
+#include <map>
 
 #include <algorithm>
 #include <cmath>
@@ -602,6 +603,19 @@ private:
             models_.emplace(key,loader_->fighter_motion(body.kind,clip,flags));
         }
         auto model=models_.at(key);
+        const unsigned event=body.status==FighterStatus::Special?FighterCombat::special_event_motion(body):clip;
+        std::map<unsigned,int> parts;
+        for (const auto& change:source_model_parts) if(change.kind==static_cast<unsigned>(body.kind) && change.motion==event && change.frame<=static_cast<unsigned>(body.action_frame)) {
+            if(change.joint<0)parts.clear();else parts[change.joint]=change.part;
+        }
+        if (!parts.empty()) {
+            std::string variant=std::to_string(key);
+            for(const auto& [joint,part]:parts)variant+=":"+std::to_string(joint)+"="+std::to_string(part);
+            if(!part_models_.contains(variant)) {
+                for(const auto& [joint,part]:parts)loader_->set_fighter_part(model,body.kind,joint,part);
+                part_models_.emplace(variant,model);
+            } else model=part_models_.at(variant);
+        }
         if (!body.custom_model.empty()) {
             const auto custom_key=body.custom_model+":"+std::to_string(key);
             if (!custom_models_.contains(custom_key)) {
@@ -622,6 +636,7 @@ private:
         }
         return model;
     }
+    std::unordered_map<std::string,Model3D> part_models_;
     std::unordered_map<unsigned,Model3D> weapon_models_;
     struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity;unsigned hit_mask{};int age{}; };
     std::vector<Projectile> projectiles_;

@@ -377,6 +377,45 @@ Stage3D Scene3DLoader::stage(std::string_view header) {
     return result;
 }
 
+void Scene3DLoader::set_fighter_part(Model3D& model,FighterKind kind,unsigned joint,int part) {
+    const auto found=std::find(model.source_joint_ids.begin(),model.source_joint_ids.end(),joint);
+    if (found==model.source_joint_ids.end() || joint<4) return;
+    const unsigned node=found-model.source_joint_ids.begin();
+    if (part<0) {model.meshes[node]={};model.parent_meshes[node]={};return;}
+    static constexpr n64::Address attributes[]{{221,0x580},{203,0x428},{213,0x4a4},{225,0x708},{217,0x610},{236,0x488},{239,0x5bc},{247,0x47c},{229,0x808},{209,0x46c},{243,0x41c},{233,0x474}};
+    const auto attr=attributes[static_cast<unsigned>(kind)];
+    const auto container=archive_.resolve({attr.file,attr.offset+0x328});
+    const auto desc=container?archive_.resolve({container->file,container->offset+(joint-4)*4}):std::nullopt;
+    if (!desc) return; // Default geometry is already present.
+    const n64::Address variant{desc->file,desc->offset+static_cast<unsigned>(part)*40};
+    const auto display=archive_.resolve(variant);
+    n64::DisplayListDecoder decoder(archive_);
+    auto materials=decoder.materials({variant.file,variant.offset+4},1);
+    const auto costumes=archive_.resolve({variant.file,variant.offset+8});
+    if (costumes) {
+        n64::AnimationDecoder animation(archive_);
+        for(unsigned i=0;i<materials[0].size();++i) if(const auto script=archive_.resolve({costumes->file,costumes->offset+i*4})) {
+            auto& material=materials[0][i];n64::MaterialPose initial;initial.colors[0]=material.primitive;
+            if(material.light1)initial.colors[3]=*material.light1;
+            if(material.light2)initial.colors[4]=*material.light2;
+            const auto pose=animation.sample_material(*script,0,initial);
+            material.primitive=pose.colors[0];if(material.light1)material.light1=pose.colors[3];if(material.light2)material.light2=pose.colors[4];
+            if(material.sprites)material.image=archive_.resolve({material.sprites->file,material.sprites->offset+4U*static_cast<unsigned>(pose.tracks[0])});
+            if(material.palettes)material.palette=archive_.resolve({material.palettes->file,material.palettes->offset+4U*static_cast<unsigned>(pose.tracks[9])});
+        }
+    }
+    model.materials[node]=materials[0];model.parent_meshes[node]={};
+    const auto flags=std::to_integer<unsigned>(archive_.bytes(variant.file)[variant.offset+16]);
+    if (!display) model.meshes[node]={};
+    else if(flags&1) {
+        const std::array<std::optional<n64::Address>,1> pairs{display};
+        auto decoded=decoder.decode_joint_tree(pairs,materials,true);
+        model.parent_meshes[node]=std::move(decoded.before[0]);model.meshes[node]=std::move(decoded.after[0]);
+    } else model.meshes[node]=decoder.decode(*display,materials[0]);
+    // The part's material animation table has the same one-node layout as its materials.
+    model.material_animation[node]=material_animation_table(archive_,{variant.file,variant.offset+12},materials)[0];
+}
+
 Model3D Scene3DLoader::fighter_motion(FighterKind kind, unsigned clip, std::uint32_t flags) {
     const auto spec=fighter_model_spec(kind);
     auto actor=fighter_model(spec.descriptor,spec.joint_pairs ? GeometryLayout::JointPairs :

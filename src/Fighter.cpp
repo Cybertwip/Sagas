@@ -1,4 +1,5 @@
 #include <sagas/Fighter.hpp>
+#include <sagas/BattleCallbackData.hpp>
 #include <sagas/FighterSourceData.hpp>
 #include <sagas/FighterAttackData.hpp>
 #include <limits>
@@ -144,6 +145,11 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     if (body.status==FighterStatus::KO || body.status==FighterStatus::Captured) return;
     if (body.invincible>0) --body.invincible;
     if (body.hitlag>0) { --body.hitlag; return; }
+    if (body.status==FighterStatus::Sleep) {
+        body.jump_pressed=false;body.vel_ground=0;
+        if (--body.sleep_tics<=0) {body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;body.action_frame=0;}
+        return;
+    }
     if (body.cliff_cooldown>0) --body.cliff_cooldown;
     if (body.drop_frames>0) --body.drop_frames;
     if (body.grounded) {
@@ -239,7 +245,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         if ((body.status==FighterStatus::Attack || body.status==FighterStatus::Special || body.status==FighterStatus::CatchWait || body.status==FighterStatus::Throw || body.status==FighterStatus::DownRoll || body.status==FighterStatus::ShieldRoll || body.status==FighterStatus::DownAttack) && motion) {
             if (const auto authored=motion(body)) {
                 body.vel_ground=authored->x*body.lr;body.vel_air.z=authored->z;
-                if (body.status==FighterStatus::Special && authored->y>0) {body.grounded=false;body.vel_air.y=authored->y;body.jumps_used=std::max(1,body.jumps_used);}
+                if (body.status==FighterStatus::Special && body.kind==FighterKind::Kirby && body.special_index%3==1 && authored->y>0) {body.grounded=false;body.vel_air.y=authored->y;body.jumps_used=std::max(1,body.jumps_used);}
             }
         }
         body.vel_air.x=body.vel_ground*body.lr*body.floor_tangent.x;
@@ -282,9 +288,22 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 } else if (body.special_phase!=2) body.vel_air={};
             } else if (body.kind==FighterKind::Fox && body.special_index%3==2) {
                 body.vel_air.x*=.8f;body.vel_air.y=body.special_tics<=4?0:std::max(-body.attr.tvel_base,body.vel_air.y+body.attr.gravity-.8f);
-            } else if (motion) {
-                if (const auto authored=motion(body)) body.vel_air=*authored;
+            } else if (body.kind==FighterKind::Captain && body.special_index%3==0) {
+                // Falcon Punch uses a one-shot angled boost, not TransN in air.
+                const int flag=FighterCombat::special_flag(body,2);
+                if (FighterCombat::special_flag(body,1) && !body.special_second) {
+                    body.special_second=true;
+                    const float angle=std::copysign(std::clamp(std::abs(body.stick_y)-10,0,40)*(.5235987756f/40),float(body.stick_y));
+                    body.vel_air={std::cos(angle)*65*body.lr,std::sin(angle)*65,0};
+                } else if (flag<2) {
+                    body.vel_air.y+=body.attr.gravity;
+                    if (flag==1) {body.vel_air.x*=.92f;body.vel_air.y*=.92f;}
+                }
+            } else if (body.kind==FighterKind::Kirby && body.special_index%3==1) {
+                if (body.special_phase==1) body.vel_air.y=-body.attr.tvel_fast;
+                else if (motion) if (const auto authored=motion(body)) body.vel_air.y=authored->y;
             }
+
         }
         if (body.status==FighterStatus::Jump) ++body.jump_frames;
     }
@@ -359,7 +378,14 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 if (flag && body.shield_tics>10 && !body.landing_motion) body.landing_motion=data.landing;
                 body.aerial_attack=-1;body.attack_motion=0;body.jab_stage=0;body.hit_mask=0;
                 body.status=FighterStatus::Land;body.action_frame=0;
-            } else if (body.status==FighterStatus::Special && body.special_index%3!=1) {
+            } else if (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_index%3==0) {
+                body.status=FighterStatus::Land;body.land_frames=4;body.landing_motion=0;body.action_frame=0;
+                body.special_projectile=true; // Landing cannot execute the grounded shot script.
+            } else if (body.status==FighterStatus::Special && body.kind==FighterKind::Kirby && body.special_index%3==1) {
+                body.special_phase=2;body.special_index=1;
+                body.special_motion=fighter_source_data[static_cast<unsigned>(body.kind)].special_end[1];
+                body.action_frame=0;body.special_projectile=false;
+            } else if (body.status==FighterStatus::Special && (body.special_index%3!=1 || body.kind==FighterKind::Purin)) {
                 const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
                 body.special_index%=3;
                 body.special_motion=body.special_phase==0?data.special_start[body.special_index]:body.special_phase==1?data.special_loop[body.special_index]:body.special_phase==4?data.special_hit[body.special_index]:data.special_end[body.special_index];
@@ -375,7 +401,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         body.status=FighterStatus::Fall;body.action_frame=0;
         body.vel_air.x=std::clamp(body.vel_air.x,-body.attr.air_speed_max_x,body.attr.air_speed_max_x);
     }
-    if (was_grounded && !body.grounded && body.status==FighterStatus::Special && body.special_index%3!=1) {
+    if (was_grounded && !body.grounded && body.status==FighterStatus::Special && (body.special_index%3!=1 || body.kind==FighterKind::Purin)) {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];body.special_index=body.special_index%3+3;
         body.special_motion=body.special_phase==0?data.special_start[body.special_index]:body.special_phase==1?data.special_loop[body.special_index]:body.special_phase==4?data.special_hit[body.special_index]:data.special_end[body.special_index];
     }
@@ -470,6 +496,15 @@ void FighterCombat::advance_down(FighterBody& body,bool attack,bool stand,bool a
     body.action_frame=0;body.vel_ground=0;body.jump_pressed=false;
 }
 
+int FighterCombat::special_flag(const FighterBody& body,unsigned flag) {
+    int value=0;
+    const unsigned event=special_event_motion(body);
+    if (flag==1) {
+        for (const auto& f:source_motion_flags) if (f.kind==static_cast<unsigned>(body.kind) && f.motion==event && f.frame<=static_cast<unsigned>(body.action_frame)) value=f.value;
+    } else for (const auto& f:source_special_flags) if (f.kind==static_cast<unsigned>(body.kind) && f.motion==event && f.flag==flag && f.frame<=static_cast<unsigned>(body.action_frame)) value=f.value;
+    return value;
+}
+
 unsigned FighterCombat::special_event_motion(const FighterBody& body) {
     return fighter_source_data[static_cast<unsigned>(body.kind)].special_events[std::min(4U,body.special_phase)][body.special_index];
 }
@@ -496,6 +531,18 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
     ++body.special_tics;
     const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
     const auto index=body.special_index;
+    if (body.kind==FighterKind::Kirby && index%3==1) {
+        if (animation_ended && body.special_phase==0) {
+            body.special_phase=1;body.special_motion=data.special_loop[index];body.action_frame=0;
+            body.grounded=false;body.vel_air.y=-body.attr.tvel_fast;body.jumps_used=body.attr.jumps_max;
+        } else if (animation_ended && body.special_phase==2) {body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;body.action_frame=0;}
+        return;
+    }
+    if (body.kind==FighterKind::Kirby && index%3==0 && body.capture_target>=0) return;
+    if (body.kind==FighterKind::Fox && index%3==0 && pressed && special_flag(body,1)) {
+        body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
+        start_special(body,true);return;
+    }
     if (body.kind==FighterKind::Fox && index%3==2 && body.special_tics>=4 && body.jump_pressed && (body.grounded || body.jumps_used<body.attr.jumps_max)) {
         body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;return;
     }
@@ -719,18 +766,35 @@ std::vector<FighterHit> FighterCombat::resolve(std::span<FighterBody> bodies,std
             if (defender.status==FighterStatus::Captured) continue;
             if (hit.grab) {
                 if (attacker.capture_target>=0 || defender.status==FighterStatus::DownBounce || defender.status==FighterStatus::DownWait) continue;
+                const bool inhale=attacker.kind==FighterKind::Kirby && attacker.status==FighterStatus::Special && attacker.special_index%3==0 && attacker.special_phase==1;
                 const bool dive=attacker.kind==FighterKind::Captain && attacker.status==FighterStatus::Special && attacker.special_index%3==1;
                 attacker.capture_target=static_cast<int>(i);attacker.status=dive?FighterStatus::Special:FighterStatus::CatchWait;
                 if (dive) {attacker.special_phase=4;attacker.special_motion=fighter_source_data[static_cast<unsigned>(attacker.kind)].special_hit[attacker.special_index];attacker.vel_air={};}
                 attacker.action_frame=0;attacker.capture_tics=0;attacker.vel_ground=0;
-                defender.captured_dive=dive;
+                defender.captured_dive=dive;defender.captured_throw=false;
+                defender.capture_motion=0;defender.capture_next=0;defender.capture_frame_origin=0;
+                defender.swallowed=attacker.kind==FighterKind::Yoshi;
+                if (inhale) {
+                    attacker.status=FighterStatus::Special;attacker.special_phase=4;
+                    attacker.special_motion=fighter_source_data[8].special_hit[attacker.special_index];defender.swallowed=true;
+                }
                 defender.captured_by=static_cast<int>(hit.owner);defender.status=FighterStatus::Captured;
                 defender.action_frame=0;defender.vel_air={};defender.vel_damage={};defender.vel_ground=0;
                 defender.attack_motion=0;defender.aerial_attack=-1;defender.hitlag=0;
                 hits.push_back({hit.owner,i,false,hit.fgm});
                 break;
             }
+            if (hit.element==6) {
+                // Sing only affects grounded, unshielded targets; it does no damage/knockback.
+                if (!defender.grounded || defender.status==FighterStatus::Shield || defender.status==FighterStatus::Sleep) continue;
+                mask|=1U<<i;defender.status=FighterStatus::Sleep;defender.action_frame=0;
+                defender.sleep_tics=std::max(0,300-static_cast<int>(defender.damage))+75;
+                defender.vel_air={};defender.vel_damage={};defender.vel_ground=0;defender.hitlag=0;
+                defender.attack_motion=0;defender.aerial_buffer=0;defender.smash_buffer=0;
+                hits.push_back({hit.owner,i,false,hit.fgm,hit.element});continue;
+            }
             mask|=1U<<i;
+            defender.swallowed=false;
             const int lag=hit.damage/3+4;
             defender.hitlag=lag;
             if (!hit.projectile) attacker.hitlag=lag;

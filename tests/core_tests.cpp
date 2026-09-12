@@ -863,6 +863,10 @@ int main() {
         assert(sagas::FighterCombat::start_special(neutral,true));
         neutral.special_projectile=true;neutral.action_frame=20;neutral.position.y=1;neutral.vel_air.y=-10;
         sagas::FighterPhysics::tick(neutral,0);
+        if (kind==sagas::FighterKind::Fox) {
+            assert(neutral.status==sagas::FighterStatus::Land && neutral.action_frame==0 && neutral.special_projectile);
+            assert(!sagas::FighterCombat::start_special(neutral,true));continue;
+        }
         assert(neutral.status==sagas::FighterStatus::Special && neutral.special_index==0 && neutral.action_frame>=20);
         assert(neutral.special_projectile && neutral.special_motion==sagas::fighter_source_data[static_cast<unsigned>(kind)].special_start[0]);
     }

@@ -1,6 +1,6 @@
 """Extract projectile contact attributes from the local US WPAttributes."""
 from pathlib import Path
-import re
+import re, struct
 root=Path(__file__).resolve().parents[2]
 names=['Luigi','Mario','Fox','Samus','Link','Ness','Pikachu']
 rows=[]
@@ -23,5 +23,9 @@ size_angle,combat,flags,base=words[-4:]
 rows.append([size_angle>>16,(combat>>14)&255,(size_angle>>6)&1023,combat>>22,combat&1023,base>>22,(combat>>10)&15,(flags>>11)&1023])
 names.append('Pikachu Thunder trail')
 rows.append([200,7,361,20,0,10,2,23]);names.append('Pikachu grounded Thunder Jolt (US)')
+# KirbyMainCutterWeaponAttributes at offset 8: packed US WPAttributes.
+size_angle,combat,flags,base=struct.unpack_from('>4I',(root/'sagas/build/assets/reloc/0229.bin').read_bytes(),8+36)
+rows.append([size_angle>>16,(combat>>14)&255,(size_angle>>6)&1023,combat>>22,combat&1023,base>>22,(combat>>10)&15,(flags>>11)&1023])
+names.append('Kirby Final Cutter')
 out=root/'sagas/include/sagas/WeaponSourceData.hpp'
-out.write_text('// Generated from US WPAttributes by extract_weapon_data.py.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct WeaponSourceData { int size,damage,angle,growth,weight,base,element,sfx; };\ninline constexpr std::array<WeaponSourceData,9> weapon_source_data{{\n'+''.join('    {'+','.join(map(str,row))+'}, // '+name+'\n' for name,row in zip(names,rows))+'}};\n}\n')
+out.write_text('// Generated from US WPAttributes by extract_weapon_data.py.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct WeaponSourceData { int size,damage,angle,growth,weight,base,element,sfx; };\ninline constexpr std::array<WeaponSourceData,10> weapon_source_data{{\n'+''.join('    {'+','.join(map(str,row))+'}, // '+name+'\n' for name,row in zip(names,rows))+'}};\n}\n')

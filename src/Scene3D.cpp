@@ -575,6 +575,28 @@ Vec3 Scene3DRenderer::fighter_position(const Model3D& model, float frame) {
     return position;
 }
 
+Model3D Scene3DRenderer::captured_at_joint(const Model3D& model,float frame,
+    const Model3D& carrier,float carrier_frame,unsigned source_joint) {
+    const auto it=std::find(carrier.source_joint_ids.begin(),carrier.source_joint_ids.end(),source_joint);
+    if (it==carrier.source_joint_ids.end()) throw std::runtime_error("Missing capture attachment joint");
+    const auto matrices=world_matrices(animation_,carrier,carrier_frame);
+    const auto& anchor=matrices.world[it-carrier.source_joint_ids.begin()];
+    Matrix root=anchor;
+    const float sizes[]{model.scale.x,model.scale.y,model.scale.z};
+    for (int c=0;c<3;++c) {
+        const auto axis=normalize({anchor.m[c],anchor.m[c+4],anchor.m[c+8]});
+        root.m[c]=axis.x*sizes[c];root.m[c+4]=axis.y*sizes[c];root.m[c+8]=axis.z*sizes[c];
+    }
+    auto child=model.fighter_root;
+    if (model.fighter_root_animation) n64::AnimationDecoder::apply(child,animation_.sample16(*model.fighter_root_animation,frame,animation_.pose(child)));
+    const auto offset=transform_direction(root,{child.translate[0],child.translate[1],child.translate[2]});
+    root.m[3]-=offset.x;root.m[7]-=offset.y;root.m[11]-=offset.z;
+    auto placed=model;placed.root_transform=root.m;
+    // Capture uses the current wrapper translation, not accumulated locomotion deltas.
+    if (placed.fighter_wrapper==Model3D::FighterWrapper::TransN) placed.fighter_wrapper=Model3D::FighterWrapper::XRotN;
+    return placed;
+}
+
 Model3D Scene3DRenderer::placed_at_joint(const Model3D& model, float model_frame,
                                          const Model3D& carrier, float carrier_frame,
                                          std::size_t carrier_joint) {

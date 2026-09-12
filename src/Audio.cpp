@@ -231,16 +231,19 @@ void AudioEngine::play(AudioCue cue) {
     auto pcm = render_fgm(assets_, voice_id, 1.0f);
     queue(effect_stream_, pcm.samples, pcm.rate);
 }
+void AudioEngine::preload_fgm(unsigned id) {
+    if (!motion_cache_.contains(id)) {
+        auto pcm=render_fgm(assets_,id,1.0f);
+        motion_cache_.emplace(id,PreparedAudio{std::move(pcm.samples),pcm.rate,1});
+    }
+}
 void AudioEngine::play_fgm(unsigned id,float gain,float pitch) {
     std::erase_if(motion_streams_,[](SDL_AudioStream* stream) {
         if (SDL_GetAudioStreamQueued(stream)>0) return false;
         SDL_DestroyAudioStream(stream);
         return true;
     });
-    if (!motion_cache_.contains(id)) {
-        auto pcm=render_fgm(assets_,id,1.0f);
-        motion_cache_.emplace(id,PreparedAudio{std::move(pcm.samples),pcm.rate,1});
-    }
+    preload_fgm(id);
     const auto& pcm=motion_cache_.at(id);
     auto samples=pcm.samples;
     for (auto& sample:samples) sample=static_cast<std::int16_t>(std::clamp(sample*gain,-32768.0f,32767.0f));

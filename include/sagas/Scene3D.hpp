@@ -109,6 +109,8 @@ public:
     void begin();
     void draw(RenderEngine& render, const Model3D& model, const Camera3D& camera,
               float frame, Color tint = {255,255,255,255}, LightingRig lights = {});
+    [[nodiscard]] Model3D captured_at_joint(const Model3D& model, float frame,
+        const Model3D& carrier, float carrier_frame, unsigned source_joint);
     [[nodiscard]] Model3D placed_at_joint(const Model3D& model, float model_frame,
                                           const Model3D& carrier, float carrier_frame,
                                           std::size_t carrier_joint);

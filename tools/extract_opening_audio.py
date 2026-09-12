@@ -14,7 +14,7 @@ def extract(decomp, manifest, battle=False):
     ids = {r['name']: int(r['id']) for r in csv.DictReader(manifest.open(), delimiter='\t')}
     voices = {r['name']: r['idx'] for r in json.loads((decomp/'build/us/src/audio/fgm.ucd.json').read_text())['entries']}
     scripts = {}
-    for path in list((decomp/'src/relocData').glob('*MainMotion.c')) + list((decomp/'src/sc/scsubsys').glob('scsubsysdata*.c')):
+    for path in list((decomp/'src/relocData').glob('*MainMotion.c')) + list((decomp/'src/sc/scsubsys').glob('scsubsysdata*.c')) + [decomp/'src/relocData/201_FTCommonMoveset.c']:
         lines=[];active=[True]
         for line in path.read_text().splitlines():
             if line.startswith('#if'):active.append(active[-1] and 'REGION_US' in line)
@@ -22,11 +22,12 @@ def extract(decomp, manifest, battle=False):
             elif line.startswith('#endif') and len(active)>1:active.pop()
             elif all(active):lines.append(line)
         source = re.sub(r'/\*.*?\*/|//[^\n]*', '', '\n'.join(lines), flags=re.S)
+        source = re.sub(r'\((?:u32|ftMotionCommand\s*\*)\)', '', source)
         for name, body in re.findall(r'(\w+)\s*\[\s*\]\s*=\s*\{(.*?)\};', source, re.S):
             scripts[name] = re.findall(r'(ftMotion\w+)\(([^()]*)\)', body)
     desc = (decomp/'src/ft/ftdata.c').read_text()
     mapping = {}
-    for clip, script in re.findall(r'\{\s*&ll(\w+)FileID,\s*(\w+),', desc):
+    for clip, script in re.findall(r'\{?\s*&ll(\w+)FileID,\s*(\w+),', desc):
         if clip in ids and script in scripts:
             mapping.setdefault(ids[clip], script)
     if battle:
@@ -75,7 +76,7 @@ def extract(decomp, manifest, battle=False):
                 else: loops.pop()
             elif command=='ftMotionCommandPlaySmashVoice':
                 result.append((clip,frame,4294967295))
-            elif command in ('ftMotionPlayFGM','ftMotionPlayVoice','ftMotionCommandPlayFGMStoreInfo'):
+            elif command in ('ftMotionPlayFGM','ftMotionPlayVoice','ftMotionCommandPlayFGMStoreInfo','ftMotionPlayInterruptableVoice','ftMotionCommandPlayLoopSFXStoreInfo'):
                 result.append((clip, frame, voices[arg] if arg in voices else int(arg,0)))
     return sorted(set(result))
 

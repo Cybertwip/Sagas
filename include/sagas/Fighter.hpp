@@ -35,7 +35,7 @@ enum class FighterKind : std::uint8_t {
     Ness, Yoshi, Kirby, Fox, Pikachu, Purin, Count
 };
 
-enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, SpecialFall, Land, Attack, Special, Hitstun, Tumble, DownBounce, DownWait, DownStand, DownRoll, DownAttack, Shield, ShieldRelease, ShieldRoll, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, KO };
+enum class FighterStatus : std::uint8_t { Wait, Turn, Crouch, CrouchWait, CrouchEnd, Walk, Dash, Run, RunBrake, KneeBend, Jump, Fall, SpecialFall, Land, Attack, Special, Hitstun, Tumble, DownBounce, DownWait, DownStand, DownRoll, DownAttack, Shield, ShieldRelease, ShieldRoll, CliffCatch, CliffWait, CliffClimb, Catch, CatchWait, Captured, Throw, Sleep, KO };
 
 [[nodiscard]] constexpr bool fighter_is_down(FighterStatus status) {
     return status==FighterStatus::DownBounce || status==FighterStatus::DownWait ||
@@ -89,6 +89,9 @@ struct FighterBody {
     int capture_target{-1}, captured_by{-1}, capture_tics{};
     bool throw_backward{},turn_flipped{},turn_dash{},captured_throw{},captured_dive{};
     float capture_rotation{};
+    unsigned capture_motion{}, capture_next{};
+    int capture_frame_origin{}, sleep_tics{};
+    bool swallowed{};
     int smash_buffer{},buffered_smash{-1},buffered_facing{1};
     int rapid_inputs{},tap_stick_x{255};
     bool rapid_continue{};
@@ -154,6 +157,7 @@ struct AttackVolume {
 struct FighterHit { unsigned attacker{}, defender{}; bool shield{}; unsigned fgm{},element{}; };
 class FighterCombat final {
 public:
+    static int special_flag(const FighterBody& body, unsigned flag);
     static unsigned special_event_motion(const FighterBody& body);
     static void advance_guard(FighterBody& body,bool animation_ended);
     static void advance_down(FighterBody& body,bool attack,bool stand,bool animation_ended);

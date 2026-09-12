@@ -79,6 +79,11 @@ for idx,name in enumerate(names):
    special_active.append(special_ids.get(stem,0))
    event_names=[stem+'Start' if stem+'Start' in special_ids else stem,stem+'Loop' if stem+'Loop' in special_ids else stem+'Hold','SpecialHiThrow' if name=='Captain' and direction=='Hi' else stem+'End',stem,stem+'Hit' if stem+'Hit' in special_ids else stem+'Catch']
    if name=='Captain' and direction=='Hi':event_names[4]='SpecialHiCatch'
+   if name=='Kirby' and direction=='N':
+    special_hit[-1]=special_ids[stem+'Wait'];event_names[4]=stem+'Wait'
+   if name=='Kirby' and direction=='Hi':
+    loop=special_ids['SpecialAirHiFall'];end=special_ids['SpecialHiLanding']
+    event_names[1]='SpecialAirHiFall';event_names[2]='SpecialHiLanding'
    for phase,event_name in enumerate(event_names):special_events[phase].append(special_event_ids.get(event_name,0))
    special_start.append(start);special_loop.append(loop);special_end.append(end)
  capture=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('CapturePulled','ThrownCommon','CaptureCaptain')]

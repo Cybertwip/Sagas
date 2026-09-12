@@ -29,6 +29,8 @@ public:
             bodies_.push_back(body);
         }
     }
+    std::span<const FighterBody> fighters() const {return bodies_;}
+    std::size_t projectile_count(unsigned weapon) const {return std::count_if(projectiles_.begin(),projectiles_.end(),[&](const auto& shot){return shot.weapon==weapon;});}
     void enter(Services& services) override {
         assets_=&services.assets;
         loader_=std::make_unique<Scene3DLoader>(services.resources.archive());
@@ -777,6 +779,12 @@ private:
     std::unique_ptr<Scene3DLoader> loader_;
     std::unique_ptr<Scene3DRenderer> renderer_;
 };
+}
+std::span<const FighterBody> battle_fighters(const Scene& scene) {
+    const auto* battle=dynamic_cast<const BattleScene*>(&scene);return battle?battle->fighters():std::span<const FighterBody>{};
+}
+std::size_t battle_projectile_count(const Scene& scene,unsigned weapon) {
+    const auto* battle=dynamic_cast<const BattleScene*>(&scene);return battle?battle->projectile_count(weapon):0;
 }
 std::unique_ptr<Scene> make_battle_scene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports,std::vector<std::string> models) {
     return std::make_unique<BattleScene>(std::move(fighters),stock,std::move(ports),std::move(models));

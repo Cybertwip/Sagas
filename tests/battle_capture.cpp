@@ -19,19 +19,25 @@ int main(int argc,char** argv) {
         for(auto kind:{FighterKind::Mario,FighterKind::Fox,FighterKind::Samus,FighterKind::Link,FighterKind::Yoshi,FighterKind::Kirby,FighterKind::Captain,FighterKind::Pikachu,FighterKind::Purin}) {
             for(int move=0;move<4;++move) {
                 auto battle=make_battle_scene(std::vector<FighterKind>{kind,FighterKind::Mario},3,{0,1});battle->enter(services);
+                bool saw_projectile=false;
                 for(int frame=0;frame<170;++frame) {
                     InputState input;input.controllers[0].connected=true;
-                    if(frame>=60 && frame<83)input.stick_x=80;
+
                     if(frame==90) {if(move==0)input.grab_pressed=true;else {input.special_pressed=true;input.special_held=true;input.stick_y=move==2?80:move==3?-80:0;}}
                     if(frame>90 && move>0)input.special_held=true;
                     if(frame==119 && move==0)input.attack_pressed=true;
                     battle->update(services,input,1.f/60);
+                    if(frame==90)assert(battle_fighters(*battle)[0].status==(move==0?FighterStatus::Catch:FighterStatus::Special));
+                    if(kind==FighterKind::Kirby && move==2)saw_projectile|=battle_projectile_count(*battle,9)>0;
+                    if(kind==FighterKind::Pikachu && move==3)saw_projectile|=battle_projectile_count(*battle,7)>0;
+                    if(kind==FighterKind::Fox && move==1)saw_projectile|=battle_projectile_count(*battle,2)>0;
                     if(frame==96 || frame==110 || frame==120 || frame==135 || frame==155) {
                         render.request_capture(out/(std::string(fighter_kind_name(kind))+"-"+std::to_string(move)+"-"+std::to_string(frame-90)+".png"));
                         battle->draw(services);
                     }
                 }
-                std::cout<<fighter_kind_name(kind)<<" "<<move<<"\n";
+                if((kind==FighterKind::Kirby && move==2) || (kind==FighterKind::Pikachu && move==3) || (kind==FighterKind::Fox && move==1))assert(saw_projectile);
+                std::cout<<fighter_kind_name(kind)<<" "<<move<<std::endl;
             }
         }
     }

@@ -250,6 +250,10 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             }
         }
         body.vel_air.x=body.vel_ground*body.lr*body.floor_tangent.x;
+        if(body.carrying && body.status==FighterStatus::CatchWait) {
+            body.vel_air.x=body.stick_x/80.f*body.attr.walk_speed*.6f;
+            if(body.jump_pressed) {body.grounded=false;body.vel_air.y=(body.attr.jump_height_base+80*body.attr.jump_height_mul)*.7f;body.jumps_used=1;}
+        }
         if (body.grounded) body.vel_air.y=body.vel_ground*body.lr*body.floor_tangent.y;
     } else {
 

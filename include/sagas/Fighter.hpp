@@ -76,6 +76,7 @@ struct FighterBody {
     int aerial_attack{-1}, shield_tics{255};
     unsigned special_motion{},special_index{},special_phase{},special_tics{};
     unsigned charge_level{},charge_ticks{};
+    bool carrying{};
     bool special_projectile{},special_held{};
     Vec2 special_velocity{};
     int aerial_buffer{};

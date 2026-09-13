@@ -16,11 +16,11 @@ int main(int argc,char** argv) {
     {
         AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);RenderEngine render(window,assets);AudioEngine audio(assets);
         PhysicsWorld physics;SceneResourceManager resources(assets);Services services{assets,render,audio,physics,resources,true};
-        for(auto kind:{FighterKind::Mario,FighterKind::Fox,FighterKind::Samus,FighterKind::Link,FighterKind::Yoshi,FighterKind::Kirby}) for(int direction=0;direction<(kind==FighterKind::Kirby?3:2);++direction) {
+        for(auto kind:{FighterKind::Donkey,FighterKind::Mario,FighterKind::Fox,FighterKind::Samus,FighterKind::Link,FighterKind::Yoshi,FighterKind::Kirby}) for(int direction=0;direction<(kind==FighterKind::Kirby?3:2);++direction) {
             if(argc>2 && fighter_kind_name(kind)!=argv[2])continue;
             if(argc>3 && direction!=std::stoi(argv[3]))continue;
             auto battle=make_battle_scene(std::vector<FighterKind>{kind,FighterKind::Donkey},3,{0,1});battle->enter(services);
-            bool initiated=false,caught=false,released=false,thrown=false;int caught_at=0,released_at=0;
+            bool initiated=false,caught=false,released=false,thrown=false;int caught_at=0,released_at=0,cargo_at=-1;
             for(int frame=0;frame<650;++frame) {
                 InputState input;input.controllers[0].connected=true;
                 const auto before=battle_fighters(*battle);
@@ -39,6 +39,12 @@ int main(int argc,char** argv) {
                     if(direction==0)input.attack_pressed=true;else input.stick_x=-holder.lr*80;
                 }
                 if(caught && direction==2 && frame-caught_at>20)input.attack_pressed=true;
+                if(holder.carrying && cargo_at<0)cargo_at=frame;
+                if(holder.carrying) {
+                    input.stick_x=frame-cargo_at<15?holder.lr*30:0;
+                    if(frame-cargo_at==15)input.jump_pressed=true;
+                    if(frame-cargo_at==45)input.attack_pressed=true;
+                }
                 battle->update(services,input,1.f/60);
                 const auto after=battle_fighters(*battle);
                 if(after[1].status==FighterStatus::Captured && !caught) {
@@ -57,6 +63,7 @@ int main(int argc,char** argv) {
             }
             std::cout<<fighter_kind_name(kind)<<" direction "<<direction<<" caught "<<caught<<" released "<<released<<std::endl;
             assert(initiated && caught && released);
+            if(kind==FighterKind::Donkey && direction==0)assert(cargo_at>=0);
         }
     }
     SDL_DestroyWindow(window);SDL_Quit();

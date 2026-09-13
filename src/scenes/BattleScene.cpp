@@ -145,8 +145,8 @@ public:
                 }
                 if (body.status==FighterStatus::Catch && body.action_frame>=motion_length(body)) body.status=FighterStatus::Wait;
                 if (body.status==FighterStatus::Throw && body.capture_target<0 && body.action_frame>=motion_length(body)) body.status=FighterStatus::Wait;
-                if (body.status==FighterStatus::CatchWait && body.action_frame>=motion_length(body) &&
-                    (++body.capture_tics>=60 || attack || (std::abs(body.stick_x)>=20 && (std::abs(old_x)<20 || old_x*body.stick_x<0)))) {
+                if (body.status==FighterStatus::CatchWait && (body.carrying || body.action_frame>=motion_length(body)) &&
+                    (body.carrying?attack:(++body.capture_tics>=60 || attack || (std::abs(body.stick_x)>=20 && (std::abs(old_x)<20 || old_x*body.stick_x<0))))) {
                     body.throw_backward=!attack && body.capture_tics<60 && body.stick_x*body.lr<0;
                     body.status=FighterStatus::Throw;body.action_frame=0;
                     auto& captive=bodies_[body.capture_target];
@@ -276,9 +276,9 @@ public:
             auto& captive=bodies_[holder.capture_target];
             const bool dive=holder.kind==FighterKind::Captain && holder.status==FighterStatus::Special && holder.special_phase==4;
             const bool inhale=holder.kind==FighterKind::Kirby && holder.status==FighterStatus::Special && holder.special_index%3==0;
-            const bool release=holder.stocks<=0 || captive.stocks<=0 || captive.status!=FighterStatus::Captured || (!holder.grounded && !dive && !inhale) ||
+            const bool release=holder.stocks<=0 || captive.stocks<=0 || captive.status!=FighterStatus::Captured || (!holder.grounded && !dive && !inhale && !holder.carrying) ||
                 (!dive && !inhale && holder.status!=FighterStatus::CatchWait && holder.status!=FighterStatus::Throw) ||
-                (holder.status==FighterStatus::CatchWait && holder.capture_tics>180);
+                (holder.status==FighterStatus::CatchWait && holder.capture_tics>180 && !holder.carrying);
             if (release) {
                 captive.captured_by=-1;captive.swallowed=false;captive.status=FighterStatus::Fall;captive.grounded=false;
                 holder.capture_target=-1;
@@ -304,6 +304,10 @@ public:
                 if (holder.capture_tics<90 && !holder.attack_pressed) continue;
             }
             const auto& damage=source_throws[static_cast<unsigned>(holder.kind)][holder.throw_backward?1:0];
+            if(holder.kind==FighterKind::Donkey && holder.status==FighterStatus::Throw && !holder.throw_backward && !holder.carrying && holder.action_frame>=damage.frame) {
+                holder.carrying=true;holder.status=FighterStatus::CatchWait;holder.action_frame=0;holder.capture_tics=0;
+                continue;
+            }
             bool dive_release=false;
             if (dive) for (const auto& flag:source_special_flags)
                 if (flag.kind==static_cast<unsigned>(holder.kind) && flag.motion==FighterCombat::special_event_motion(holder) && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(holder.action_frame)) dive_release=true;
@@ -318,7 +322,7 @@ public:
                     dive?20:inhale?10:damage.damage,dive?361:inhale?361:damage.angle,dive?82:damage.growth,dive?0:damage.weight,dive?30:damage.base,~0U};
                 const auto released=FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&hit,1));
                 hits.insert(hits.end(),released.begin(),released.end());
-                holder.lr=facing;holder.hit_mask=saved;holder.capture_target=-1;
+                holder.lr=facing;holder.hit_mask=saved;holder.capture_target=-1;holder.carrying=false;
                 if (inhale) {holder.status=holder.grounded?FighterStatus::Wait:FighterStatus::Fall;holder.action_frame=0;}
                 if (dive) {holder.special_phase=2;holder.special_motion=fighter_source_data[static_cast<unsigned>(holder.kind)].special_end[holder.special_index];holder.action_frame=0;emit(captive.position,{255,180,60,255},20,true);}
             }
@@ -510,7 +514,7 @@ public:
             if(shot.exploding)continue;
             if (!weapon_models_.contains(shot.weapon)) {
                 const n64::Address attributes{shot.weapon==12?247U:shot.weapon==13?217U:shot.weapon==14?225U:shot.weapon==0?222U:shot.weapon==1?204U:shot.weapon==3?218U:shot.weapon==4?226U:(shot.weapon==5 || shot.weapon==11)?240U:shot.weapon==10?239U:shot.weapon==2?210U:shot.weapon==9?229U:shot.weapon==7?243U:244U,(shot.weapon==12 || shot.weapon==13)?12U:shot.weapon==14?64U:shot.weapon==10?12U:shot.weapon==11?52U:shot.weapon==9?8U:shot.weapon==7?64U:shot.weapon==8?52U:0U};
-                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon<=3 || shot.weapon==6 || shot.weapon==5 || shot.weapon==12 || shot.weapon==13 || shot.weapon==14)?0:(shot.weapon==4 || shot.weapon==11)?1:(shot.weapon==8 || shot.weapon==9 || shot.weapon==10)?3:2,shot.weapon==0?1:0));
+                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon<=3 || shot.weapon==6 || shot.weapon==5 || shot.weapon==12 || shot.weapon==13)?0:(shot.weapon==4 || shot.weapon==11)?1:(shot.weapon==8 || shot.weapon==9 || shot.weapon==10 || shot.weapon==14)?3:2,shot.weapon==0?1:0));
             }
             if (weapon_models_.contains(shot.weapon)) {
                 auto weapon=weapon_models_.at(shot.weapon);weapon.position=shot.position;weapon.rotation.y=shot.facing*std::numbers::pi_v<float>/2;
@@ -649,10 +653,10 @@ private:
             case FighterStatus::SpecialFall:case FighterStatus::Fall:return data.fall;
             case FighterStatus::Land:return body.landing_motion?body.landing_motion:data.landing;
             case FighterStatus::Catch:return data.grab[0];
-            case FighterStatus::CatchWait:return data.grab[1];
+            case FighterStatus::CatchWait:return body.carrying?(body.grounded && std::abs(body.stick_x)>10?949:946):data.grab[1];
             case FighterStatus::Sleep:return sleep_motions[static_cast<unsigned>(body.kind)];
             case FighterStatus::Captured:if(body.capture_motion) return body.capture_motion;return data.capture[body.captured_dive?2:body.captured_throw?1:0];
-            case FighterStatus::Throw:return data.grab[body.throw_backward?3:2];
+            case FighterStatus::Throw:return body.carrying?945:data.grab[body.throw_backward?3:2];
             case FighterStatus::Special:return body.special_motion;
             case FighterStatus::Attack:
                 if (body.attack_motion) return body.attack_motion;

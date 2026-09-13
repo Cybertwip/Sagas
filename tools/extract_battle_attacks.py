@@ -157,3 +157,5 @@ if __name__=='__main__':
     text+=f'inline constexpr std::array<SourceModelPart,{len(parts)}> source_model_parts{{{{\n'
     text+=''.join('    {'+','.join(map(str,f))+'},\n' for f in parts)+'}};\n}\n'
     a.output.write_text(text)
+    from export_fighter_descriptors import export_header
+    export_header(a.output)

@@ -1,4 +1,5 @@
 #include <sagas/Fighter.hpp>
+#include <sagas/SpecialPhysics.hpp>
 #include <sagas/BattleCallbackData.hpp>
 #include <sagas/FighterSourceData.hpp>
 #include <sagas/FighterAttackData.hpp>
@@ -251,9 +252,9 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             }
         }
         if(body.status==FighterStatus::Special && body.kind==FighterKind::Donkey && body.special_index%3==1)
-            body.vel_ground=std::clamp(ground_speed_before+body.stick_x*body.lr*.025f,-26.f,26.f);
+            body.vel_ground=std::clamp(ground_speed_before+body.stick_x*body.lr*special_physics[0].donkey_hi_ground_accel,-special_physics[0].donkey_hi_ground_max,special_physics[0].donkey_hi_ground_max);
         if(body.status==FighterStatus::Special && body.kind==FighterKind::Samus && body.special_index%3==2 && FighterCombat::special_flag(body,3))
-            body.vel_ground=body.stick_x*body.lr/80.f*body.attr.walk_speed*.66f;
+            body.vel_ground=body.stick_x*body.lr/80.f*body.attr.walk_speed*special_physics[0].samus_lw_drift;
         body.vel_air.x=body.vel_ground*body.lr*body.floor_tangent.x;
         if(body.carrying && body.status==FighterStatus::CatchWait) {
             body.vel_air.x=body.stick_x/80.f*body.attr.walk_speed*.6f;
@@ -291,19 +292,19 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 if (body.special_phase==3) {
                     const float speed=std::max(0.f,200.f-body.action_frame*(43.f/7));
                     body.vel_air={body.special_velocity.x*speed/200,body.special_velocity.y*speed/200,0};
-                } else {body.vel_air.x=0;body.vel_air.y=body.special_tics<=25?0:std::max(-body.attr.tvel_base,air_before.y-.5f);}
+                } else {body.vel_air.x=0;body.vel_air.y=body.special_tics<=25?0:std::max(-body.attr.tvel_base,air_before.y-special_physics[0].ness_hi_hold_gravity);}
             } else if (body.kind==FighterKind::Link && body.special_index%3==1) {
-                body.vel_air.y=std::max(-body.attr.tvel_base,air_before.y-body.attr.gravity*(FighterCombat::special_flag(body,1)?1.f:.23f));
+                body.vel_air.y=std::max(-body.attr.tvel_base,air_before.y-body.attr.gravity*(FighterCombat::special_flag(body,1)?1.f:special_physics[0].link_hi_gravity));
             } else if (body.kind==FighterKind::Donkey && body.special_index%3==1) {
-                body.vel_air.y=std::max(-body.attr.tvel_base,air_before.y-body.attr.gravity*(FighterCombat::special_flag(body,1)?1.f:.07f));
-                body.vel_air.x=std::clamp(air_before.x+body.stick_x*.05f,-38.f,38.f);
+                body.vel_air.y=std::max(-body.attr.tvel_base,air_before.y-body.attr.gravity*(FighterCombat::special_flag(body,1)?1.f:special_physics[0].donkey_hi_gravity));
+                body.vel_air.x=std::clamp(air_before.x+body.stick_x*special_physics[0].donkey_hi_air_accel,-special_physics[0].donkey_hi_air_max,special_physics[0].donkey_hi_air_max);
             } else if (body.kind==FighterKind::Samus && body.special_index%3==1) {
-                body.vel_air.x=std::clamp(air_before.x+body.stick_x*.5f,-20.f,20.f);
+                body.vel_air.x=std::clamp(air_before.x+body.stick_x*special_physics[0].samus_hi_accel,-special_physics[0].samus_hi_max,special_physics[0].samus_hi_max);
                 body.vel_air.y=std::max(-body.attr.tvel_base,air_before.y-body.attr.gravity);
                 if(body.special_index==1 && motion)if(const auto authored=motion(body))body.vel_air.y=authored->y;
             } else if (body.kind==FighterKind::Samus && body.special_index%3==2) {
                 body.vel_air.y=std::max(-body.attr.tvel_base,air_before.y-body.attr.gravity);
-                body.vel_air.x=std::clamp(air_before.x+body.stick_x*body.attr.air_accel*.66f,-body.attr.air_speed_max_x*.66f,body.attr.air_speed_max_x*.66f);
+                body.vel_air.x=std::clamp(air_before.x+body.stick_x*body.attr.air_accel*special_physics[0].samus_lw_drift,-body.attr.air_speed_max_x*special_physics[0].samus_lw_drift,body.attr.air_speed_max_x*special_physics[0].samus_lw_drift);
             } else if (body.kind==FighterKind::Ness && body.special_index%3==2) {
                 if(body.special_tics<=4)body.vel_air.y=0;
             } else if (body.kind==FighterKind::Pikachu && body.special_index%3==1) {
@@ -567,10 +568,10 @@ bool FighterCombat::start_special(FighterBody& body,bool pressed) {
     body.attack_motion=0;body.hit_mask=0;body.hit_group_masks.fill(0);body.hit_group_epochs.fill(~0U);body.fastfall=false;
     if ((direction==0 || (direction==1 && (body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi))) && std::abs(body.stick_x)>=20) body.lr=body.stick_x>0?1:-1;
     if (direction==1 && body.kind==FighterKind::Captain) {body.grounded=false;body.vel_air={};body.jumps_used=body.attr.jumps_max;}
-    if (direction==1 && body.kind==FighterKind::Donkey && !body.grounded) body.vel_air.y=18.f;
-    if (direction==1 && body.kind==FighterKind::Link && !body.grounded) body.vel_air.y=69.f;
-    if (direction==1 && body.kind==FighterKind::Samus && !body.grounded) {body.vel_air.y=62;body.jumps_used=body.attr.jumps_max;}
-    if (direction==2 && body.kind==FighterKind::Samus && !body.grounded) {body.vel_air.y=30;body.jumps_used=body.attr.jumps_max;}
+    if (direction==1 && body.kind==FighterKind::Donkey && !body.grounded) body.vel_air.y=special_physics[0].donkey_hi_launch;
+    if (direction==1 && body.kind==FighterKind::Link && !body.grounded) body.vel_air.y=special_physics[0].link_hi_launch;
+    if (direction==1 && body.kind==FighterKind::Samus && !body.grounded) {body.vel_air.y=special_physics[0].samus_hi_launch;body.jumps_used=body.attr.jumps_max;}
+    if (direction==2 && body.kind==FighterKind::Samus && !body.grounded) {body.vel_air.y=special_physics[0].samus_lw_air_launch;body.jumps_used=body.attr.jumps_max;}
     if (direction==1 && body.kind==FighterKind::Ness) {body.vel_air.y=0;body.vel_air.x*=.5f;body.vel_damage={};body.aerial_jump=false;}
     if (direction==0 && body.kind==FighterKind::Samus) {body.charge_ticks=0;body.special_second=body.charge_level==7;}
     if (direction==0 && body.kind==FighterKind::Donkey) {body.charge_ticks=0;body.special_second=body.charge_level==10;}

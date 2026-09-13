@@ -23,7 +23,7 @@ int main(int argc,char** argv) {
                 if(argc>3 && move!=std::stoi(argv[3]))continue;
                 auto battle=make_battle_scene(std::vector<FighterKind>{kind,FighterKind::Mario},3,{0,1});battle->enter(services);
                 bool saw_projectile=false,saw_launch=false,saw_explosion=false,saw_bomb_throw=false;float start_y=0,max_y=-100000;
-                for(int frame=0;frame<260;++frame) {
+                for(int frame=0;frame<460;++frame) {
                     InputState input;input.controllers[0].connected=true;
                     if(frame==75 && move==2 && kind==FighterKind::Link)input.jump_pressed=true;
 

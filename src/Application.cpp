@@ -1,6 +1,7 @@
 #include <sstream>
 #include <sagas/Application.hpp>
 #include <sagas/Fighter.hpp>
+#include <sagas/FighterDescriptors.hpp>
 
 #include <SDL3/SDL.h>
 
@@ -92,6 +93,7 @@ Application::Application(ApplicationOptions options) : options_(std::move(option
     if (!window_) fail("OpenGL window creation failed");
     if (!SDL_SetWindowAspectRatio(window_,16.0f/9.0f,16.0f/9.0f))
         fail("window aspect ratio setup failed");
+    set_fighter_descriptor_root(options_.asset_root);
     assets_ = std::make_unique<AssetRepository>(options_.asset_root);
     render_ = std::make_unique<RenderEngine>(window_, *assets_);
     audio_ = std::make_unique<AudioEngine>(*assets_);

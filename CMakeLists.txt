@@ -129,6 +129,11 @@ add_custom_command(
     VERBATIM)
 add_custom_target(sagas_scene_assets ALL DEPENDS "${SAGAS_OPENING_SCENE}")
 
+add_custom_target(sagas_fighter_descriptors ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/fighters" "${SAGAS_ASSET_ROOT}/fighters"
+    VERBATIM)
+
 add_library(sagas_engine
     src/Application.cpp
     src/BattleCamera.cpp
@@ -136,6 +141,7 @@ add_library(sagas_engine
     src/Core.cpp
     src/Fgm.cpp
     src/Fighter.cpp
+    src/FighterDescriptors.cpp
     src/Lighting.cpp
     src/n64/Animation.cpp
     src/n64/Archive.cpp
@@ -145,6 +151,7 @@ add_library(sagas_engine
     src/Scene.cpp
     src/Scene3D.cpp
     src/SceneResources.cpp)
+add_dependencies(sagas_engine sagas_fighter_descriptors)
 target_sources(sagas_engine PRIVATE
     src/scenes/StartupScene.cpp
     src/scenes/OpeningScene.cpp
@@ -169,6 +176,10 @@ add_dependencies(sagas sagas_asset_unpack)
 
 if(SAGAS_BUILD_TESTS)
     enable_testing()
+    add_executable(sagas_fighter_descriptor_tests tests/fighter_descriptors.cpp)
+    target_link_libraries(sagas_fighter_descriptor_tests PRIVATE sagas_engine)
+    target_compile_options(sagas_fighter_descriptor_tests PRIVATE -UNDEBUG)
+    add_test(NAME sagas_fighter_descriptors COMMAND sagas_fighter_descriptor_tests)
     add_executable(sagas_tests tests/core_tests.cpp)
     target_link_libraries(sagas_tests PRIVATE sagas_engine)
     target_compile_options(sagas_tests PRIVATE -UNDEBUG)

@@ -119,3 +119,6 @@ text+='inline unsigned fighter_motion_flags(unsigned motion) { for (const auto& 
 out.write_text(text)
 
 with out.open('a') as f:f.write('namespace sagas { inline constexpr unsigned guard_on_sfx='+str(voices['nSYAudioFGMGuardOn'])+',guard_off_sfx='+str(voices['nSYAudioFGMGuardOff'])+',dead_explode_sfx='+str(voices['nSYAudioFGMDeadExplodeL'])+',dead_star_sfx='+str(voices['nSYAudioFGMDeadUpStar'])+'; }\n')
+
+from export_fighter_descriptors import export_header
+export_header(out)

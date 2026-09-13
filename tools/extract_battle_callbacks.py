@@ -48,3 +48,6 @@ sizes=re.findall(r'(\d+)\.0F,\s*// Sprite size',(d/'src/wp/wpsamus/wpsamuscharge
 text += 'inline constexpr std::array<float,8> samus_charge_sizes{'+','.join(n+'.f' for n in sizes)+'};\n'
 text += '}\n'
 (root/'sagas/include/sagas/BattleCallbackData.hpp').write_text(text)
+
+from export_fighter_descriptors import export_header
+export_header((root/'sagas/include/sagas/BattleCallbackData.hpp'))

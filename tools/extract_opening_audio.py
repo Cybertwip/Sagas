@@ -103,3 +103,5 @@ if __name__ == '__main__':
     text+='}};\n}\n'
     if args.battle:text=text.replace('OpeningMotionSound','BattleMotionSound').replace('opening_motion_sounds','battle_motion_sounds')
     args.output.write_text(text)
+    from export_fighter_descriptors import export_header
+    if args.battle: export_header(args.output)

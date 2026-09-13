@@ -15,5 +15,5 @@ inline void descriptor_read(std::istream& input,WeaponSourceData& value) {
     descriptor_read(input,value.sfx);
 }
 
-inline const DescriptorTable<WeaponSourceData> weapon_source_data{"weapon_source_data.tsv","size\tdamage\tangle\tgrowth\tweight\tbase\telement\tsfx"};
+inline const DescriptorTable<WeaponSourceData> weapon_source_data{"weapon_source_data.tsv","size\tdamage\tangle\tgrowth\tweight\tbase\telement\tsfx",15};
 }

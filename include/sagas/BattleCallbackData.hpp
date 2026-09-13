@@ -9,15 +9,15 @@ inline void descriptor_read(std::istream& input,ThrownClips& value) {
     descriptor_read(input,value.next);
 }
 
-inline const DescriptorTable<std::array<std::array<ThrownClips,2>,12>> thrown_clips{"thrown_clips.tsv","[0][0].first\t[0][0].next\t[0][1].first\t[0][1].next\t[1][0].first\t[1][0].next\t[1][1].first\t[1][1].next\t[2][0].first\t[2][0].next\t[2][1].first\t[2][1].next\t[3][0].first\t[3][0].next\t[3][1].first\t[3][1].next\t[4][0].first\t[4][0].next\t[4][1].first\t[4][1].next\t[5][0].first\t[5][0].next\t[5][1].first\t[5][1].next\t[6][0].first\t[6][0].next\t[6][1].first\t[6][1].next\t[7][0].first\t[7][0].next\t[7][1].first\t[7][1].next\t[8][0].first\t[8][0].next\t[8][1].first\t[8][1].next\t[9][0].first\t[9][0].next\t[9][1].first\t[9][1].next\t[10][0].first\t[10][0].next\t[10][1].first\t[10][1].next\t[11][0].first\t[11][0].next\t[11][1].first\t[11][1].next"};
-inline const DescriptorTable<unsigned> sleep_motions{"sleep_motions.tsv","value"};
+inline const DescriptorTable<std::array<std::array<ThrownClips,2>,12>> thrown_clips{"thrown_clips.tsv","[0][0].first\t[0][0].next\t[0][1].first\t[0][1].next\t[1][0].first\t[1][0].next\t[1][1].first\t[1][1].next\t[2][0].first\t[2][0].next\t[2][1].first\t[2][1].next\t[3][0].first\t[3][0].next\t[3][1].first\t[3][1].next\t[4][0].first\t[4][0].next\t[4][1].first\t[4][1].next\t[5][0].first\t[5][0].next\t[5][1].first\t[5][1].next\t[6][0].first\t[6][0].next\t[6][1].first\t[6][1].next\t[7][0].first\t[7][0].next\t[7][1].first\t[7][1].next\t[8][0].first\t[8][0].next\t[8][1].first\t[8][1].next\t[9][0].first\t[9][0].next\t[9][1].first\t[9][1].next\t[10][0].first\t[10][0].next\t[10][1].first\t[10][1].next\t[11][0].first\t[11][0].next\t[11][1].first\t[11][1].next",12};
+inline const DescriptorTable<unsigned> sleep_motions{"sleep_motions.tsv","value",12};
 inline const DescriptorValue<unsigned> nSYAudioFGMCatch{"nSYAudioFGMCatch.tsv"};
 inline const DescriptorValue<unsigned> nSYAudioVoicePublicCheer{"nSYAudioVoicePublicCheer.tsv"};
 inline const DescriptorValue<unsigned> nSYAudioVoicePublicAmazed{"nSYAudioVoicePublicAmazed.tsv"};
 inline const DescriptorValue<unsigned> nSYAudioVoicePublicGaspClap{"nSYAudioVoicePublicGaspClap.tsv"};
 inline const DescriptorValue<unsigned> nSYAudioVoicePublicGaspL{"nSYAudioVoicePublicGaspL.tsv"};
-inline const DescriptorTable<unsigned> samus_shoot_sounds{"samus_shoot_sounds.tsv","value"};
-inline const DescriptorTable<unsigned> samus_charge_sounds{"samus_charge_sounds.tsv","value"};
-inline const DescriptorTable<unsigned> donkey_cargo_motions{"donkey_cargo_motions.tsv","value"};
-inline const DescriptorTable<float> samus_charge_sizes{"samus_charge_sizes.tsv","value"};
+inline const DescriptorTable<unsigned> samus_shoot_sounds{"samus_shoot_sounds.tsv","value",4};
+inline const DescriptorTable<unsigned> samus_charge_sounds{"samus_charge_sounds.tsv","value",8};
+inline const DescriptorTable<unsigned> donkey_cargo_motions{"donkey_cargo_motions.tsv","value",3};
+inline const DescriptorTable<float> samus_charge_sizes{"samus_charge_sizes.tsv","value",8};
 }

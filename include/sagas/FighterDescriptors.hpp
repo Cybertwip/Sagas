@@ -30,7 +30,7 @@ template<class T,std::size_t N> void descriptor_read(std::istream& input,std::ar
 
 template<class T> class DescriptorTable {
 public:
-    constexpr DescriptorTable(const char* file,const char* columns):file_(file),columns_(columns) {}
+    constexpr DescriptorTable(const char* file,const char* columns,std::size_t expected_rows=0):file_(file),columns_(columns),expected_rows_(expected_rows) {}
     const T& operator[](std::size_t index) const {return rows().at(index);}
     const T& at(std::size_t index) const {return rows().at(index);}
     auto begin() const {return rows().begin();}
@@ -59,15 +59,16 @@ private:
             }
         }
         if(parsed.empty())throw std::runtime_error("Empty fighter descriptor: "+path.string());
+        if(expected_rows_ && parsed.size()!=expected_rows_)throw std::runtime_error("Fighter descriptor row count mismatch: "+path.string());
         values_=std::move(parsed);generation_=fighter_descriptor_generation();return values_;
     }
-    const char* file_;const char* columns_;
+    const char* file_;const char* columns_;std::size_t expected_rows_;
     mutable unsigned generation_{};
     mutable std::vector<T> values_;
 };
 template<class T> class DescriptorValue {
 public:
-    constexpr explicit DescriptorValue(const char* file):table_(file,"value") {}
+    constexpr explicit DescriptorValue(const char* file):table_(file,"value",1) {}
     operator T() const {return table_[0];}
 private:
     DescriptorTable<T> table_;

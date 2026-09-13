@@ -10,5 +10,5 @@ inline void descriptor_read(std::istream& input,BattleMotionSound& value) {
     descriptor_read(input,value.fgm);
 }
 
-inline const DescriptorTable<BattleMotionSound> battle_motion_sounds{"battle_motion_sounds.tsv","motion\tframe\tfgm"};
+inline const DescriptorTable<BattleMotionSound> battle_motion_sounds{"battle_motion_sounds.tsv","motion\tframe\tfgm",1840};
 }

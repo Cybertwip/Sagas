@@ -13,5 +13,5 @@ inline void descriptor_read(std::istream& input,SourceThrow& value) {
     descriptor_read(input,value.base);
 }
 
-inline const DescriptorTable<std::array<SourceThrow,2>> source_throws{"source_throws.tsv","[0].frame\t[0].damage\t[0].angle\t[0].growth\t[0].weight\t[0].base\t[1].frame\t[1].damage\t[1].angle\t[1].growth\t[1].weight\t[1].base"};
+inline const DescriptorTable<std::array<SourceThrow,2>> source_throws{"source_throws.tsv","[0].frame\t[0].damage\t[0].angle\t[0].growth\t[0].weight\t[0].base\t[1].frame\t[1].damage\t[1].angle\t[1].growth\t[1].weight\t[1].base",12};
 }

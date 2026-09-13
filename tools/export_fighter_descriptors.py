@@ -88,7 +88,7 @@ def export_header(path):
             raise ValueError(f'{name}: expected {count} x {len(labels)} fields, got {len(numbers)}')
         write(name,labels,[numbers[i:i+len(labels)] for i in range(0,len(numbers),len(labels))])
         schema = '\\t'.join(labels)
-        return f'inline const DescriptorTable<{kind}> {name}{{"{name}.tsv","{schema}"}};'
+        return f'inline const DescriptorTable<{kind}> {name}{{"{name}.tsv","{schema}",{count}}};'
     source = re.sub(r'inline constexpr\s+([^;]+);',aggregate,source)
     source = source.replace('#include <array>','#include <array>\n#include <sagas/FighterDescriptors.hpp>')
     path.write_text(source)

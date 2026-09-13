@@ -319,15 +319,26 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             } else if (body.kind==FighterKind::Fox && body.special_index%3==2) {
                 body.vel_air.x*=.8f;body.vel_air.y=body.special_tics<=4?0:std::max(-body.attr.tvel_base,body.vel_air.y+body.attr.gravity-.8f);
             } else if (body.kind==FighterKind::Captain && body.special_index%3==0) {
-                // Falcon Punch uses a one-shot angled boost, not TransN in air.
+                // ftCaptainSpecialAirNProcPhysics owns all velocity updates.
+                // Startup uses gravity/friction without stick drift; flag 1 is
+                // boost decay, and flag 2 restores normal recovery control.
                 const int flag=FighterCombat::special_flag(body,2);
+                body.vel_air=air_before;
                 if (FighterCombat::special_flag(body,1) && !body.special_second) {
                     body.special_second=true;
                     const float angle=std::copysign(std::clamp(std::abs(body.stick_y)-10,0,40)*(.5235987756f/40),float(body.stick_y));
                     body.vel_air={std::cos(angle)*65*body.lr,std::sin(angle)*65,0};
-                } else if (flag<2) {
-                    body.vel_air.y+=body.attr.gravity;
-                    if (flag==1) {body.vel_air.x*=.92f;body.vel_air.y*=.92f;}
+                }
+                if(flag==0) {
+                    if(body.fastfall)body.vel_air.y=-body.attr.tvel_fast;
+                    else apply_gravity_clamp_tvel(body,body.attr.gravity,body.attr.tvel_base);
+                    if(std::abs(body.vel_air.x)>body.attr.air_speed_max_x)
+                        body.vel_air.x=std::copysign(std::max(body.attr.air_speed_max_x,std::abs(body.vel_air.x)-1.f),body.vel_air.x);
+                    else apply_air_vel_x_friction(body);
+                } else if(flag==1) {body.vel_air.x*=.92f;body.vel_air.y*=.92f;}
+                else {
+                    if(body.stick_y<=-53 && body.tap_stick_y<4 && body.vel_air.y<0)body.fastfall=true;
+                    apply_air_vel_drift(body);
                 }
             } else if ((body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi) && body.special_index%3==2) {
                 body.vel_air.x=std::clamp(body.vel_air.x+body.stick_x*.03f,-17.f,17.f);

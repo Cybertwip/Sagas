@@ -8,6 +8,28 @@
 #include <cmath>
 using namespace sagas;
 int main() {
+    {
+        FighterBody base;base.kind=FighterKind::Captain;base.attr=fighter_attributes(base.kind);
+        base.grounded=false;base.status=FighterStatus::Fall;base.position={0,10000,0};base.vel_air={12,20,0};
+        assert(FighterCombat::start_special(base,true));
+        auto neutral=base,left=base,right=base;
+        left.stick_x=-80;right.stick_x=80;
+        FighterPhysics::tick(neutral,0);FighterPhysics::tick(left,0);FighterPhysics::tick(right,0);
+        assert(std::abs(neutral.vel_air.y-(20-base.attr.gravity))<.001f);
+        assert(left.vel_air.x==neutral.vel_air.x && right.vel_air.x==neutral.vel_air.x);
+        assert(left.vel_air.y==neutral.vel_air.y && right.vel_air.y==neutral.vel_air.y);
+        // Decay must apply in the same tick as the authored boost.
+        for(int frame=0;frame<100;++frame) {
+            base.action_frame=frame;
+            if(FighterCombat::special_flag(base,1) && FighterCombat::special_flag(base,2)==1) {
+                base.vel_air={0,-20,0};base.special_second=false;
+                FighterPhysics::tick(base,0);
+                assert(std::abs(base.vel_air.x-65*.92f)<.001f);
+                assert(std::abs(base.vel_air.y)<.001f);
+                break;
+            }
+        }
+    }
     AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);
     n64::RelocArchive archive(assets);
     Scene3DLoader loader(archive);Scene3DRenderer renderer(archive);

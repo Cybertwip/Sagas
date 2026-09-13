@@ -54,6 +54,7 @@ public:
                 sounds.insert(data.smash_voices.begin(),data.smash_voices.end());
             }
             for (const auto& sound:battle_motion_sounds) if (clips.contains(sound.motion) && sound.fgm!=~0U) sounds.insert(sound.fgm);
+            sounds.insert(samus_shoot_sounds.begin(),samus_shoot_sounds.end());sounds.insert(samus_charge_sounds.begin(),samus_charge_sounds.end());
             for (auto sound:sounds) services.audio.preload_fgm(sound);
         }
         camera_.tick(bodies_,stage_);
@@ -239,6 +240,8 @@ public:
             if (!body.hitlag && body.status==FighterStatus::Special && body.kind==FighterKind::Yoshi && body.special_index%3==1 && FighterCombat::special_flag(body,2)==2 && !body.special_projectile) {
                 spawn_projectile(i,body);body.special_projectile=true;
             }
+            if(!services.deterministic_clock && !body.hitlag && body.kind==FighterKind::Samus && body.status==FighterStatus::Special && body.special_index%3==0 && body.special_phase==1 && body.charge_ticks==0)
+                services.audio.play_fgm(samus_charge_sounds[std::min(body.charge_level,7U)]);
             if (!body.hitlag && body.status==FighterStatus::Special && !body.special_projectile &&
                 !(body.kind==FighterKind::Yoshi && body.special_index%3==1) &&
                 !(body.kind==FighterKind::Samus && body.special_index%3==0 && body.special_phase!=2)) {
@@ -350,6 +353,8 @@ public:
         hits.insert(hits.end(),fighter_hits.begin(),fighter_hits.end());
         for (auto& shot:projectiles_) {
             ++shot.age;
+            if(shot.weapon==3 && shot.age==1 && !services.deterministic_clock)
+                services.audio.play_fgm(samus_shoot_sounds[shot.charge==7?3:shot.charge>=4?2:shot.charge>=2?1:0]);
             const auto explode=[&] {
                 if(shot.exploding)return;
                 shot.exploding=true;shot.held=false;shot.life=shot.weapon==12?10:6;shot.velocity={};shot.gravity=0;shot.hit_mask=0;
@@ -509,6 +514,13 @@ public:
             const auto model=body.status==FighterStatus::Captured?captured_model(body):posed(body);
             renderer_->draw(r,model,camera,body.action_frame*(body.status==FighterStatus::Land?body.landing_speed:1.f),
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
+            if(body.kind==FighterKind::Samus && body.status==FighterStatus::Special && body.special_index%3==0 && body.special_phase==1) {
+                if(!weapon_models_.contains(3))weapon_models_.emplace(3,loader_->weapon({218,0},0));
+                auto charge=weapon_models_.at(3);charge.position=renderer_->joint_point(model,body.action_frame,16,{180,0,0});
+                const float scale=1+body.charge_level*.5f;charge.scale={scale,scale,scale};
+                charge.rotation.y=body.lr*std::numbers::pi_v<float>/2;
+                renderer_->draw(r,charge,camera,body.special_tics);
+            }
         }
         for (const auto& shot:projectiles_) {
             if(shot.exploding)continue;
@@ -653,10 +665,10 @@ private:
             case FighterStatus::SpecialFall:case FighterStatus::Fall:return data.fall;
             case FighterStatus::Land:return body.landing_motion?body.landing_motion:data.landing;
             case FighterStatus::Catch:return data.grab[0];
-            case FighterStatus::CatchWait:return body.carrying?(body.grounded && std::abs(body.stick_x)>10?949:946):data.grab[1];
+            case FighterStatus::CatchWait:return body.carrying?donkey_cargo_motions[body.grounded && std::abs(body.stick_x)>10?1:0]:data.grab[1];
             case FighterStatus::Sleep:return sleep_motions[static_cast<unsigned>(body.kind)];
             case FighterStatus::Captured:if(body.capture_motion) return body.capture_motion;return data.capture[body.captured_dive?2:body.captured_throw?1:0];
-            case FighterStatus::Throw:return body.carrying?945:data.grab[body.throw_backward?3:2];
+            case FighterStatus::Throw:return body.carrying?donkey_cargo_motions[2]:data.grab[body.throw_backward?3:2];
             case FighterStatus::Special:return body.special_motion;
             case FighterStatus::Attack:
                 if (body.attack_motion) return body.attack_motion;

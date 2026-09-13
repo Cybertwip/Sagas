@@ -179,4 +179,7 @@ inline constexpr unsigned nSYAudioVoicePublicCheer = 618;
 inline constexpr unsigned nSYAudioVoicePublicAmazed = 619;
 inline constexpr unsigned nSYAudioVoicePublicGaspClap = 620;
 inline constexpr unsigned nSYAudioVoicePublicGaspL = 615;
+inline constexpr std::array<unsigned,4> samus_shoot_sounds{238,237,236,235};
+inline constexpr std::array<unsigned,8> samus_charge_sounds{239,240,241,242,243,244,245,246};
+inline constexpr std::array<unsigned,3> donkey_cargo_motions{946,949,945};
 }

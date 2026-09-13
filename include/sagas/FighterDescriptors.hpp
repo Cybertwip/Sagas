@@ -24,6 +24,9 @@ void descriptor_read(std::istream& input,T& value) {
     if(result.ec!=std::errc{} || result.ptr!=token.data()+token.size())throw std::runtime_error("invalid numeric field: "+token);
     if constexpr(std::is_floating_point_v<T>)if(!std::isfinite(value))throw std::runtime_error("non-finite field");
 }
+inline void descriptor_read(std::istream& input,std::string& value) {
+    if(!(input>>value))throw std::runtime_error("missing identifier field");
+}
 template<class T,std::size_t N> void descriptor_read(std::istream& input,std::array<T,N>& values) {
     for(auto& value:values)descriptor_read(input,value);
 }

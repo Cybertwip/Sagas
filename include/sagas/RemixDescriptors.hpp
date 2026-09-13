@@ -1,5 +1,6 @@
 #pragma once
 #include <sagas/FighterDescriptors.hpp>
+#include <cstdint>
 namespace sagas {
 struct RemixFighter {
     unsigned id;
@@ -26,7 +27,7 @@ struct RemixAction {
     unsigned fighter;
     unsigned action;
     int animation;
-    int flags;
+    std::int64_t flags;
     int script;
 };
 inline void descriptor_read(std::istream& input,RemixAction& value) {

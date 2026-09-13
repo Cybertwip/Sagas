@@ -140,7 +140,7 @@ public:
     static void clamp_air_vel_x_stick(FighterBody& body) noexcept;
     static void apply_air_vel_drift(FighterBody& body) noexcept;
     static void jump(FighterBody& body) noexcept;
-    static void tick(FighterBody& body, float ground_y) noexcept;
+    static void tick(FighterBody& body, float ground_y);
     static void tick(FighterBody& body, std::span<const CollisionSegment> stage, const JumpMotion& motion = {});
 };
 

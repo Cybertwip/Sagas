@@ -176,6 +176,7 @@ add_dependencies(sagas sagas_asset_unpack)
 
 if(SAGAS_BUILD_TESTS)
     enable_testing()
+    add_test(NAME sagas_remix_importer COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_import_smashremix.py")
     add_executable(sagas_remix_descriptor_tests tests/remix_descriptors.cpp)
     target_link_libraries(sagas_remix_descriptor_tests PRIVATE sagas_engine)
     target_compile_options(sagas_remix_descriptor_tests PRIVATE -UNDEBUG)

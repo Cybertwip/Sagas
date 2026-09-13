@@ -137,7 +137,7 @@ void FighterPhysics::jump(FighterBody& body) noexcept {
     body.vel_ground=0; body.status=FighterStatus::Jump; body.jump_frames=0; body.action_frame=0;
 }
 
-void FighterPhysics::tick(FighterBody& body,float ground_y) noexcept {
+void FighterPhysics::tick(FighterBody& body,float ground_y) {
     const CollisionSegment floor{{-1000000,ground_y},{1000000,ground_y},0,0,false};
     tick(body,std::span<const CollisionSegment>(&floor,1));
 }

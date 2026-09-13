@@ -19,16 +19,18 @@ int main() {
         assert(left.vel_air.x==neutral.vel_air.x && right.vel_air.x==neutral.vel_air.x);
         assert(left.vel_air.y==neutral.vel_air.y && right.vel_air.y==neutral.vel_air.y);
         // Decay must apply in the same tick as the authored boost.
+        bool tested_decay=false;
         for(int frame=0;frame<100;++frame) {
             base.action_frame=frame;
             if(FighterCombat::special_flag(base,1) && FighterCombat::special_flag(base,2)==1) {
                 base.vel_air={0,-20,0};base.special_second=false;
                 FighterPhysics::tick(base,0);
                 assert(std::abs(base.vel_air.x-65*.92f)<.001f);
-                assert(std::abs(base.vel_air.y)<.001f);
+                assert(std::abs(base.vel_air.y)<.001f);tested_decay=true;
                 break;
             }
         }
+        assert(tested_decay);
     }
     AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);
     n64::RelocArchive archive(assets);

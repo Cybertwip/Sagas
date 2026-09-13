@@ -346,7 +346,8 @@ public:
                 if (box.kind==static_cast<unsigned>(body.kind) && box.motion==(body.status==FighterStatus::Special?FighterCombat::special_event_motion(body):body.motion) && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
                     const auto position=renderer_->joint_point(model,body.action_frame,box.joint,
                         {static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
-                    volumes.push_back({i,position,box.radius*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,box.fgm,(body.status==FighterStatus::Catch || (body.kind==FighterKind::Kirby && body.status==FighterStatus::Special && body.special_index%3==0 && body.special_phase==1) || (body.kind==FighterKind::Captain && body.special_index%3==1 && body.status==FighterStatus::Special && body.special_phase==0)),box.group,box.epoch,box.element});
+                    const int damage=box.damage+(body.kind==FighterKind::Donkey && body.status==FighterStatus::Special && body.special_index%3==0 && body.special_phase==2?body.charge_ticks*2:0);
+                    volumes.push_back({i,position,box.radius*.5f*body.attr.size,damage,box.angle,box.growth,box.weight,box.base,box.fgm,(body.status==FighterStatus::Catch || (body.kind==FighterKind::Kirby && body.status==FighterStatus::Special && body.special_index%3==0 && body.special_phase==1) || (body.kind==FighterKind::Captain && body.special_index%3==1 && body.status==FighterStatus::Special && body.special_phase==0)),box.group,box.epoch,box.element});
                 }
         }
         const auto fighter_hits=FighterCombat::resolve(bodies_,volumes);

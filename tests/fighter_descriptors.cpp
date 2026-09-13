@@ -43,15 +43,15 @@ int main() {
     std::vector<std::string> columns;
     std::istringstream header(line);
     while(std::getline(header,line,'\t'))columns.push_back(line);
-    bool first=true;
+    unsigned row_index=0;
     while(std::getline(source,line)) {
-        if(first) {
+        if(row_index++==static_cast<unsigned>(FighterKind::Mario)) {
             std::istringstream row(line);std::string field;
             for(std::size_t i=0;i<columns.size();++i) {
                 std::getline(row,field,'\t');
                 changed<<(i?"\t":"")<<(columns[i]=="gravity"?"9.25":field);
             }
-            changed<<'\n';first=false;
+            changed<<'\n';
         } else changed<<line<<'\n';
     }
     changed.close();

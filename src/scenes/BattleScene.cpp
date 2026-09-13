@@ -236,7 +236,8 @@ public:
             if (!body.hitlag && body.status==FighterStatus::Special && body.kind==FighterKind::Pikachu && body.special_index%3==2 && body.special_phase==1 && !body.special_projectile) {
                 spawn_projectile(i,body);body.special_projectile=true;
             }
-            if (!body.hitlag && body.status==FighterStatus::Special && !body.special_projectile) {
+            if (!body.hitlag && body.status==FighterStatus::Special && !body.special_projectile &&
+                !(body.kind==FighterKind::Samus && body.special_index%3==0 && body.special_phase!=2)) {
                 for (const auto& flag:source_special_flags)
                     if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==event_clip && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(body.action_frame)) {
                         spawn_projectile(i,body);body.special_projectile=true;break;
@@ -341,6 +342,14 @@ public:
         hits.insert(hits.end(),fighter_hits.begin(),fighter_hits.end());
         for (auto& shot:projectiles_) {
             ++shot.age;
+            if(shot.weapon==4 && shot.age>=40) {
+                const auto& owner=bodies_[shot.owner];
+                const float dx=owner.position.x-shot.position.x,dy=owner.position.y+290-shot.position.y;
+                const float distance=std::hypot(dx,dy);
+                if(distance<180) {shot.life=0;continue;}
+                shot.velocity={dx/distance*85,dy/distance*85,0};
+                if(shot.age==40)shot.hit_mask=0;
+            }
             if (shot.weapon==11 && shot.age%16==0) shot.hit_mask=0;
             if (shot.weapon==10) {
                 const auto& owner=bodies_[shot.owner];
@@ -420,17 +429,20 @@ public:
                 }
             }
             if (shot.life<=0) continue;
-            const auto& a=weapon_source_data[shot.weapon];
+            auto a=weapon_source_data[shot.weapon];
+            if(shot.weapon==3) {a.damage=shot.charge==7?26:3+shot.charge*3;a.size=100+shot.charge*20;}
+            if(shot.weapon==4 && shot.age>=40)a.damage=8;
             AttackVolume contact{shot.owner,{shot.position.x,shot.position.y+(shot.weapon==11?200:0),shot.position.z},a.size*.5f,a.damage,a.angle,a.growth,a.weight,a.base,static_cast<unsigned>(a.sfx),false,0,~0U,static_cast<unsigned>(a.element),true,shot.facing,shot.hit_mask};
             auto contacts=FighterCombat::resolve(bodies_,std::span<const AttackVolume>(&contact,1));
             for (const auto& contact_hit:contacts) shot.hit_mask|=1U<<contact_hit.defender;
             if (!contacts.empty()) {
                 if (shot.weapon==5 && !contacts.front().shield) {shot.weapon=11;shot.velocity={};shot.life=100;shot.gravity=.45f;shot.age=0;shot.hit_mask=0;}
+                else if(shot.weapon==4)shot.age=std::max(shot.age,40);
                 else if (shot.weapon!=7 && shot.weapon!=11) shot.life=0;
                 hits.insert(hits.end(),contacts.begin(),contacts.end());
             }
             const Color color=a.element==2?Color{130,200,255,255}:shot.weapon==2?Color{255,80,80,255}:Color{255,160,55,255};
-            if (shot.weapon<6 && shot.weapon!=2) particles_.push_back({shot.position,{},color,0,3,60.f,true});
+            if (shot.weapon==5) particles_.push_back({shot.position,{},color,0,3,60.f,true});
         }
         for (const auto& shot:projectiles_) if (shot.weapon==10 && shot.life<=0) {
             auto& owner=bodies_[shot.owner];
@@ -470,18 +482,21 @@ public:
             renderer_->draw(r,model,camera,body.action_frame*(body.status==FighterStatus::Land?body.landing_speed:1.f),
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
         }
-        for (const auto& shot:projectiles_) if (shot.weapon==2 || shot.weapon==5 || shot.weapon>=6) {
+        for (const auto& shot:projectiles_) {
             if (!weapon_models_.contains(shot.weapon)) {
-                const n64::Address attributes{(shot.weapon==5 || shot.weapon==11)?240U:shot.weapon==10?239U:shot.weapon==2?210U:shot.weapon==9?229U:shot.weapon==7?243U:244U,shot.weapon==10?12U:shot.weapon==11?52U:shot.weapon==9?8U:shot.weapon==7?64U:shot.weapon==8?52U:0U};
-                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon==6 || shot.weapon==2 || shot.weapon==5)?0:shot.weapon==11?1:(shot.weapon==8 || shot.weapon==9 || shot.weapon==10)?3:2));
+                const n64::Address attributes{shot.weapon==0?222U:shot.weapon==1?204U:shot.weapon==3?218U:shot.weapon==4?226U:(shot.weapon==5 || shot.weapon==11)?240U:shot.weapon==10?239U:shot.weapon==2?210U:shot.weapon==9?229U:shot.weapon==7?243U:244U,shot.weapon==10?12U:shot.weapon==11?52U:shot.weapon==9?8U:shot.weapon==7?64U:shot.weapon==8?52U:0U};
+                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon<=3 || shot.weapon==6 || shot.weapon==5)?0:(shot.weapon==4 || shot.weapon==11)?1:(shot.weapon==8 || shot.weapon==9 || shot.weapon==10)?3:2));
             }
             if (weapon_models_.contains(shot.weapon)) {
                 auto weapon=weapon_models_.at(shot.weapon);weapon.position=shot.position;weapon.rotation.y=shot.facing*std::numbers::pi_v<float>/2;
                 if (shot.weapon==10 || shot.weapon==5) weapon.rotation={0,0,std::atan2(shot.velocity.y,shot.velocity.x)};
                 if (shot.weapon==11) {weapon.rotation={};const float scale=.5f+.5f*shot.life/100.f;weapon.scale={scale,scale,scale};}
                 if (shot.weapon==2) {weapon.rotation={0,0,shot.facing<0?std::numbers::pi_v<float>:0};weapon.scale.x=std::min(160.f/3,1+shot.age*(16.f/3));}
+                if (shot.weapon<=1)weapon.rotation={0,0,shot.age*(shot.weapon==0?.4363323f:.34906585f)*shot.facing};
+                if (shot.weapon==3)weapon.rotation={};
+                if (shot.weapon==3) {const float scale=(150+shot.charge*75)/150.f;weapon.scale={scale,scale,scale};}
                 if (shot.weapon==7) weapon.scale={.5f,.5f,.5f};
-                renderer_->draw(r,weapon,camera,static_cast<float>(shot.age));
+                renderer_->draw(r,weapon,camera,shot.weapon<=1?float(shot.weapon==0):static_cast<float>(shot.age));
             }
         }
         renderer_->end(r);
@@ -693,9 +708,14 @@ private:
     }
     std::unordered_map<std::string,Model3D> part_models_;
     std::unordered_map<unsigned,Model3D> weapon_models_;
-    struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity;unsigned hit_mask{};int age{}; };
+    struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity;unsigned hit_mask{};int age{};unsigned charge{}; };
     std::vector<Projectile> projectiles_;
-    void spawn_projectile(unsigned owner,const FighterBody& body) {
+    void spawn_projectile(unsigned owner,FighterBody& body) {
+        if(body.kind==FighterKind::Samus && body.special_index%3==0) {
+            const auto origin=renderer_->joint_point(posed(body),body.action_frame,16,{180,0,0});
+            projectiles_.push_back({owner,3,{origin.x,origin.y,0},{body.lr*(60.f+body.charge_level*2),0,0},120,body.lr,0,0,0,body.charge_level});
+            body.charge_level=0;return;
+        }
         if (body.kind==FighterKind::Ness && body.special_index%3==1 && body.special_phase==1) {
             const auto origin=renderer_->joint_point(posed(body),body.action_frame,12);
             projectiles_.push_back({owner,10,{origin.x,origin.y,0},{0,60,0},160,body.lr,0});return;
@@ -719,7 +739,7 @@ private:
             case FighterKind::Link:weapon=4;break;case FighterKind::Ness:weapon=5;break;
             case FighterKind::Pikachu:weapon=6;break;default:return;
         }
-        const float speed=weapon==2?160.f:weapon==4?85.f:weapon==6?28.28427f:50.f;
+        const float speed=weapon==0?36.f:weapon==2?160.f:weapon==4?85.f:weapon==6?28.28427f:50.f;
         Vec3 origin{body.position.x+body.lr*(body.attr.width+60),body.position.y+body.attr.height*.6f,0};
         if (weapon==2) origin=renderer_->joint_point(posed(body),body.action_frame,17,{60,0,0});
         if (weapon==6) origin=renderer_->joint_point(posed(body),body.action_frame,11);

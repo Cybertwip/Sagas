@@ -417,7 +417,14 @@ void Scene3DLoader::set_fighter_part(Model3D& model,FighterKind kind,unsigned jo
         const std::array<std::optional<n64::Address>,1> pairs{display};
         auto decoded=decoder.decode_joint_tree(pairs,materials,true);
         model.parent_meshes[node]=std::move(decoded.before[0]);model.meshes[node]=std::move(decoded.after[0]);
-    } else model.meshes[node]=decoder.decode(*display,materials[0]);
+    } else {
+        const std::array<std::optional<n64::Address>,1> lists{display};
+        model.meshes[node]=decoder.decode_model_tree(lists,materials,false,true)[0];
+    }
+    // Replacement parts inherit fighter two-cycle RDP setup and are decoded
+    // as a one-node tree; remap its cached vertex bindings into the full rig.
+    for(auto* mesh:{&model.meshes[node],&model.parent_meshes[node]})
+        for(auto& vertex:mesh->vertices)if(vertex.transform_node==0)vertex.transform_node=node;
     // The part's material animation table has the same one-node layout as its materials.
     model.material_animation[node]=material_animation_table(archive_,{variant.file,variant.offset+12},materials)[0];
 }

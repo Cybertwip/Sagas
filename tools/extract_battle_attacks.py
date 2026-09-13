@@ -18,8 +18,13 @@ def extract(decomp, manifest):
             elif all(active):lines.append(line)
         source=re.sub(r'/\*.*?\*/|//[^\n]*','','\n'.join(lines),flags=re.S)
         source = re.sub(r'\((?:u32|ftMotionCommand\s*\*)\)', '', source)
-        for name,body in re.findall(r'(\w+)\s*\[\s*\]\s*=\s*\{(.*?)\};',source,re.S):
+        blocks=re.findall(r'(\w+)\s*\[\s*\]\s*=\s*\{(.*?)\};',source,re.S)
+        for name,body in blocks:
             scripts[name]=re.findall(r'(ftMotion\w+)\(([^()]*)\)',body)
+        for (name,_),(next_name,_) in zip(blocks,blocks[1:]):
+            if scripts[name] and scripts[next_name] and scripts[name][-1][0] not in ('ftMotionCommandEnd','ftMotionCommandReturn','ftMotionCommandGoto','ftMotionCommandPauseScript'):
+                scripts[name].append(('ftMotionCommandGoto',next_name))
+
     mapping={}; recovery_clips=set();special_clips=set()
     names=['Luigi','Mario','Donkey','Link','Samus','Captain','Ness','Yoshi','Kirby','Fox','Pikachu','Purin']
     source=(decomp/'src/ft/ftdata.c').read_text()

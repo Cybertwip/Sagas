@@ -15,8 +15,8 @@ int main() {
         auto m=loader.fighter_motion(FighterKind::Donkey,844,fighter_motion_flags(844));
         loader.set_fighter_part(m,FighterKind::Donkey,12,1);
         auto i=std::find(m.source_joint_ids.begin(),m.source_joint_ids.end(),12)-m.source_joint_ids.begin();
-        for(auto& a:m.materials[i])std::cout<<"mat "<<a.flags<<" "<<int(a.primitive.r)<<" light "<<(a.light1?int(a.light1->r):-1)<<" "<<(a.light2?int(a.light2->r):-1)<<std::endl;
-        for(unsigned v=0;v<m.meshes[i].vertices.size();v+=30) {auto& a=m.meshes[i].vertices[v];std::cout<<"vertex "<<v<<" mat "<<a.material_index<<" lit "<<a.lit<<" tex "<<bool(a.texture)<<" shade "<<int(a.shade.r)<<" light "<<(a.light1?int(a.light1->r):-1)<<" "<<(a.light2?int(a.light2->r):-1)<<" prim "<<int(a.rdp.primitive.r)<<std::endl;}
+        assert(!m.meshes[i].vertices.empty());
+        for(const auto& v:m.meshes[i].vertices) {assert(v.rdp.cycles==2);assert(v.transform_node==i);}
     }
     for(unsigned kind=0;kind<12;++kind) {
         const auto& data=fighter_source_data[kind];

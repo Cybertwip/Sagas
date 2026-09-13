@@ -282,7 +282,9 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 if (body.special_phase==3) {
                     const float speed=std::max(0.f,200.f-body.action_frame*(43.f/7));
                     body.vel_air={body.special_velocity.x*speed/200,body.special_velocity.y*speed/200,0};
-                } else {body.vel_air.x=0;if(body.special_tics<=25)body.vel_air.y=0;}
+                } else {body.vel_air.x=0;body.vel_air.y=body.special_tics<=25?0:std::max(-body.attr.tvel_base,body.vel_air.y+body.attr.gravity-.5f);}
+            } else if (body.kind==FighterKind::Link && body.special_index%3==1) {
+                body.vel_air.y=std::max(-body.attr.tvel_base,body.vel_air.y+body.attr.gravity*.77f);
             } else if (body.kind==FighterKind::Ness && body.special_index%3==2) {
                 if(body.special_tics<=4)body.vel_air.y=0;
             } else if (body.kind==FighterKind::Pikachu && body.special_index%3==1) {
@@ -333,7 +335,10 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
     }
     const float velocity_x=body.vel_air.x+body.vel_damage.x;
     const float velocity_y=body.vel_air.y+body.vel_damage.y;
-    body.position.x+=velocity_x; body.position.y+=velocity_y;body.position.z+=body.vel_air.z;
+    body.position.x+=velocity_x; body.position.y+=velocity_y;
+    // Battle locomotion stays on the collision plane. Authored depth tracks
+    // belong to the visual pose and must not accumulate into later actions.
+    body.position.z=0;body.vel_air.z=0;
     const bool follows_floor=body.grounded;
     body.grounded=false;
     float floor=-std::numeric_limits<float>::infinity();
@@ -535,6 +540,9 @@ bool FighterCombat::start_special(FighterBody& body,bool pressed) {
     if ((direction==0 || (direction==1 && (body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi))) && std::abs(body.stick_x)>=20) body.lr=body.stick_x>0?1:-1;
     if (direction==1 && body.kind==FighterKind::Captain) {body.grounded=false;body.vel_air={};body.jumps_used=body.attr.jumps_max;}
     if (direction==1 && body.kind==FighterKind::Donkey && !body.grounded) body.vel_air.y=18.f;
+    if (direction==1 && body.kind==FighterKind::Link && !body.grounded) body.vel_air.y=69.f;
+    if (direction==1 && body.kind==FighterKind::Samus) {body.grounded=false;body.vel_air={body.lr*10.f,62,0};}
+    if (direction==0 && body.kind==FighterKind::Samus) {body.charge_ticks=0;body.special_second=body.charge_level==7;}
     return true;
 }
 void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animation_ended) {
@@ -554,6 +562,21 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
         return;
     }
     const bool plumber=body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi;
+    if(body.kind==FighterKind::Samus && index%3==0) {
+        if(body.special_phase==0) {
+            if(pressed)body.special_second=true;
+            if(animation_ended) {
+                body.special_phase=(!body.grounded || body.special_second)?2:1;
+                body.special_motion=body.special_phase==1?data.special_loop[index]:data.special_end[index];body.action_frame=0;body.special_projectile=false;
+            }
+            return;
+        }
+        if(body.special_phase==1) {
+            if(pressed || body.attack_pressed) {body.special_phase=2;body.special_motion=data.special_end[index];body.action_frame=0;body.special_projectile=false;}
+            else if(++body.charge_ticks>=20) {body.charge_ticks=0;if(++body.charge_level>=7){body.charge_level=7;body.status=FighterStatus::Wait;body.action_frame=0;}}
+            return;
+        }
+    }
     if (plumber && index%3==1 && special_flag(body,2) && !body.special_direction_checked) {
         if (std::abs(body.stick_x)>20) body.lr=body.stick_x>0?1:-1;
         body.special_direction_checked=true;

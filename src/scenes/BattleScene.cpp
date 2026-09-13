@@ -517,8 +517,8 @@ public:
             if(body.kind==FighterKind::Samus && body.status==FighterStatus::Special && body.special_index%3==0 && body.special_phase==1) {
                 if(!weapon_models_.contains(3))weapon_models_.emplace(3,loader_->weapon({218,0},0));
                 auto charge=weapon_models_.at(3);charge.position=renderer_->joint_point(model,body.action_frame,16,{180,0,0});
-                const float scale=1+body.charge_level*.5f;charge.scale={scale,scale,scale};
-                charge.rotation.y=body.lr*std::numbers::pi_v<float>/2;
+                const float scale=samus_charge_sizes[std::min(body.charge_level,7U)]/30.f;charge.scale={scale,scale,1};
+                charge.rotation.z=-body.special_tics*.314159265f*body.lr;
                 renderer_->draw(r,charge,camera,body.special_tics);
             }
         }
@@ -534,8 +534,7 @@ public:
                 if (shot.weapon==11) {weapon.rotation={};const float scale=.5f+.5f*shot.life/100.f;weapon.scale={scale,scale,scale};}
                 if (shot.weapon==2) {weapon.rotation={0,0,shot.facing<0?std::numbers::pi_v<float>:0};weapon.scale.x=std::min(160.f/3,1+shot.age*(16.f/3));}
                 if (shot.weapon<=1)weapon.rotation.x=shot.age*(shot.weapon==0?.4363323f:.34906585f);
-                if (shot.weapon==3)weapon.rotation={};
-                if (shot.weapon==3) {const float scale=(150+shot.charge*75)/150.f;weapon.scale={scale,scale,scale};}
+                if (shot.weapon==3) {weapon.rotation={0,0,-shot.age*.314159265f*shot.facing};const float scale=samus_charge_sizes[std::min(shot.charge,7U)]/30.f;weapon.scale={scale,scale,1};}
                 if (shot.weapon==7) weapon.scale={.5f,.5f,.5f};
                 renderer_->draw(r,weapon,camera,shot.weapon<=1?float(shot.weapon==0):static_cast<float>(shot.age));
             }
@@ -715,13 +714,14 @@ private:
         const unsigned event=body.status==FighterStatus::Special?FighterCombat::special_event_motion(body):clip;
         std::map<unsigned,int> parts;
         for (const auto& change:source_model_parts) if(change.kind==static_cast<unsigned>(body.kind) && change.motion==event && change.frame<=static_cast<unsigned>(body.action_frame)) {
-            if(change.joint<0)parts.clear();else parts[change.joint]=change.part;
+            if(change.joint<0) {parts.clear();if(change.joint==-2)parts[~0U]=-1;}else parts[change.joint]=change.part;
         }
         if (!parts.empty()) {
             std::string variant=std::to_string(key);
             for(const auto& [joint,part]:parts)variant+=":"+std::to_string(joint)+"="+std::to_string(part);
             if(!part_models_.contains(variant)) {
-                for(const auto& [joint,part]:parts)loader_->set_fighter_part(model,body.kind,joint,part);
+                if(parts.contains(~0U))for(unsigned joint:model.source_joint_ids)loader_->set_fighter_part(model,body.kind,joint,-1);
+                for(const auto& [joint,part]:parts)if(joint!=~0U)loader_->set_fighter_part(model,body.kind,joint,part);
                 part_models_.emplace(variant,model);
             } else model=part_models_.at(variant);
         }

@@ -106,6 +106,7 @@ def extract(decomp, manifest):
                 joint,part=(int(v.strip(),0) for v in arg.split(','))
                 parts.append((clip,frame,joint,part,kind))
             elif command=='ftMotionCommandResetModelPartAll':parts.append((clip,frame,-1,0,kind))
+            elif command=='ftMotionCommandHideModelPartAll':parts.append((clip,frame,-2,0,kind))
             elif command=='ftMotionCommandSetHitStatusAll':
                 hit_status.append((clip,frame,int(arg,0),kind))
             elif command=='ftMotionCommandSetFlag1':

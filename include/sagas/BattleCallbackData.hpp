@@ -182,4 +182,5 @@ inline constexpr unsigned nSYAudioVoicePublicGaspL = 615;
 inline constexpr std::array<unsigned,4> samus_shoot_sounds{238,237,236,235};
 inline constexpr std::array<unsigned,8> samus_charge_sounds{239,240,241,242,243,244,245,246};
 inline constexpr std::array<unsigned,3> donkey_cargo_motions{946,949,945};
+inline constexpr std::array<float,8> samus_charge_sizes{150.f,230.f,280.f,340.f,410.f,490.f,600.f,700.f};
 }

@@ -44,5 +44,7 @@ for name in ['nSYAudioFGMCatch','nSYAudioVoicePublicCheer','nSYAudioVoicePublicA
 text += 'inline constexpr std::array<unsigned,4> samus_shoot_sounds{'+','.join(str(voices['nSYAudioFGMSamusSpecialNShoot'+n]) for n in ['S','M','L','F'])+'};\n'
 text += 'inline constexpr std::array<unsigned,8> samus_charge_sounds{'+','.join(str(voices['nSYAudioFGMSamusSpecialNCharge'+str(n)]) for n in range(8))+'};\n'
 text += 'inline constexpr std::array<unsigned,3> donkey_cargo_motions{'+','.join(str(ids[tables['Donkey'][motions['nFTCommonMotionSpecialStart']+n]]) for n in [15,18,24])+'};\n'
+sizes=re.findall(r'(\d+)\.0F,\s*// Sprite size',(d/'src/wp/wpsamus/wpsamuschargeshot.c').read_text())
+text += 'inline constexpr std::array<float,8> samus_charge_sizes{'+','.join(n+'.f' for n in sizes)+'};\n'
 text += '}\n'
 (root/'sagas/include/sagas/BattleCallbackData.hpp').write_text(text)

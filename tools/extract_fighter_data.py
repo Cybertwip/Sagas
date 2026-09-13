@@ -91,6 +91,7 @@ for idx,name in enumerate(names):
     special_active[-1]=special_ids[stem+'Full'];special_events[3][-1]=special_event_ids[stem+'Full']
    if name=='Captain' and direction=='Lw':
     end=special_ids['SpecialLwLanding'];special_events[2][-1]=special_event_ids['SpecialLwLanding']
+    special_active[-1]=special_ids['SpecialLwAir'];special_events[3][-1]=special_event_ids['SpecialLwAir']
    special_start.append(start);special_loop.append(loop);special_end.append(end)
  capture=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('CapturePulled','ThrownCommon','CaptureCaptain')]
  guard=[ids[motions[enum_values['nFTCommonMotion'+n]]] for n in ('GuardOn','GuardOff','EscapeF','EscapeB')]

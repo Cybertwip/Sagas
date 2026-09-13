@@ -105,7 +105,7 @@ public:
                 body.jump_button=true; body.jump_released=false;
                 attack=std::abs(dx)<420 && tic_%32==static_cast<int>(i)*3;
             }
-            body.tap_stick_x=std::abs(body.stick_x)>=56 && (std::abs(old_x)<56 || old_x*body.stick_x<0)?0:std::min(255,body.tap_stick_x+1);
+            body.tap_stick_x=std::abs(body.stick_x)>=53 && (std::abs(old_x)<53 || old_x*body.stick_x<0)?0:std::min(255,body.tap_stick_x+1);
             body.tap_stick_y=std::abs(body.stick_y)>=53 && (std::abs(old_y)<53 || old_y*body.stick_y<0)?0:std::min(255,body.tap_stick_y+1);
             FighterCombat::buffer_smash(body,attack);
             FighterCombat::buffer_aerial(body,attack);
@@ -242,6 +242,10 @@ public:
             }
             if(!services.deterministic_clock && !body.hitlag && body.kind==FighterKind::Samus && body.status==FighterStatus::Special && body.special_index%3==0 && body.special_phase==1 && body.charge_ticks==0)
                 services.audio.play_fgm(samus_charge_sounds[std::min(body.charge_level,7U)]);
+            if(!body.hitlag && body.kind==FighterKind::Donkey && body.status==FighterStatus::Special && body.special_index%3==2 && body.special_phase==1 && (body.action_frame==16 || body.action_frame==26)) {
+                emit(body.position,{200,180,135,220},12,false);
+                particles_.push_back({body.position,{},{235,225,190,220},0,12,450,false,true});
+            }
             if (!body.hitlag && body.status==FighterStatus::Special && !body.special_projectile &&
                 !(body.kind==FighterKind::Yoshi && body.special_index%3==1) &&
                 !(body.kind==FighterKind::Samus && body.special_index%3==0 && body.special_phase!=2)) {
@@ -359,7 +363,16 @@ public:
             const auto explode=[&] {
                 if(shot.exploding)return;
                 shot.exploding=true;shot.held=false;shot.life=shot.weapon==12?10:6;shot.velocity={};shot.gravity=0;shot.hit_mask=0;
-                emit(shot.position,{255,190,80,255},18,true);
+                if(shot.weapon==12) {
+                    static constexpr Color colors[]{{255,80,100,255},{80,220,255,255},{255,225,50,255},{120,255,90,255},{220,110,255,255}};
+                    for(int n=0;n<30;++n) {
+                        const float angle=n*2.39996323f,speed=18.f+n%5*7;
+                        particles_.push_back({shot.position,{std::cos(angle)*speed,std::sin(angle)*speed+20,0},colors[n%5],0,40,20,false,false,4});
+                    }
+                } else {
+                    emit(shot.position,{255,190,80,255},18,true);
+                    particles_.push_back({shot.position,{},{255,235,130,255},0,8,350,false,false,10});
+                }
                 if(!services.deterministic_clock)services.audio.play_fgm(31);
             };
             if(shot.weapon>=12 && shot.life<=1 && !shot.exploding)explode();
@@ -528,9 +541,15 @@ public:
             if (!weapon_models_.contains(shot.weapon)) {
                 const n64::Address attributes{shot.weapon==12?247U:shot.weapon==13?217U:shot.weapon==14?225U:shot.weapon==0?222U:shot.weapon==1?204U:shot.weapon==3?218U:shot.weapon==4?226U:(shot.weapon==5 || shot.weapon==11)?240U:shot.weapon==10?239U:shot.weapon==2?210U:shot.weapon==9?229U:shot.weapon==7?243U:244U,(shot.weapon==12 || shot.weapon==13)?12U:shot.weapon==14?64U:shot.weapon==10?12U:shot.weapon==11?52U:shot.weapon==9?8U:shot.weapon==7?64U:shot.weapon==8?52U:0U};
                 weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon<=3 || shot.weapon==6 || shot.weapon==5 || shot.weapon==12 || shot.weapon==13)?0:(shot.weapon==4 || shot.weapon==11)?1:(shot.weapon==8 || shot.weapon==9 || shot.weapon==10 || shot.weapon==14)?3:2,shot.weapon==0?1:0));
+                if(shot.weapon==12)for(auto& mesh:weapon_models_.at(12).meshes)for(auto& vertex:mesh.vertices)vertex.rdp.environment={0,0,0,0};
+                if(shot.weapon==14)for(auto& mesh:weapon_models_.at(14).meshes)for(auto& vertex:mesh.vertices){vertex.rdp.environment={0,0,0,0};vertex.rdp.cycles=2;}
             }
             if (weapon_models_.contains(shot.weapon)) {
                 auto weapon=weapon_models_.at(shot.weapon);weapon.position=shot.position;weapon.rotation.y=shot.facing*std::numbers::pi_v<float>/2;
+                if(shot.weapon>=12)weapon.rotation={};
+                if(shot.weapon==14 && !weapon.nodes.empty())weapon.nodes[0].translate={0,0,0};
+                if(shot.weapon==12)weapon.rotation.z=shot.age*(-2.1f*shot.charge-1.5f)*.0174532925f;
+                if(shot.weapon==13)weapon.rotation.z=shot.age*.34906585f;
                 if (shot.weapon==10 || shot.weapon==5) weapon.rotation={0,0,std::atan2(shot.velocity.y,shot.velocity.x)};
                 if (shot.weapon==11) {weapon.rotation={};const float scale=.5f+.5f*shot.life/100.f;weapon.scale={scale,scale,scale};}
                 if (shot.weapon==2) {weapon.rotation={0,0,shot.facing<0?std::numbers::pi_v<float>:0};weapon.scale.x=std::min(160.f/3,1+shot.age*(16.f/3));}
@@ -758,7 +777,7 @@ private:
             if(std::abs(angle)<.104719755f)angle=0;
             angle=(body.lr>0?1.27409035f:1.8675023f)-angle;
             const float speed=50+2.3f*std::min(body.special_tics,30U);
-            projectiles_.push_back({owner,12,{body.position.x,body.position.y+body.attr.height,0},{std::cos(angle)*speed,std::sin(angle)*speed,0},50,body.lr,2.7f});return;
+            projectiles_.push_back({owner,12,{body.position.x,body.position.y+body.attr.height,0},{std::cos(angle)*speed,std::sin(angle)*speed,0},50,body.lr,2.7f,0,0,std::min(body.special_tics,30U)});return;
         }
         if(body.special_index%3==2 && (body.kind==FighterKind::Samus || body.kind==FighterKind::Link)) {
             const bool link=body.kind==FighterKind::Link;
@@ -873,7 +892,7 @@ private:
             const float size=p.size*factor*(p.spark?1.f:1.f+p.age*.05f);
             auto color=p.color;color.a=static_cast<std::uint8_t>(color.a*(1.f-float(p.age)/p.life));
             std::vector<TriangleVertex> shape;shape.reserve(48);
-            Color edge=color;edge.a=p.sides==10?color.a:p.ring?220:0;
+            Color edge=color;edge.a=(p.sides==10 || p.sides==4)?color.a:p.ring?220:0;
             if (p.ring) color.a=35;
             for (int segment=0;segment<p.sides;++segment) {
                 const float a=segment*2*std::numbers::pi_v<float>/p.sides,b=(segment+1)*2*std::numbers::pi_v<float>/p.sides;

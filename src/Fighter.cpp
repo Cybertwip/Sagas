@@ -416,6 +416,8 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             } else if (body.status==FighterStatus::Special && body.kind==FighterKind::Captain && body.special_index==5) {
                 body.special_phase=2;body.special_index=2;body.special_motion=fighter_source_data[5].special_end[2];
                 body.action_frame=0;body.vel_air={};body.vel_ground=0;
+            } else if (body.status==FighterStatus::Special && body.kind==FighterKind::Captain && body.special_index==2) {
+                body.vel_ground=body.vel_air.x*body.lr;
             } else if (body.status==FighterStatus::Special && body.kind==FighterKind::Ness && body.special_index%3==1 && body.special_phase!=3) {
                 body.special_index=1;
                 const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
@@ -443,7 +445,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
         body.status=FighterStatus::Fall;body.action_frame=0;
         body.vel_air.x=std::clamp(body.vel_air.x,-body.attr.air_speed_max_x,body.attr.air_speed_max_x);
     }
-    if (was_grounded && !body.grounded && body.status==FighterStatus::Special && (body.special_index%3!=1 || body.kind==FighterKind::Purin)) {
+    if (was_grounded && !body.grounded && body.status==FighterStatus::Special && !(body.kind==FighterKind::Captain && body.special_index==2) && (body.special_index%3!=1 || body.kind==FighterKind::Purin)) {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];body.special_index=body.special_index%3+3;
         body.special_motion=body.special_phase==0?data.special_start[body.special_index]:body.special_phase==1?data.special_loop[body.special_index]:body.special_phase==4?data.special_hit[body.special_index]:data.special_end[body.special_index];
     }
@@ -591,6 +593,14 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
         return;
     }
     const bool plumber=body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi;
+    if(body.kind==FighterKind::Captain && index==2 && !body.grounded && body.special_phase==0 && special_flag(body,1)==2) {
+        body.special_phase=3;body.special_motion=data.special_active[2];body.action_frame=0;
+    }
+    if(body.kind==FighterKind::Samus && index==2 && body.grounded && body.action_frame>=3 && !body.special_second) {
+        // Bomb's frame-3 SetAirJumpMax command transfers to the air callback.
+        body.special_second=true;body.grounded=false;body.special_index=5;body.special_motion=data.special_start[5];
+        body.vel_air.y=40;body.jumps_used=body.attr.jumps_max;
+    }
     if(body.kind==FighterKind::Donkey && index%3==0) {
         const auto release=[&] {
             body.charge_ticks=body.charge_level;body.charge_level=0;
@@ -790,7 +800,7 @@ void FighterCombat::buffer_smash(FighterBody& body,bool pressed) {
     if (!pressed || !body.grounded) return;
     int direction=-1;
     if (body.tap_stick_y<4 && std::abs(body.stick_y)>=53) direction=body.stick_y>0?1:2;
-    else if (body.tap_stick_x<3 && std::abs(body.stick_x)>=56) direction=0;
+    else if (body.tap_stick_x<4 && std::abs(body.stick_x)>=53) direction=0;
     if (direction<0) return;
     body.smash_buffer=3;body.buffered_smash=direction;body.buffered_facing=direction==0?(body.stick_x>0?1:-1):body.lr;
 }
@@ -800,7 +810,7 @@ bool FighterCombat::start_smash(FighterBody& body,bool pressed) {
     int direction=-1;
     if (body.tap_stick_y<4 && body.stick_y>=53) direction=1;
     else if (body.tap_stick_y<4 && body.stick_y<=-53) direction=2;
-    else if (body.tap_stick_x<3 && std::abs(body.stick_x)>=56) {direction=0;body.lr=body.stick_x>0?1:-1;}
+    else if (body.tap_stick_x<4 && std::abs(body.stick_x)>=53) {direction=0;body.lr=body.stick_x>0?1:-1;}
     if (direction<0 && body.smash_buffer>0) {direction=body.buffered_smash;body.lr=body.buffered_facing;}
     if (direction<0 || (body.status==FighterStatus::KneeBend && direction!=1)) return false;
     body.smash_buffer=0;

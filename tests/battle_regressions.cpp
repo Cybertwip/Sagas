@@ -11,6 +11,14 @@ int main() {
     AssetRepository assets(SAGAS_DEFAULT_ASSET_ROOT);
     n64::RelocArchive archive(assets);
     Scene3DLoader loader(archive);Scene3DRenderer renderer(archive);
+    for(auto a:{n64::Address{247,12},n64::Address{217,12},n64::Address{225,64}}) {
+        auto m=loader.weapon(a,a.file==225?3:0);
+        std::cout<<"WEAPON "<<a.file<<" nodes "<<m.nodes.size()<<std::endl;
+        for(auto& mesh:m.meshes) {
+            std::cout<<"vertices "<<mesh.vertices.size()<<" rejected "<<mesh.rejected_triangles<<std::endl;
+            if(!mesh.vertices.empty()){auto& v=mesh.vertices[0];std::cout<<"p "<<v.x<<","<<v.y<<","<<v.z<<" cycle "<<int(v.rdp.cycles)<<" texture "<<bool(v.texture)<<std::endl;}
+        }
+    }
     {
         auto m=loader.fighter_motion(FighterKind::Donkey,844,fighter_motion_flags(844));
         loader.set_fighter_part(m,FighterKind::Donkey,12,1);

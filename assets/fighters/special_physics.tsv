@@ -1,3 +1,3 @@
 SAGAS-DATA	1
-donkey_hi_ground_accel	donkey_hi_ground_max	donkey_hi_air_accel	donkey_hi_air_max	donkey_hi_gravity	donkey_hi_launch	link_hi_gravity	link_hi_launch	samus_hi_launch	samus_hi_accel	samus_hi_max	samus_lw_air_launch	samus_lw_drift	ness_hi_hold_gravity
-.025	26	.05	38	.07	18	.23	69	62	.5	20	30	.66	.5
+donkey_hi_ground_accel	donkey_hi_ground_max	donkey_hi_air_accel	donkey_hi_air_max	donkey_hi_gravity	donkey_hi_launch	link_hi_gravity	link_hi_launch	samus_hi_launch	samus_hi_accel	samus_hi_max	samus_lw_air_launch	samus_lw_drift	ness_hi_hold_gravity	yoshi_lw_speed	yoshi_lw_drift_max	yoshi_star_speed	yoshi_star_angle	yoshi_star_offset_x	yoshi_star_offset_y	yoshi_star_life	yoshi_star_decel	link_bomb_throw_x	link_bomb_throw_y	link_bomb_vertical_drift	link_bomb_throw_up	link_bomb_throw_down	samus_tether_start	samus_tether_end
+.025	26	.05	38	.07	18	.23	69	62	.5	20	30	.66	.5	-150	30	30	.5235987756	300	20	16	1.8	55	30	12	75	-55	17	23

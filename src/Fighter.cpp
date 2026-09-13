@@ -332,7 +332,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             } else if ((body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi) && body.special_index%3==2) {
                 body.vel_air.x=std::clamp(body.vel_air.x+body.stick_x*.03f,-17.f,17.f);
             } else if (body.kind==FighterKind::Yoshi && body.special_index%3==2) {
-                if(body.special_phase==1) {body.vel_air.y=-150;body.vel_air.x=std::clamp(air_before.x,-30.f,30.f);apply_air_vel_x_friction(body);}
+                if(body.special_phase==1) {body.vel_air.y=special_physics[0].yoshi_lw_speed;body.vel_air.x=std::clamp(air_before.x,-special_physics[0].yoshi_lw_drift_max,special_physics[0].yoshi_lw_drift_max);apply_air_vel_x_friction(body);}
                 else if(motion)if(const auto authored=motion(body))body.vel_air=*authored;
             } else if (body.kind==FighterKind::Kirby && body.special_index%3==1) {
                 if (body.special_phase==1) body.vel_air.y=-body.attr.tvel_fast;
@@ -592,7 +592,7 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
     if (body.kind==FighterKind::Yoshi && index%3==2) {
         if(body.special_phase==0 && animation_ended) {
             body.special_phase=1;
-            body.vel_air.x=std::clamp(body.vel_air.x,-30.f,30.f);body.vel_air.y=std::min(body.vel_air.y,-150.f);
+            body.vel_air.x=std::clamp(body.vel_air.x,-special_physics[0].yoshi_lw_drift_max,special_physics[0].yoshi_lw_drift_max);body.vel_air.y=std::min(body.vel_air.y,special_physics[0].yoshi_lw_speed);
         } else if(body.special_phase==1) {--body.action_frame;}
         else if(body.special_phase==2 && animation_ended) {body.status=FighterStatus::Wait;body.action_frame=0;}
         return;

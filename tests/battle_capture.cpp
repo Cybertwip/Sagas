@@ -30,7 +30,10 @@ int main(int argc,char** argv) {
                     if(frame==90) {if(move==0)input.grab_pressed=true;else {input.special_pressed=true;input.special_held=true;input.stick_y=move==2?80:move==3?-80:0;}}
                     if(frame>90 && move>0)input.special_held=true;
                     if(frame==150 && move==1 && kind==FighterKind::Samus)input.special_pressed=true;
-                    if(frame==150 && move==3 && kind==FighterKind::Link)input.attack_pressed=true;
+                    if(move==3 && kind==FighterKind::Link) {
+                        if(argc>4 && frame==135)input.jump_pressed=true;
+                        if(frame==150) {input.attack_pressed=true;input.stick_x=argc>4?std::stoi(argv[4])*80:80;}
+                    }
                     if(move==3 && (kind==FighterKind::Mario || kind==FighterKind::Luigi) && frame>90 && frame<140)
                         input.special_pressed=frame%3==0;
                     if(frame==119 && move==0)input.attack_pressed=true;
@@ -44,7 +47,16 @@ int main(int argc,char** argv) {
                     if(frame==89)start_y=battle_fighters(*battle)[0].position.y;
                     battle->update(services,input,1.f/60);
                     for(const auto& shot:battle_projectiles(*battle)) {
-                        if(shot.weapon==14 && !shot.held && !shot.exploding)saw_bomb_throw=true;
+                        if(shot.weapon==14 && !shot.held && !shot.exploding) {
+                            saw_bomb_throw=true;
+                            if(frame==150) {
+                                assert(shot.velocity.x*(argc>4?std::stoi(argv[4]):1)>0);
+                                if(argc>4)assert(!battle_fighters(*battle)[0].grounded);
+                            }
+                        }
+                        if(shot.weapon==15 && !saw_projectile && kind==FighterKind::Yoshi && move==3) {
+                            saw_projectile=true;render.request_capture(out/"Yoshi-stars.png");battle->draw(services);
+                        }
                         if(shot.exploding && !saw_explosion) {
                             saw_explosion=true;render.request_capture(out/(std::string(fighter_kind_name(kind))+"-explosion.png"));battle->draw(services);
                         }
@@ -73,6 +85,7 @@ int main(int argc,char** argv) {
                 if(move==2 && kind==FighterKind::Link)assert(max_y>start_y+300);
                 if((move==3 && (kind==FighterKind::Samus || kind==FighterKind::Link)) || (move==2 && kind==FighterKind::Yoshi))assert(saw_explosion);
                 if(move==3 && kind==FighterKind::Link)assert(saw_bomb_throw);
+                if(move==3 && kind==FighterKind::Yoshi) {assert(saw_projectile);assert(max_y>start_y+300);}
                 if((move==1 && (kind==FighterKind::Mario || kind==FighterKind::Luigi || kind==FighterKind::Samus || kind==FighterKind::Link)) || (move==2 && kind==FighterKind::Yoshi) || (move==3 && (kind==FighterKind::Link || kind==FighterKind::Samus)))assert(saw_projectile);
                 if(move==3 && (kind==FighterKind::Mario || kind==FighterKind::Luigi))assert(max_y>start_y+100);
                 std::cout<<fighter_kind_name(kind)<<" "<<move<<std::endl;

@@ -42,3 +42,14 @@ out.write_text('// Generated from US WPAttributes by extract_weapon_data.py.\n#p
 
 from export_fighter_descriptors import export_header
 export_header(out)
+
+appearance = [
+ (222,0,0,1,0,0),(204,0,0,0,0,0),(210,0,0,0,0,0),
+ (218,0,0,0,0,0),(226,0,1,0,0,0),(240,0,0,0,0,0),
+ (244,0,0,0,0,0),(243,64,2,0,0,0),(244,52,3,0,0,0),
+ (229,8,3,0,0,0),(239,12,3,0,0,0),(240,52,1,0,0,0),
+ (247,12,0,0,1,0),(217,12,0,0,0,0),(225,64,3,0,1,2),
+ (247,64,0,0,0,0)]
+appearance_out=root/'sagas/include/sagas/WeaponAppearance.hpp'
+appearance_out.write_text('#pragma once\n#include <array>\nnamespace sagas {\nstruct WeaponAppearance { unsigned file,offset,flags,palette,clear_environment,cycles; };\ninline constexpr std::array<WeaponAppearance,16> weapon_appearance{{\n'+''.join(' {'+','.join(map(str,row))+'},\n' for row in appearance)+'}};\n}\n')
+export_header(appearance_out)

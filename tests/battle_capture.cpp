@@ -28,6 +28,7 @@ int main(int argc,char** argv) {
 
                     if(frame==90) {if(move==0)input.grab_pressed=true;else {input.special_pressed=true;input.special_held=true;input.stick_y=move==2?80:move==3?-80:0;}}
                     if(frame>90 && move>0)input.special_held=true;
+                    if(frame==150 && move==1 && kind==FighterKind::Samus)input.special_pressed=true;
                     if(move==3 && (kind==FighterKind::Mario || kind==FighterKind::Luigi) && frame>90 && frame<140)
                         input.special_pressed=frame%3==0;
                     if(frame==119 && move==0)input.attack_pressed=true;
@@ -47,6 +48,12 @@ int main(int argc,char** argv) {
                     if(kind==FighterKind::Pikachu && move==3)saw_projectile|=battle_projectile_count(*battle,7)>0;
                     if(kind==FighterKind::Ness && move==2)saw_projectile|=battle_projectile_count(*battle,10)>0;
                     if(kind==FighterKind::Fox && move==1)saw_projectile|=battle_projectile_count(*battle,2)>0;
+                    if((kind==FighterKind::Mario || kind==FighterKind::Luigi) && move==1)saw_projectile|=battle_projectile_count(*battle,kind==FighterKind::Luigi?0:1)>0;
+                    if(kind==FighterKind::Samus && move==1)saw_projectile|=battle_projectile_count(*battle,3)>0;
+                    if(kind==FighterKind::Link && move==1)saw_projectile|=battle_projectile_count(*battle,4)>0;
+                    if(kind==FighterKind::Yoshi && move==2)saw_projectile|=battle_projectile_count(*battle,12)>0;
+                    if(kind==FighterKind::Samus && move==3)saw_projectile|=battle_projectile_count(*battle,13)>0;
+                    if(kind==FighterKind::Link && move==3)saw_projectile|=battle_projectile_count(*battle,14)>0;
                     if(frame==96 || frame==110 || frame==120 || frame==135 || frame==155) {
                         render.request_capture(out/(std::string(fighter_kind_name(kind))+"-"+std::to_string(move)+"-"+std::to_string(frame-90)+".png"));
                         battle->draw(services);
@@ -55,6 +62,7 @@ int main(int argc,char** argv) {
                 if((kind==FighterKind::Kirby && move==2) || (kind==FighterKind::Pikachu && move==3) || (kind==FighterKind::Fox && move==1) || (kind==FighterKind::Ness && move==2))assert(saw_projectile);
                 if(move==2 && (kind==FighterKind::Captain || kind==FighterKind::Mario || kind==FighterKind::Luigi || kind==FighterKind::Kirby))assert(max_y>start_y+300);
                 if(move==2 && kind==FighterKind::Ness)assert(saw_launch);
+                if((move==1 && (kind==FighterKind::Mario || kind==FighterKind::Luigi || kind==FighterKind::Samus || kind==FighterKind::Link)) || (move==2 && kind==FighterKind::Yoshi) || (move==3 && (kind==FighterKind::Link || kind==FighterKind::Samus)))assert(saw_projectile);
                 if(move==3 && (kind==FighterKind::Mario || kind==FighterKind::Luigi))assert(max_y>start_y+100);
                 std::cout<<fighter_kind_name(kind)<<" "<<move<<std::endl;
             }

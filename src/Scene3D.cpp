@@ -299,7 +299,7 @@ Model3D Scene3DLoader::model(n64::Address desc,std::optional<n64::Address> anima
     return model;
 }
 
-Model3D Scene3DLoader::weapon(n64::Address attributes,unsigned render_flags) {
+Model3D Scene3DLoader::weapon(n64::Address attributes,unsigned render_flags,unsigned palette) {
     const auto data=archive_.resolve(attributes);
     if (!data) throw std::runtime_error("weapon has no display data");
     const auto materials=archive_.resolve({attributes.file,attributes.offset+4});
@@ -313,6 +313,8 @@ Model3D Scene3DLoader::weapon(n64::Address attributes,unsigned render_flags) {
     result.parent_meshes.resize(1);result.materials.resize(1);result.material_animation.resize(1);
     n64::DisplayListDecoder decoder(archive_);
     if (materials) result.materials=decoder.materials(*materials,1);
+    if(palette)for(auto& material:result.materials[0])if(material.palettes)
+        material.palette=archive_.resolve({material.palettes->file,material.palettes->offset+palette*4});
     if (matanim) result.material_animation=material_animation_table(archive_,*matanim,result.materials);
     const std::array<std::optional<n64::Address>,1> lists{data};
     result.meshes=decoder.decode_model_tree(lists,result.materials,(render_flags&2)!=0);

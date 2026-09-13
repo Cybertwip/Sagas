@@ -236,7 +236,11 @@ public:
             if (!body.hitlag && body.status==FighterStatus::Special && body.kind==FighterKind::Pikachu && body.special_index%3==2 && body.special_phase==1 && !body.special_projectile) {
                 spawn_projectile(i,body);body.special_projectile=true;
             }
+            if (!body.hitlag && body.status==FighterStatus::Special && body.kind==FighterKind::Yoshi && body.special_index%3==1 && FighterCombat::special_flag(body,2)==2 && !body.special_projectile) {
+                spawn_projectile(i,body);body.special_projectile=true;
+            }
             if (!body.hitlag && body.status==FighterStatus::Special && !body.special_projectile &&
+                !(body.kind==FighterKind::Yoshi && body.special_index%3==1) &&
                 !(body.kind==FighterKind::Samus && body.special_index%3==0 && body.special_phase!=2)) {
                 for (const auto& flag:source_special_flags)
                     if (flag.kind==static_cast<unsigned>(body.kind) && flag.motion==event_clip && flag.flag==0 && flag.value && flag.frame<=static_cast<unsigned>(body.action_frame)) {
@@ -342,6 +346,21 @@ public:
         hits.insert(hits.end(),fighter_hits.begin(),fighter_hits.end());
         for (auto& shot:projectiles_) {
             ++shot.age;
+            const auto explode=[&] {
+                if(shot.exploding)return;
+                shot.exploding=true;shot.held=false;shot.life=shot.weapon==12?10:6;shot.velocity={};shot.gravity=0;shot.hit_mask=0;
+                emit(shot.position,{255,190,80,255},18,true);
+                if(!services.deterministic_clock)services.audio.play_fgm(31);
+            };
+            if(shot.weapon>=12 && shot.life<=1 && !shot.exploding)explode();
+            if(shot.held) {
+                auto& owner=bodies_[shot.owner];
+                const auto hand=renderer_->joint_point(posed(owner),owner.action_frame,16);
+                shot.position={hand.x,hand.y,0};
+                if(owner.attack_pressed || owner.status==FighterStatus::Hitstun || owner.status==FighterStatus::KO) {
+                    shot.held=false;shot.velocity={owner.lr*55.f,30,0};
+                } else {--shot.life;continue;}
+            }
             if(shot.weapon==4 && shot.age>=40) {
                 const auto& owner=bodies_[shot.owner];
                 const float dx=owner.position.x-shot.position.x,dy=owner.position.y+290-shot.position.y;
@@ -380,7 +399,9 @@ public:
                     if (shot.weapon==0 || shot.weapon==1) shot.velocity.y=std::abs(shot.velocity.y)*.85f;
                     else if (shot.weapon==6) {shot.weapon=8;shot.velocity={55.f*shot.facing,0,0};shot.gravity=0;}
                     else if (shot.weapon==5) {shot.weapon=11;shot.velocity={};shot.life=100;shot.gravity=.45f;shot.hit_mask=0;shot.age=0;}
-                    else if (shot.weapon==11) {shot.velocity={};shot.gravity=0;}
+                    else if (shot.weapon==11 || shot.weapon==13) {shot.velocity={};shot.gravity=0;}
+                    else if (shot.weapon==12 || shot.weapon==14)explode();
+                    else if (shot.weapon==4) {shot.age=std::max(shot.age,40);shot.velocity.y=std::abs(shot.velocity.y);}
                     else shot.life=0;
                 }
             }
@@ -430,6 +451,8 @@ public:
             }
             if (shot.life<=0) continue;
             auto a=weapon_source_data[shot.weapon];
+            if(shot.weapon==13 && !shot.exploding)continue;
+            if(shot.exploding) {a.size=shot.weapon==12?680:shot.weapon==14?700:360;a.damage=shot.weapon==14?16:a.damage;}
             if(shot.weapon==3) {a.damage=shot.charge==7?26:3+shot.charge*3;a.size=100+shot.charge*20;}
             if(shot.weapon==4 && shot.age>=40)a.damage=8;
             AttackVolume contact{shot.owner,{shot.position.x,shot.position.y+(shot.weapon==11?200:0),shot.position.z},a.size*.5f,a.damage,a.angle,a.growth,a.weight,a.base,static_cast<unsigned>(a.sfx),false,0,~0U,static_cast<unsigned>(a.element),true,shot.facing,shot.hit_mask};
@@ -437,6 +460,7 @@ public:
             for (const auto& contact_hit:contacts) shot.hit_mask|=1U<<contact_hit.defender;
             if (!contacts.empty()) {
                 if (shot.weapon==5 && !contacts.front().shield) {shot.weapon=11;shot.velocity={};shot.life=100;shot.gravity=.45f;shot.age=0;shot.hit_mask=0;}
+                else if(shot.weapon>=12) {if(!shot.exploding)explode();}
                 else if(shot.weapon==4)shot.age=std::max(shot.age,40);
                 else if (shot.weapon!=7 && shot.weapon!=11) shot.life=0;
                 hits.insert(hits.end(),contacts.begin(),contacts.end());
@@ -483,16 +507,17 @@ public:
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
         }
         for (const auto& shot:projectiles_) {
+            if(shot.exploding)continue;
             if (!weapon_models_.contains(shot.weapon)) {
-                const n64::Address attributes{shot.weapon==0?222U:shot.weapon==1?204U:shot.weapon==3?218U:shot.weapon==4?226U:(shot.weapon==5 || shot.weapon==11)?240U:shot.weapon==10?239U:shot.weapon==2?210U:shot.weapon==9?229U:shot.weapon==7?243U:244U,shot.weapon==10?12U:shot.weapon==11?52U:shot.weapon==9?8U:shot.weapon==7?64U:shot.weapon==8?52U:0U};
-                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon<=3 || shot.weapon==6 || shot.weapon==5)?0:(shot.weapon==4 || shot.weapon==11)?1:(shot.weapon==8 || shot.weapon==9 || shot.weapon==10)?3:2));
+                const n64::Address attributes{shot.weapon==12?247U:shot.weapon==13?217U:shot.weapon==14?225U:shot.weapon==0?222U:shot.weapon==1?204U:shot.weapon==3?218U:shot.weapon==4?226U:(shot.weapon==5 || shot.weapon==11)?240U:shot.weapon==10?239U:shot.weapon==2?210U:shot.weapon==9?229U:shot.weapon==7?243U:244U,(shot.weapon==12 || shot.weapon==13)?12U:shot.weapon==14?64U:shot.weapon==10?12U:shot.weapon==11?52U:shot.weapon==9?8U:shot.weapon==7?64U:shot.weapon==8?52U:0U};
+                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon<=3 || shot.weapon==6 || shot.weapon==5 || shot.weapon==12 || shot.weapon==13 || shot.weapon==14)?0:(shot.weapon==4 || shot.weapon==11)?1:(shot.weapon==8 || shot.weapon==9 || shot.weapon==10)?3:2,shot.weapon==0?1:0));
             }
             if (weapon_models_.contains(shot.weapon)) {
                 auto weapon=weapon_models_.at(shot.weapon);weapon.position=shot.position;weapon.rotation.y=shot.facing*std::numbers::pi_v<float>/2;
                 if (shot.weapon==10 || shot.weapon==5) weapon.rotation={0,0,std::atan2(shot.velocity.y,shot.velocity.x)};
                 if (shot.weapon==11) {weapon.rotation={};const float scale=.5f+.5f*shot.life/100.f;weapon.scale={scale,scale,scale};}
                 if (shot.weapon==2) {weapon.rotation={0,0,shot.facing<0?std::numbers::pi_v<float>:0};weapon.scale.x=std::min(160.f/3,1+shot.age*(16.f/3));}
-                if (shot.weapon<=1)weapon.rotation={0,0,shot.age*(shot.weapon==0?.4363323f:.34906585f)*shot.facing};
+                if (shot.weapon<=1)weapon.rotation.x=shot.age*(shot.weapon==0?.4363323f:.34906585f);
                 if (shot.weapon==3)weapon.rotation={};
                 if (shot.weapon==3) {const float scale=(150+shot.charge*75)/150.f;weapon.scale={scale,scale,scale};}
                 if (shot.weapon==7) weapon.scale={.5f,.5f,.5f};
@@ -708,9 +733,22 @@ private:
     }
     std::unordered_map<std::string,Model3D> part_models_;
     std::unordered_map<unsigned,Model3D> weapon_models_;
-    struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity;unsigned hit_mask{};int age{};unsigned charge{}; };
+    struct Projectile { unsigned owner,weapon;Vec3 position,velocity;int life,facing;float gravity;unsigned hit_mask{};int age{};unsigned charge{};bool held{},exploding{}; };
     std::vector<Projectile> projectiles_;
     void spawn_projectile(unsigned owner,FighterBody& body) {
+        if(body.kind==FighterKind::Yoshi && body.special_index%3==1) {
+            float angle=std::clamp(body.stick_x/65.f,-1.f,1.f)*.34906585f;
+            if(std::abs(angle)<.104719755f)angle=0;
+            angle=(body.lr>0?1.27409035f:1.8675023f)-angle;
+            const float speed=50+2.3f*std::min(body.special_tics,30U);
+            projectiles_.push_back({owner,12,{body.position.x,body.position.y+body.attr.height,0},{std::cos(angle)*speed,std::sin(angle)*speed,0},50,body.lr,2.7f});return;
+        }
+        if(body.special_index%3==2 && (body.kind==FighterKind::Samus || body.kind==FighterKind::Link)) {
+            const bool link=body.kind==FighterKind::Link;
+            if(link && std::any_of(projectiles_.begin(),projectiles_.end(),[&](const auto& s){return s.owner==owner && s.weapon==14 && s.held;}))return;
+            projectiles_.push_back({owner,link?14U:13U,{body.position.x,body.position.y+100,0},{0,link?0.f:10.f,0},link?300:100,body.lr,link?1.2f:1.f});
+            projectiles_.back().held=link;return;
+        }
         if(body.kind==FighterKind::Samus && body.special_index%3==0) {
             const auto origin=renderer_->joint_point(posed(body),body.action_frame,16,{180,0,0});
             projectiles_.push_back({owner,3,{origin.x,origin.y,0},{body.lr*(60.f+body.charge_level*2),0,0},120,body.lr,0,0,0,body.charge_level});

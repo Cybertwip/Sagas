@@ -196,3 +196,5 @@ Falcon Dive uses capture/release states. Collision and effects fidelity still
 require further source porting and playtesting.
 
 Fighter technical tables now load from runtime TSV descriptors; see [Fighter descriptors](docs/FIGHTER_DESCRIPTORS.md) for schemas, editing and regeneration.
+
+The native Smash Remix port has begun with ASM declaration and moveset import; see [port coverage and next steps](docs/SMASH_REMIX_PORT.md).

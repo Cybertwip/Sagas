@@ -1,3 +1,5 @@
+#include <sagas/WeaponAppearance.hpp>
+#include <sagas/SpecialPhysics.hpp>
 #include <sagas/Engine.hpp>
 #include <sagas/Fighter.hpp>
 #include <sagas/FighterSourceData.hpp>
@@ -112,8 +114,8 @@ public:
                     const int direction=std::abs(body.stick_x)>=20?(body.stick_x>0?1:-1):body.lr;
                     bomb.position=renderer_->joint_point(posed(body),body.action_frame,16);
                     bomb.position.z=0;bomb.held=false;bomb.facing=direction;
-                    bomb.velocity={direction*55.f,30,0};
-                    if(std::abs(body.stick_y)>=53)bomb.velocity={direction*12.f,body.stick_y>0?75.f:-55.f,0};
+                    bomb.velocity={direction*special_physics[0].link_bomb_throw_x,special_physics[0].link_bomb_throw_y,0};
+                    if(std::abs(body.stick_y)>=53)bomb.velocity={direction*special_physics[0].link_bomb_vertical_drift,body.stick_y>0?special_physics[0].link_bomb_throw_up:special_physics[0].link_bomb_throw_down,0};
                     attack=false;body.aerial_buffer=body.smash_buffer=0;
                     break;
                 }
@@ -252,7 +254,11 @@ public:
                 spawn_projectile(i,body);body.special_projectile=true;
             }
             if(!body.hitlag && body.kind==FighterKind::Yoshi && body.status==FighterStatus::Special && body.special_index%3==2 && body.special_phase==2 && !body.special_projectile && FighterCombat::special_flag(body,0)) {
-                for(int direction:{-1,1})projectiles_.push_back({i,15,{body.position.x+direction*300,body.position.y+20,0},{direction*25.980762f,15,0},16,direction,0});
+                const auto& tuning=special_physics[0];
+                for(int direction:{-1,1})projectiles_.push_back({i,15,
+                    {body.position.x+direction*tuning.yoshi_star_offset_x,body.position.y+tuning.yoshi_star_offset_y,0},
+                    {direction*tuning.yoshi_star_speed*std::cos(tuning.yoshi_star_angle),tuning.yoshi_star_speed*std::sin(tuning.yoshi_star_angle),0},
+                    static_cast<int>(tuning.yoshi_star_life),direction,0});
                 body.special_projectile=true;
                 emit(body.position,{235,220,180,255},16,false);
             }
@@ -409,7 +415,7 @@ public:
             }
             if(shot.weapon==15) {
                 const float speed=std::hypot(shot.velocity.x,shot.velocity.y);
-                const float scale=speed>0?std::max(0.f,speed-1.8f)/speed:0;
+                const float scale=speed>0?std::max(0.f,speed-special_physics[0].yoshi_star_decel)/speed:0;
                 shot.velocity.x*=scale;shot.velocity.y*=scale;
             }
             if(shot.weapon==4 && shot.age>=40) {
@@ -567,10 +573,13 @@ public:
         for (const auto& shot:projectiles_) {
             if(shot.exploding)continue;
             if (!weapon_models_.contains(shot.weapon)) {
-                const n64::Address attributes{(shot.weapon==12 || shot.weapon==15)?247U:shot.weapon==13?217U:shot.weapon==14?225U:shot.weapon==0?222U:shot.weapon==1?204U:shot.weapon==3?218U:shot.weapon==4?226U:(shot.weapon==5 || shot.weapon==11)?240U:shot.weapon==10?239U:shot.weapon==2?210U:shot.weapon==9?229U:shot.weapon==7?243U:244U,shot.weapon==15?64U:(shot.weapon==12 || shot.weapon==13)?12U:shot.weapon==14?64U:shot.weapon==10?12U:shot.weapon==11?52U:shot.weapon==9?8U:shot.weapon==7?64U:shot.weapon==8?52U:0U};
-                weapon_models_.emplace(shot.weapon,loader_->weapon(attributes,(shot.weapon<=3 || shot.weapon==6 || shot.weapon==5 || shot.weapon==12 || shot.weapon==13 || shot.weapon==15)?0:(shot.weapon==4 || shot.weapon==11)?1:(shot.weapon==8 || shot.weapon==9 || shot.weapon==10 || shot.weapon==14)?3:2,shot.weapon==0?1:0));
-                if(shot.weapon==12)for(auto& mesh:weapon_models_.at(12).meshes)for(auto& vertex:mesh.vertices)vertex.rdp.environment={0,0,0,0};
-                if(shot.weapon==14)for(auto& mesh:weapon_models_.at(14).meshes)for(auto& vertex:mesh.vertices){vertex.rdp.environment={0,0,0,0};vertex.rdp.cycles=2;}
+                const auto& appearance=weapon_appearance[shot.weapon];
+                auto model=loader_->weapon({appearance.file,appearance.offset},appearance.flags,appearance.palette);
+                for(auto& mesh:model.meshes)for(auto& vertex:mesh.vertices) {
+                    if(appearance.clear_environment)vertex.rdp.environment={0,0,0,0};
+                    if(appearance.cycles)vertex.rdp.cycles=appearance.cycles;
+                }
+                weapon_models_.emplace(shot.weapon,std::move(model));
             }
             if (weapon_models_.contains(shot.weapon)) {
                 auto weapon=weapon_models_.at(shot.weapon);weapon.position=shot.position;weapon.rotation.y=shot.facing*std::numbers::pi_v<float>/2;
@@ -888,8 +897,8 @@ private:
                 (body.kind==FighterKind::Samus || body.kind==FighterKind::Link)) {
                 const bool samus=body.kind==FighterKind::Samus,yoshi=body.kind==FighterKind::Yoshi;
                 const auto model=posed(body);
-                const auto hand=renderer_->joint_point(model,body.action_frame,samus?17:yoshi?4:16);
-                const auto tip=renderer_->joint_point(model,body.action_frame,samus?23:yoshi?fighter_source_data[7].capture_joint:35);
+                const auto hand=renderer_->joint_point(model,body.action_frame,samus?static_cast<unsigned>(special_physics[0].samus_tether_start):yoshi?4:16);
+                const auto tip=renderer_->joint_point(model,body.action_frame,samus?static_cast<unsigned>(special_physics[0].samus_tether_end):yoshi?fighter_source_data[7].capture_joint:35);
                 const auto a=project(hand),b=project(tip);
                 if(a && b && std::hypot(b->x-a->x,b->y-a->y)>2) {
                     const Color color=samus?Color{100,220,255,255}:yoshi?Color{245,110,140,255}:Color{190,195,200,255};

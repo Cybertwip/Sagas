@@ -194,3 +194,5 @@ several states share animation files but have different command scripts.
 Pikachu has timed Quick Attack bursts and Thunder discharge transitions;
 Falcon Dive uses capture/release states. Collision and effects fidelity still
 require further source porting and playtesting.
+
+Fighter technical tables now load from runtime TSV descriptors; see [Fighter descriptors](docs/FIGHTER_DESCRIPTORS.md) for schemas, editing and regeneration.

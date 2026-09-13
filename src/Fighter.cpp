@@ -331,6 +331,9 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 }
             } else if ((body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi) && body.special_index%3==2) {
                 body.vel_air.x=std::clamp(body.vel_air.x+body.stick_x*.03f,-17.f,17.f);
+            } else if (body.kind==FighterKind::Yoshi && body.special_index%3==2) {
+                if(body.special_phase==1) {body.vel_air.y=-150;body.vel_air.x=std::clamp(air_before.x,-30.f,30.f);apply_air_vel_x_friction(body);}
+                else if(motion)if(const auto authored=motion(body))body.vel_air=*authored;
             } else if (body.kind==FighterKind::Kirby && body.special_index%3==1) {
                 if (body.special_phase==1) body.vel_air.y=-body.attr.tvel_fast;
                 else if (motion) if (const auto authored=motion(body)) body.vel_air.y=authored->y;
@@ -414,6 +417,9 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 if (flag && body.shield_tics>10 && !body.landing_motion) body.landing_motion=data.landing;
                 body.aerial_attack=-1;body.attack_motion=0;body.jab_stage=0;body.hit_mask=0;
                 body.status=FighterStatus::Land;body.action_frame=0;
+            } else if (body.status==FighterStatus::Special && body.kind==FighterKind::Yoshi && body.special_index%3==2) {
+                body.special_phase=2;body.special_index=2;body.special_motion=fighter_source_data[7].special_end[2];
+                body.action_frame=0;body.special_projectile=false;body.vel_air={};body.vel_ground=0;
             } else if (body.status==FighterStatus::Special && body.kind==FighterKind::Captain && body.special_index==5) {
                 body.special_phase=2;body.special_index=2;body.special_motion=fighter_source_data[5].special_end[2];
                 body.action_frame=0;body.vel_air={};body.vel_ground=0;
@@ -567,6 +573,7 @@ bool FighterCombat::start_special(FighterBody& body,bool pressed) {
     body.special_projectile=false;body.status=FighterStatus::Special;body.action_frame=0;
     body.attack_motion=0;body.hit_mask=0;body.hit_group_masks.fill(0);body.hit_group_epochs.fill(~0U);body.fastfall=false;
     if ((direction==0 || (direction==1 && (body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi))) && std::abs(body.stick_x)>=20) body.lr=body.stick_x>0?1:-1;
+    if (direction==2 && body.kind==FighterKind::Yoshi) {body.grounded=false;body.jumps_used=body.attr.jumps_max;}
     if (direction==1 && body.kind==FighterKind::Captain) {body.grounded=false;body.vel_air={};body.jumps_used=body.attr.jumps_max;}
     if (direction==1 && body.kind==FighterKind::Donkey && !body.grounded) body.vel_air.y=special_physics[0].donkey_hi_launch;
     if (direction==1 && body.kind==FighterKind::Link && !body.grounded) body.vel_air.y=special_physics[0].link_hi_launch;
@@ -582,6 +589,14 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
     ++body.special_tics;
     const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
     const auto index=body.special_index;
+    if (body.kind==FighterKind::Yoshi && index%3==2) {
+        if(body.special_phase==0 && animation_ended) {
+            body.special_phase=1;
+            body.vel_air.x=std::clamp(body.vel_air.x,-30.f,30.f);body.vel_air.y=std::min(body.vel_air.y,-150.f);
+        } else if(body.special_phase==1) {--body.action_frame;}
+        else if(body.special_phase==2 && animation_ended) {body.status=FighterStatus::Wait;body.action_frame=0;}
+        return;
+    }
     if (body.kind==FighterKind::Ness && index%3==1) {
         if (body.special_phase==3) {
             if (body.action_frame>=28) {body.status=FighterStatus::SpecialFall;body.action_frame=0;}

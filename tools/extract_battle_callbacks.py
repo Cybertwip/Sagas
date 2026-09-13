@@ -39,7 +39,7 @@ for holder in names:
     text += ' },\n'
 text += '};\ninline constexpr std::array<unsigned,12> sleep_motions{'+','.join(str(ids[tables[n][motions['nFTCommonMotionFuraSleep']]]) for n in names)+'};\n'
 voices = {v['name']:v['idx'] for v in json.loads((d/'build/us/src/audio/fgm.ucd.json').read_text())['entries']}
-for name in ['nSYAudioFGMCatch','nSYAudioVoicePublicCheer','nSYAudioVoicePublicAmazed','nSYAudioVoicePublicGaspClap','nSYAudioVoicePublicGaspL']:
+for name in ['nSYAudioFGMExplodeL','nSYAudioFGMCatch','nSYAudioVoicePublicCheer','nSYAudioVoicePublicAmazed','nSYAudioVoicePublicGaspClap','nSYAudioVoicePublicGaspL']:
     text += 'inline constexpr unsigned '+name+' = '+str(voices[name])+';\n'
 text += 'inline constexpr std::array<unsigned,4> samus_shoot_sounds{'+','.join(str(voices['nSYAudioFGMSamusSpecialNShoot'+n]) for n in ['S','M','L','F'])+'};\n'
 text += 'inline constexpr std::array<unsigned,8> samus_charge_sounds{'+','.join(str(voices['nSYAudioFGMSamusSpecialNCharge'+str(n)]) for n in range(8))+'};\n'

@@ -35,8 +35,10 @@ for file,offset,name in [(247,12,'Yoshi thrown egg'),(217,12,'Samus bomb')]:
  rows.append([size_angle>>16,(combat>>14)&255,(size_angle>>6)&1023,combat>>22,combat&1023,base>>22,(combat>>10)&15,(flags>>11)&1023]);names.append(name)
 # Link bomb thrown contact. Explosion events are applied separately at runtime.
 rows.append([220,2,80,20,0,0,0,31]);names.append('Link held bomb')
+size_angle,combat,flags,base=struct.unpack_from('>4I',(root/'sagas/build/assets/reloc/0247.bin').read_bytes(),64+36)
+rows.append([size_angle>>16,(combat>>14)&255,(size_angle>>6)&1023,combat>>22,combat&1023,base>>22,(combat>>10)&15,(flags>>11)&1023]);names.append('Yoshi ground pound star')
 out=root/'sagas/include/sagas/WeaponSourceData.hpp'
-out.write_text('// Generated from US WPAttributes by extract_weapon_data.py.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct WeaponSourceData { int size,damage,angle,growth,weight,base,element,sfx; };\ninline constexpr std::array<WeaponSourceData,15> weapon_source_data{{\n'+''.join('    {'+','.join(map(str,row))+'}, // '+name+'\n' for name,row in zip(names,rows))+'}};\n}\n')
+out.write_text('// Generated from US WPAttributes by extract_weapon_data.py.\n#pragma once\n#include <array>\nnamespace sagas {\nstruct WeaponSourceData { int size,damage,angle,growth,weight,base,element,sfx; };\ninline constexpr std::array<WeaponSourceData,16> weapon_source_data{{\n'+''.join('    {'+','.join(map(str,row))+'}, // '+name+'\n' for name,row in zip(names,rows))+'}};\n}\n')
 
 from export_fighter_descriptors import export_header
 export_header(out)

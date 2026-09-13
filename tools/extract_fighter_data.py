@@ -84,6 +84,9 @@ for idx,name in enumerate(names):
    if name=='Kirby' and direction=='Hi':
     loop=special_ids['SpecialAirHiFall'];end=special_ids['SpecialHiLanding']
     event_names[1]='SpecialAirHiFall';event_names[2]='SpecialHiLanding'
+   if name=='Yoshi' and direction=='Lw':
+    loop=start;end=special_ids['SpecialLwLanding']
+    event_names[1]=event_names[0];event_names[2]='SpecialLwLanding'
    for phase,event_name in enumerate(event_names):special_events[phase].append(special_event_ids.get(event_name,0))
    if name=='Ness' and direction=='Hi':
     special_active[-1]=special_ids[stem+'Jibaku'];special_events[3][-1]=special_event_ids[stem+'Jibaku']

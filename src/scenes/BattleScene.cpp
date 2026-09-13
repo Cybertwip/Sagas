@@ -281,7 +281,7 @@ public:
                 (holder.status==FighterStatus::CatchWait && holder.capture_tics>180 && !holder.carrying);
             if (release) {
                 captive.captured_by=-1;captive.swallowed=false;captive.status=FighterStatus::Fall;captive.grounded=false;
-                holder.capture_target=-1;
+                holder.capture_target=-1;holder.carrying=false;
                 if (holder.status==FighterStatus::CatchWait) holder.status=FighterStatus::Wait;
                 continue;
             }

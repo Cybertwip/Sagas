@@ -52,7 +52,7 @@ int main(int argc,char** argv) {
                     if(kind==FighterKind::Yoshi || direction==2)assert(after[1].swallowed);
                 }
                 if(after[0].status==FighterStatus::Throw)thrown=true;
-                if(caught && (frame==caught_at+1 || frame==caught_at+15 || (thrown && after[0].action_frame==5))) {
+                if(caught && (frame==caught_at+1 || frame==caught_at+15 || (cargo_at>=0 && (frame==cargo_at+10 || frame==cargo_at+30)) || (thrown && after[0].action_frame==5))) {
                     render.request_capture(out/(std::string(fighter_kind_name(kind))+"-"+std::to_string(direction)+"-"+std::to_string(frame-caught_at)+".png"));battle->draw(services);
                 }
                 if(caught && !released && after[1].captured_by<0 && after[1].damage>0) {released=true;released_at=frame;assert(!after[1].swallowed);}

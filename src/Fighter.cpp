@@ -398,6 +398,10 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
                 if (flag && body.shield_tics>10 && !body.landing_motion) body.landing_motion=data.landing;
                 body.aerial_attack=-1;body.attack_motion=0;body.jab_stage=0;body.hit_mask=0;
                 body.status=FighterStatus::Land;body.action_frame=0;
+            } else if (body.status==FighterStatus::Special && body.kind==FighterKind::Ness && body.special_index%3==1 && body.special_phase!=3) {
+                body.special_index=1;
+                const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+                body.special_motion=body.special_phase==0?data.special_start[1]:body.special_phase==1?data.special_loop[1]:data.special_end[1];
             } else if (body.status==FighterStatus::Special && body.kind==FighterKind::Fox && body.special_index%3==0) {
                 body.status=FighterStatus::Land;body.land_frames=4;body.landing_motion=0;body.action_frame=0;
                 body.special_projectile=true; // Landing cannot execute the grounded shot script.
@@ -412,7 +416,7 @@ void FighterPhysics::tick(FighterBody& body,std::span<const CollisionSegment> st
             } else if (body.status==FighterStatus::SpecialFall) {
                 body.status=FighterStatus::Land;body.land_frames=4;body.landing_motion=fighter_source_data[static_cast<unsigned>(body.kind)].landing;
                 body.landing_speed=body.kind==FighterKind::Pikachu?.4f:.65f;body.action_frame=0;
-            } else if (body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun) {
+            } else if (body.status!=FighterStatus::Attack && body.status!=FighterStatus::Hitstun && !body.carrying) {
                 body.status=FighterStatus::Land; body.land_frames=4;body.landing_motion=0;body.action_frame=0;
             }
         }

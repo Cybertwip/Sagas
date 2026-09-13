@@ -25,6 +25,7 @@ int main(int argc,char** argv) {
                 bool saw_projectile=false,saw_launch=false;float start_y=0,max_y=-100000;
                 for(int frame=0;frame<260;++frame) {
                     InputState input;input.controllers[0].connected=true;
+                    if(frame==75 && move==2 && kind==FighterKind::Link)input.jump_pressed=true;
 
                     if(frame==90) {if(move==0)input.grab_pressed=true;else {input.special_pressed=true;input.special_held=true;input.stick_y=move==2?80:move==3?-80:0;}}
                     if(frame>90 && move>0)input.special_held=true;
@@ -62,6 +63,7 @@ int main(int argc,char** argv) {
                 if((kind==FighterKind::Kirby && move==2) || (kind==FighterKind::Pikachu && move==3) || (kind==FighterKind::Fox && move==1) || (kind==FighterKind::Ness && move==2))assert(saw_projectile);
                 if(move==2 && (kind==FighterKind::Captain || kind==FighterKind::Mario || kind==FighterKind::Luigi || kind==FighterKind::Kirby))assert(max_y>start_y+300);
                 if(move==2 && kind==FighterKind::Ness)assert(saw_launch);
+                if(move==2 && kind==FighterKind::Link)assert(max_y>start_y+300);
                 if((move==1 && (kind==FighterKind::Mario || kind==FighterKind::Luigi || kind==FighterKind::Samus || kind==FighterKind::Link)) || (move==2 && kind==FighterKind::Yoshi) || (move==3 && (kind==FighterKind::Link || kind==FighterKind::Samus)))assert(saw_projectile);
                 if(move==3 && (kind==FighterKind::Mario || kind==FighterKind::Luigi))assert(max_y>start_y+100);
                 std::cout<<fighter_kind_name(kind)<<" "<<move<<std::endl;

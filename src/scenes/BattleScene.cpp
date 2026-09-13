@@ -30,7 +30,7 @@ public:
         }
     }
     std::span<const FighterBody> fighters() const {return bodies_;}
-    std::vector<BattleProjectileView> projectiles() const {std::vector<BattleProjectileView> out;for(const auto& p:projectiles_)out.push_back({p.weapon,p.owner,p.position,p.velocity});return out;}
+    std::vector<BattleProjectileView> projectiles() const {std::vector<BattleProjectileView> out;for(const auto& p:projectiles_)out.push_back({p.weapon,p.owner,p.position,p.velocity,p.held,p.exploding});return out;}
     std::size_t projectile_count(unsigned weapon) const {return std::count_if(projectiles_.begin(),projectiles_.end(),[&](const auto& shot){return shot.weapon==weapon;});}
     void enter(Services& services) override {
         assets_=&services.assets;

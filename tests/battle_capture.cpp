@@ -22,7 +22,7 @@ int main(int argc,char** argv) {
             for(int move=0;move<4;++move) {
                 if(argc>3 && move!=std::stoi(argv[3]))continue;
                 auto battle=make_battle_scene(std::vector<FighterKind>{kind,FighterKind::Mario},3,{0,1});battle->enter(services);
-                bool saw_projectile=false,saw_launch=false;float start_y=0,max_y=-100000;
+                bool saw_projectile=false,saw_launch=false,saw_explosion=false,saw_bomb_throw=false;float start_y=0,max_y=-100000;
                 for(int frame=0;frame<260;++frame) {
                     InputState input;input.controllers[0].connected=true;
                     if(frame==75 && move==2 && kind==FighterKind::Link)input.jump_pressed=true;
@@ -30,6 +30,7 @@ int main(int argc,char** argv) {
                     if(frame==90) {if(move==0)input.grab_pressed=true;else {input.special_pressed=true;input.special_held=true;input.stick_y=move==2?80:move==3?-80:0;}}
                     if(frame>90 && move>0)input.special_held=true;
                     if(frame==150 && move==1 && kind==FighterKind::Samus)input.special_pressed=true;
+                    if(frame==150 && move==3 && kind==FighterKind::Link)input.attack_pressed=true;
                     if(move==3 && (kind==FighterKind::Mario || kind==FighterKind::Luigi) && frame>90 && frame<140)
                         input.special_pressed=frame%3==0;
                     if(frame==119 && move==0)input.attack_pressed=true;
@@ -42,6 +43,12 @@ int main(int argc,char** argv) {
                     }
                     if(frame==89)start_y=battle_fighters(*battle)[0].position.y;
                     battle->update(services,input,1.f/60);
+                    for(const auto& shot:battle_projectiles(*battle)) {
+                        if(shot.weapon==14 && !shot.held && !shot.exploding)saw_bomb_throw=true;
+                        if(shot.exploding && !saw_explosion) {
+                            saw_explosion=true;render.request_capture(out/(std::string(fighter_kind_name(kind))+"-explosion.png"));battle->draw(services);
+                        }
+                    }
                     if(frame>=90)max_y=std::max(max_y,battle_fighters(*battle)[0].position.y);
                     saw_launch|=battle_fighters(*battle)[0].special_phase==3;
                     if(frame==90)assert(battle_fighters(*battle)[0].status==(move==0?FighterStatus::Catch:FighterStatus::Special));
@@ -64,6 +71,8 @@ int main(int argc,char** argv) {
                 if(move==2 && (kind==FighterKind::Captain || kind==FighterKind::Mario || kind==FighterKind::Luigi || kind==FighterKind::Kirby))assert(max_y>start_y+300);
                 if(move==2 && kind==FighterKind::Ness)assert(saw_launch);
                 if(move==2 && kind==FighterKind::Link)assert(max_y>start_y+300);
+                if((move==3 && (kind==FighterKind::Samus || kind==FighterKind::Link)) || (move==2 && kind==FighterKind::Yoshi))assert(saw_explosion);
+                if(move==3 && kind==FighterKind::Link)assert(saw_bomb_throw);
                 if((move==1 && (kind==FighterKind::Mario || kind==FighterKind::Luigi || kind==FighterKind::Samus || kind==FighterKind::Link)) || (move==2 && kind==FighterKind::Yoshi) || (move==3 && (kind==FighterKind::Link || kind==FighterKind::Samus)))assert(saw_projectile);
                 if(move==3 && (kind==FighterKind::Mario || kind==FighterKind::Luigi))assert(max_y>start_y+100);
                 std::cout<<fighter_kind_name(kind)<<" "<<move<<std::endl;

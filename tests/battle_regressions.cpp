@@ -13,11 +13,9 @@ int main() {
     Scene3DLoader loader(archive);Scene3DRenderer renderer(archive);
     for(auto a:{n64::Address{247,12},n64::Address{217,12},n64::Address{225,64}}) {
         auto m=loader.weapon(a,a.file==225?3:0);
-        std::cout<<"WEAPON "<<a.file<<" nodes "<<m.nodes.size()<<std::endl;
-        for(auto& mesh:m.meshes) {
-            std::cout<<"vertices "<<mesh.vertices.size()<<" rejected "<<mesh.rejected_triangles<<std::endl;
-            if(!mesh.vertices.empty()){auto& v=mesh.vertices[0];std::cout<<"p "<<v.x<<","<<v.y<<","<<v.z<<" cycle "<<int(v.rdp.cycles)<<" texture "<<bool(v.texture)<<std::endl;}
-        }
+        std::size_t count=0;
+        for(const auto& mesh:m.meshes) {count+=mesh.vertices.size();assert(mesh.rejected_triangles==0);}
+        assert(count>0);
     }
     {
         auto m=loader.fighter_motion(FighterKind::Donkey,844,fighter_motion_flags(844));
@@ -106,6 +104,42 @@ int main() {
         }
         b={};b.kind=kind;b.attr=fighter_attributes(kind);b.grounded=false;b.lr=1;b.stick_x=-80;b.stick_y=80;
         assert(FighterCombat::start_special(b,true));assert(b.lr==-1);
+    }
+    for(int direction=0;direction<3;++direction)for(int delay=0;delay<4;++delay) {
+        FighterBody b;b.attr=fighter_attributes(b.kind);
+        b.stick_x=direction==0?53:0;b.stick_y=direction==1?53:direction==2?-53:0;b.tap_stick_x=b.tap_stick_y=delay;
+        FighterCombat::buffer_smash(b,true);assert(b.smash_buffer==3);
+        b.stick_x=b.stick_y=0;
+        assert(FighterCombat::start_smash(b,false));assert(b.attack_motion==fighter_source_data[static_cast<unsigned>(b.kind)].smash[direction]);
+    }
+    {
+        FighterBody b;b.kind=FighterKind::Ness;b.attr=fighter_attributes(b.kind);b.grounded=false;b.position.y=10000;b.aerial_jump=true;b.vel_air={20,-100,0};b.stick_y=80;
+        assert(FighterCombat::start_special(b,true));assert(b.vel_air.y==0 && !b.aerial_jump);
+        for(int t=1;t<=25;++t) {b.special_tics=t;b.stick_y=-80;b.tap_stick_y=0;FighterPhysics::tick(b,0);assert(b.position.y==10000 && !b.fastfall);}
+        b.special_tics=26;FighterPhysics::tick(b,0);assert(b.vel_air.y==-.5f);
+    }
+    {
+        FighterBody b;b.kind=FighterKind::Donkey;b.attr=fighter_attributes(b.kind);
+        assert(FighterCombat::start_special(b,true));FighterCombat::advance_special(b,false,true);
+        for(int i=0;i<3;++i)FighterCombat::advance_special(b,false,true);
+        assert(b.charge_level==3);b.shield_held=true;FighterCombat::advance_special(b,false,false);
+        assert(b.status==FighterStatus::Wait && b.charge_level==3);
+        b.shield_held=false;assert(FighterCombat::start_special(b,true));FighterCombat::advance_special(b,true,true);
+        assert(b.charge_ticks==3 && b.charge_level==0 && b.special_phase==2);
+    }
+    for(auto kind:{FighterKind::Link,FighterKind::Donkey,FighterKind::Samus}) {
+        FighterBody b;b.kind=kind;b.attr=fighter_attributes(kind);b.grounded=false;b.position.y=10000;b.stick_y=80;
+        assert(FighterCombat::start_special(b,true));b.stick_x=80;b.stick_y=0;
+        const float y=b.vel_air.y;FighterPhysics::tick(b,0);
+        const float gravity=b.attr.gravity*(kind==FighterKind::Link?.23f:kind==FighterKind::Donkey?.07f:1.f);
+        assert(std::abs(b.vel_air.y-(y-gravity))<.001f);
+        if(kind==FighterKind::Donkey)assert(std::abs(b.vel_air.x-4)<.001f);
+        if(kind==FighterKind::Samus)assert(b.vel_air.x==20);
+    }
+    {
+        FighterBody b;b.kind=FighterKind::Samus;b.attr=fighter_attributes(b.kind);b.stick_y=-80;
+        assert(FighterCombat::start_special(b,true));b.action_frame=3;FighterCombat::advance_special(b,false,false);
+        assert(!b.grounded && b.special_index==5 && b.vel_air.y==40);
     }
     std::cout<<"Battle regressions passed\n";
 }

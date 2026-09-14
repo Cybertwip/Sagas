@@ -100,8 +100,13 @@ def table(directory,name,columns,rows):
         writer=csv.writer(f,delimiter="\t",lineterminator="\n")
         writer.writerow(columns);writer.writerows(rows)
 
-def import_tree(root,output):
+def import_tree(root,output,resources=None):
     output.mkdir(parents=True,exist_ok=True)
+    resource_manifest=None
+    if resources:
+        if not (resources/".complete").exists():raise ValueError("Resource extraction is incomplete")
+        resource_manifest=json.loads((resources/"extraction.json").read_text())
+        if resource_manifest.get("version")!="2.0.1":raise ValueError("Unsupported resource release")
     src=root/"src"
     symbols=constants((src/"File.asm").read_text(),"File.")
     # Only the unscoped common Action constants can be used without a fighter scope.
@@ -123,7 +128,9 @@ def import_tree(root,output):
         try:
             files=[number(v,symbols) for v in args[2:11]]
             record["resolved_files"]=files
-            missing=[v for v in files if v and v>=0x854 and not (root/"build/original"/f"{v:04X}.bin").exists()]
+            missing=[v for v in files if v and not (
+                (resources/"reloc"/f"{v:04d}.bin").exists() if resources else
+                (root/"build/original"/f"{v:04X}.bin").exists())]
             record["missing_resources"]=missing
             roster.append([ident,name,PARENTS[parent],number(args[11],symbols),
                            number(args[12],symbols),number(args[13],symbols),number(args[14],symbols),*files])
@@ -177,11 +184,11 @@ def import_tree(root,output):
     table(output,"remix_hitboxes",["script","begin","end","id","group","joint","damage","size","x","y","z","angle","growth","weight","base","element","ground_air","shield_damage","sound_kind","sound_level","scaled"],hit_rows)
     table(output,"remix_events",["script","frame","opcode","word_count",*[f"words[{i}]" for i in range(5)]],event_rows)
     table(output,"remix_scripts",["id","decoded"],[[r["id"],int(r["status"]=="decoded")] for r in scripts])
-    report=dict(format=1,fighters=fighters,actions=actions,callbacks=callbacks,scripts=scripts,
+    report=dict(format=1,resource_archive=resource_manifest,fighters=fighters,actions=actions,callbacks=callbacks,scripts=scripts,
                 unresolved=issues,summary=dict(fighters=len(fighters),actions=len(actions),
                     callback_declarations=len(callbacks),decoded_scripts=sum(r["status"]=="decoded" for r in scripts),
                     scripts=len(scripts),hitbox_windows=len(hit_rows),events=len(event_rows),
-                    unresolved_declarations=len(issues)),
+                    unresolved_declarations=len(issues),missing_resource_references=sum(len(f.get("missing_resources",[])) for f in fighters)),
                 limitations=["Declarations are source-level, not an assembled patch: conditional edits and ordering need validation.",
                              "Decoded script does not imply its fighter callbacks or assets are ported.",
                              "No imported fighters are enabled for character select by this initial port."])
@@ -192,5 +199,9 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--source",type=Path,default=Path(__file__).resolve().parents[2]/"smashremix")
     parser.add_argument("--output",type=Path,default=Path(__file__).resolve().parents[1]/"assets/fighters")
+    parser.add_argument("--resources",type=Path,help="Verified extracted Remix asset root")
     args=parser.parse_args()
-    print(json.dumps(import_tree(args.source,args.output)["summary"],indent=2))
+    if args.resources is None:
+        extracted=Path(__file__).resolve().parents[1]/"build/remix-2.0.1/assets"
+        if (extracted/".complete").exists():args.resources=extracted
+    print(json.dumps(import_tree(args.source,args.output,args.resources)["summary"],indent=2))

@@ -55,6 +55,7 @@ def links_for(data,internal,external,dependencies,file_id,count):
     return links
 
 def extract(rom_path,source,output):
+    (output/".complete").unlink(missing_ok=True)
     rom=rom_path.read_bytes()
     digest=hashlib.md5(rom).hexdigest()
     if digest!=RELEASE_MD5:raise ValueError(f"ROM is not the verified Remix 2.0.1 release: MD5 {digest}")
@@ -88,15 +89,17 @@ def extract(rom_path,source,output):
         sizes.append(len(data));all_links.extend((ident,*link) for link in links)
         manifest.append([ident,names.get(ident,f"RemixResource{ident}"),len(data),hashlib.sha256(data).hexdigest()])
         if ident%500==0:print(f"Decoded {ident}/{count} resources",flush=True)
-    for owner,location,target,offset in all_links:
-        if offset>sizes[target]:raise ValueError(f"Relocation {owner}:{location} exceeds {target}:{offset} (size {sizes[target]})")
+    dangling=[dict(file=owner,location=location,target_file=target,target_offset=offset,target_size=sizes[target])
+              for owner,location,target,offset in all_links if offset>sizes[target]]
+    (output/"relocation_diagnostics.json").write_text(json.dumps(dangling,indent=2)+"\n")
     with (directory/"manifest.tsv").open("w") as f:
         writer=csv.writer(f,delimiter="\t",lineterminator="\n")
         writer.writerow(["id","name","size","sha256"]);writer.writerows(manifest)
     report=dict(version="2.0.1",rom_md5=digest,rom_sha256=hashlib.sha256(rom).hexdigest(),
-                archive_offset=table,resources=count,relocations=len(all_links),
+                archive_offset=table,resources=count,relocations=len(all_links),out_of_range_references=len(dangling),
                 decoded_bytes=sum(sizes),decoder_sha256=hashlib.sha256((source/"scripts/SSB.py").read_bytes()).hexdigest())
     (output/"extraction.json").write_text(json.dumps(report,indent=2)+"\n")
+    (output/".complete").write_text("Sagas Remix 2.0.1 resource archive v1\n")
     print(json.dumps(report,indent=2))
     return report
 

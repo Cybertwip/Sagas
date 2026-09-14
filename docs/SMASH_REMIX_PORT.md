@@ -48,10 +48,9 @@ Preserving a timed event is not the same as implementing its runtime behavior.
 
 1. Link ASM moveset labels, inserted binary continuations and subroutines;
    resolve conditional action edits in assembly inclusion order.
-2. Supply and import the fighter archive resources referenced by
-   `build/master.csv`. This checkout lacks the required
-   `smashremix/build/original/*.bin` files, including Falco's 08AB/08AC files.
-   The report lists missing references per fighter.
+2. Integrate the recovered archive into fighter rendering and resolve the 14
+   out-of-range resource references recorded by extraction. The verified 2.0.1
+   patch now supplies all file bindings referenced by the 69 roster declarations.
 3. Extend native fighter identity and selection beyond the twelve base behavior
    kinds, with descriptor inheritance, asset bindings and per-action callbacks.
 4. Translate each fighter's executable movement, interrupts, collision, weapon,
@@ -67,3 +66,35 @@ declarations. These are source import metrics, not playable-character counts.
 
 No new fighter currently bypasses missing assets or unported behavior by
 silently reusing an original fighter's implementation.
+
+
+## Recovered 2.0.1 resources
+
+The supplied `data/smashremix2.0.1/patches/smashremix2.0.1.xdelta` was applied
+to the local US base ROM. The output MD5
+`2b2d6b295106c54216b7fc7a2f14346e` matches the release README exactly.
+
+`tools/extract_smashremix_assets.py` produces an isolated asset root at
+`build/remix-2.0.1/assets/`: 5,455 decompressed resources, 195,107 relocation
+links, SHA-256 per-file manifest, archive provenance, and a diagnostic list of
+14 out-of-range references. References are preserved, not guessed or silently
+replaced. Resource 5439 has a one-byte tail beyond its table's word count; the
+verified VPK byte length is used. This bundle contains the resource archive,
+not a complete replacement for the default Sagas asset root.
+
+For an already reconstructed ROM:
+
+```sh
+python3 sagas/tools/extract_smashremix_assets.py
+python3 sagas/tools/import_smashremix.py --resources sagas/build/remix-2.0.1/assets
+```
+
+To reconstruct as well, pass `--patch <xdelta-path>` and optionally
+`--base-rom <base-path>` and `--rom <new-output-path>`; xdelta3 must be installed.
+An existing ROM output is never overwritten. The source ROM and patch remain
+untouched. ROMs and extracted binary files stay under the ignored build tree.
+
+The descriptor importer auto-detects the completed local extraction when
+`--resources` is omitted. Its report now has zero missing roster file
+references. This removes the resource-availability blocker; it does not mark
+ASM callbacks or new fighters as fully ported.

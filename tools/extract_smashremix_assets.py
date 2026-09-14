@@ -74,7 +74,11 @@ def extract(rom_path,source,output):
             if payload[:4]!=b"vpk0":raise ValueError(f"{ident}: missing VPK header")
             data=bytes(decode(payload))
         else:data=payload
-        if not unpacked*4-3<=len(data)<=unpacked*4:raise ValueError(f"{ident}: decoded size mismatch")
+        if raw&0x80000000 and len(data)!=struct.unpack_from(">I",payload,4)[0]:
+            raise ValueError(f"{ident}: VPK decoded size mismatch")
+        # Release 2.0.1 resource 5439 has a byte tail beyond its truncated
+        # word count. The VPK byte-length is authoritative for decompression.
+        if abs(len(data)-unpacked*4)>3:raise ValueError(f"{ident}: decoded size mismatch")
         dependencies=rom[base+offset+stored:base+next_offset]
         links=links_for(data,internal,external,dependencies,ident,count)
         (directory/f"{ident:04d}.bin").write_bytes(data)

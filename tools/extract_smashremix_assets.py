@@ -1,7 +1,7 @@
 """Recover the verified Remix 2.0.1 resource archive as native Sagas assets.
 
 Uses the local Remix project's VPK decoder, without loading its Tk editor.
-Generated ROMs and binary resources belong in build/, never source control.
+ROMs stay in build/. Extracted resources are editable in assets/remix/.
 """
 import argparse
 import ast
@@ -107,11 +107,14 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     workspace=Path(__file__).resolve().parents[2]
     parser.add_argument("--source",type=Path,default=workspace/"smashremix")
-    parser.add_argument("--rom",type=Path,default=workspace/"sagas/build/remix-2.0.1/smashremix.z64")
+    parser.add_argument("--rom",type=Path,default=workspace/"sagas/build/remix/smashremix.z64")
     parser.add_argument("--patch",type=Path)
     parser.add_argument("--base-rom",type=Path,default=workspace/"ssb-decomp-re/baserom.us.z64")
-    parser.add_argument("--output",type=Path,default=workspace/"sagas/build/remix-2.0.1/assets")
+    parser.add_argument("--output",type=Path,default=workspace/"sagas/assets/remix")
+    parser.add_argument("--overwrite",action="store_true",help="Explicitly replace existing extracted assets, discarding local edits")
     args=parser.parse_args()
+    if args.output.exists() and any(args.output.iterdir()) and not args.overwrite:
+        parser.error("Asset output is not empty; choose another --output or use --overwrite to replace it")
     if args.patch:
         args.rom.parent.mkdir(parents=True,exist_ok=True)
         if args.rom.exists():raise SystemExit("ROM output already exists; use --rom to extract it or choose a new output path")

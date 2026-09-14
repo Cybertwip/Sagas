@@ -1,0 +1,11 @@
+{
+  "version": "2.0.1",
+  "rom_md5": "2b2d6b295106c54216b7fc7a2f14346e",
+  "rom_sha256": "7efec9e0983656bb0219a23c511cd1505a5f84d524e50ad4284dc1c7eb4d1403",
+  "archive_offset": 1755248,
+  "resources": 5455,
+  "relocations": 195107,
+  "out_of_range_references": 14,
+  "decoded_bytes": 64278117,
+  "decoder_sha256": "7e6e6887f563c0f66972eb2573e5730933823d0989ebe823eceede59d4ce9f87"
+}

@@ -199,9 +199,9 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--source",type=Path,default=Path(__file__).resolve().parents[2]/"smashremix")
     parser.add_argument("--output",type=Path,default=Path(__file__).resolve().parents[1]/"assets/fighters")
-    parser.add_argument("--resources",type=Path,help="Verified extracted Remix asset root")
+    parser.add_argument("--resources",type=Path,help="Editable extracted Remix asset root (defaults to assets/remix)")
     args=parser.parse_args()
     if args.resources is None:
-        extracted=Path(__file__).resolve().parents[1]/"build/remix-2.0.1/assets"
+        extracted=Path(__file__).resolve().parents[1]/"assets/remix"
         if (extracted/".complete").exists():args.resources=extracted
     print(json.dumps(import_tree(args.source,args.output,args.resources)["summary"],indent=2))

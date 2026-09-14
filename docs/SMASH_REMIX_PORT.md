@@ -75,7 +75,7 @@ to the local US base ROM. The output MD5
 `2b2d6b295106c54216b7fc7a2f14346e` matches the release README exactly.
 
 `tools/extract_smashremix_assets.py` produces an isolated asset root at
-`build/remix-2.0.1/assets/`: 5,455 decompressed resources, 195,107 relocation
+`assets/remix/`: 5,455 decompressed resources, 195,107 relocation
 links, SHA-256 per-file manifest, archive provenance, and a diagnostic list of
 14 out-of-range references. References are preserved, not guessed or silently
 replaced. Resource 5439 has a one-byte tail beyond its table's word count; the
@@ -86,15 +86,20 @@ For an already reconstructed ROM:
 
 ```sh
 python3 sagas/tools/extract_smashremix_assets.py
-python3 sagas/tools/import_smashremix.py --resources sagas/build/remix-2.0.1/assets
+python3 sagas/tools/import_smashremix.py --resources sagas/assets/remix
 ```
 
 To reconstruct as well, pass `--patch <xdelta-path>` and optionally
 `--base-rom <base-path>` and `--rom <new-output-path>`; xdelta3 must be installed.
-An existing ROM output is never overwritten. The source ROM and patch remain
-untouched. ROMs and extracted binary files stay under the ignored build tree.
+An existing ROM output is never overwritten. Extraction into a populated asset
+folder requires `--overwrite`; use a separate `--output` to compare a fresh
+extraction without losing edits. The source ROM and patch remain
+untouched. The reconstructed ROM stays at `build/remix/smashremix.z64` in the ignored build tree.
+Extracted resources live in-tree at `assets/remix/` for editing. CMake deploys
+them to `build/remix/assets/` on each build; the native archive test uses that
+deployed path. Edit the in-tree files, then rebuild.
 
-The descriptor importer auto-detects the completed local extraction when
+The descriptor importer auto-detects the in-tree `assets/remix/` extraction when
 `--resources` is omitted. Its report now has zero missing roster file
 references. This removes the resource-availability blocker; it does not mark
 ASM callbacks or new fighters as fully ported.

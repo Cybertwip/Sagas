@@ -134,6 +134,12 @@ add_custom_target(sagas_fighter_descriptors ALL
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/fighters" "${SAGAS_ASSET_ROOT}/fighters"
     VERBATIM)
 
+# Editable Remix resources live in-tree; deploy them to the runtime bundle.
+add_custom_target(sagas_remix_assets ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/remix" "${CMAKE_CURRENT_BINARY_DIR}/remix/assets"
+    VERBATIM)
+
 add_library(sagas_engine
     src/Application.cpp
     src/BattleCamera.cpp
@@ -151,7 +157,7 @@ add_library(sagas_engine
     src/Scene.cpp
     src/Scene3D.cpp
     src/SceneResources.cpp)
-add_dependencies(sagas_engine sagas_fighter_descriptors)
+add_dependencies(sagas_engine sagas_fighter_descriptors sagas_remix_assets)
 target_sources(sagas_engine PRIVATE
     src/scenes/StartupScene.cpp
     src/scenes/OpeningScene.cpp
@@ -179,8 +185,8 @@ if(SAGAS_BUILD_TESTS)
     add_executable(sagas_remix_archive_tests tests/remix_archive.cpp)
     target_link_libraries(sagas_remix_archive_tests PRIVATE sagas_engine)
     target_compile_options(sagas_remix_archive_tests PRIVATE -UNDEBUG)
-    if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/remix-2.0.1/assets/extraction.json")
-        add_test(NAME sagas_remix_archive COMMAND sagas_remix_archive_tests "${CMAKE_CURRENT_BINARY_DIR}/remix-2.0.1/assets")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/remix/extraction.json")
+        add_test(NAME sagas_remix_archive COMMAND sagas_remix_archive_tests "${CMAKE_CURRENT_BINARY_DIR}/remix/assets")
     endif()
     add_test(NAME sagas_remix_importer COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_import_smashremix.py")
     add_executable(sagas_remix_descriptor_tests tests/remix_descriptors.cpp)

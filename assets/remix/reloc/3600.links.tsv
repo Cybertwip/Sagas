@@ -1,0 +1,6 @@
+location	target_file	target_offset
+0	3600	100
+4	3600	144
+8	3600	268
+56	3600	376
+96	3600	492

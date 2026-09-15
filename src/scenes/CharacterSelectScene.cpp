@@ -73,14 +73,6 @@ std::string_view card_name_file(FighterKind kind) {
     return index<names.size()?names[index]:names[1];
 }
 
-std::string_view series_emblem(FighterKind kind) {
-    constexpr std::array<std::string_view,12> emblems{
-        "Mario","Mario","Donkey","Zelda","Metroid","FZero",
-        "Mother","Yoshi","Kirby","Fox","PMonsters","PMonsters"};
-    const auto index=static_cast<unsigned>(kind);
-    return index<emblems.size()?emblems[index]:emblems[1];
-}
-
 std::string css_portrait_for(std::string_view key) {
     std::string alt;
     for (const auto& entry:remix_css) {
@@ -354,32 +346,27 @@ public:
             const std::string card=slots_[player].kind==SlotKind::None?"GrayCard.png":cards[player];
             if (one_player_) r.sprite_at("textures/MNPlayersCommon/"+card,{x,y});
             else r.sprite_rect("textures/MNPlayersCommon/"+card,x,y,kCardW,kCardH);
-            const auto entry=slots_[player].entry;
-            const bool remix=entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() &&
-                custom_models_[entry].rfind("remix:",0)==0;
-            if (slots_[player].kind!=SlotKind::None) {
-                const float emblem_y=one_player_?143.f:kCardY+16;
-                const float name_y=one_player_?201.f:kCardY+kCardH-22;
-                r.sprite_at("textures/FTEmblemSprites/"+std::string(series_emblem(slots_[player].fkind))+".png",
-                            {x+8,emblem_y},{one_player_?1.f:1.5f,one_player_?1.f:1.5f},{30,30,30,255});
-                if (remix && entry>=0 && static_cast<unsigned>(entry)<custom_names_.size())
-                    custom_label(r,custom_names_[entry],x+8,name_y,one_player_?60.f:kCardW-16,one_player_?10.f:16.f);
-                else
-                    r.sprite_at("textures/MNPlayersCommon/"+std::string(card_name_file(slots_[player].fkind)),
-                                {x+(one_player_?0.f:8.f),name_y},{one_player_?1.f:1.5f,one_player_?1.f:1.5f});
-            }
         }
 
         renderer_->begin();
         r.clear_depth();
-        Camera3D camera{{0,0,5000},{0,0,0},{0,1,0},30,100,20000};
-        camera.aspect=45.0f/44.0f;
-        if (!one_player_) camera.viewport={10,10,kCssW-20,kCssH-20};
         for (int player=0;player<gates;++player) if (!previews_[player].nodes.empty() && slots_[player].kind!=SlotKind::None) {
             auto model=previews_[player];
-            const float scale=fighter_source_data[static_cast<unsigned>(slots_[player].fkind)].select_scale;
-            model.scale={scale,scale,scale};
-            model.position={player*(one_player_?840.f:1680.f)-(one_player_?1250.f:2500.f),-850,0};
+            const float select=fighter_source_data[static_cast<unsigned>(slots_[player].fkind)].select_scale;
+            Camera3D camera{{0,80,3200},{0,-80,0},{0,1,0},30,80,20000};
+            if (one_player_) {
+                camera.aspect=45.0f/44.0f;
+                camera.eye={0,0,5000};camera.at={};
+                model.scale={select,select,select};
+                model.position={player*840.0f-1250,-850,0};
+            } else {
+                const float x=kCardX0+player*kCardStep;
+                const float vw=kCardW-20,vh=kCardH-40;
+                camera.viewport={x+10,kCardY+12,vw,vh};
+                camera.aspect=(vw/vh)*(kCssH/kCssW);
+                model.scale={select,select,select};
+                model.position={0,-200,0};
+            }
             model.rotation.y=slots_[player].selected?0.0f:tic_*std::numbers::pi_v<float>/90;
             renderer_->draw(r,model,camera,static_cast<float>(tic_-selected_tick_[player]));
         }
@@ -393,10 +380,21 @@ public:
                 r.sprite_at("textures/MNPlayersCommon/SmashLogoCardRight.png",{x+66-door_offset_[player],126});
                 r.reset_scissor();
             }
+            const auto entry=slots_[player].entry;
+            const bool remix=entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() &&
+                custom_models_[entry].rfind("remix:",0)==0;
+            if (slots_[player].kind!=SlotKind::None) {
+                const float name_y=one_player_?201.f:kCardY+kCardH-20;
+                if (remix && entry>=0 && static_cast<unsigned>(entry)<custom_names_.size())
+                    custom_label(r,custom_names_[entry],x+8,name_y,one_player_?60.f:kCardW-16,one_player_?10.f:16.f);
+                else
+                    r.sprite_at("textures/MNPlayersCommon/"+std::string(card_name_file(slots_[player].fkind)),
+                                {x+(one_player_?0.f:8.f),name_y},{one_player_?1.f:1.5f,one_player_?1.f:1.5f});
+            }
             const auto label=slots_[player].kind==SlotKind::None?"NALabel.png":slots_[player].kind==SlotKind::Cpu?"CPLabel.png":"HmnLabel.png";
             r.sprite_at("textures/MNPlayersCommon/"+std::string(label),
-                        {x+(one_player_?8.f:kCardW-40.f),one_player_?201.f:kCardY+8},
-                        {one_player_?1.f:1.5f,one_player_?1.f:1.5f});
+                        {x+(one_player_?8.f:kCardW-48.f),one_player_?201.f:kCardY+6},
+                        {one_player_?1.f:1.4f,one_player_?1.f:1.4f});
         }
         if (ready() && (tic_-selected_tick_[active_slot_])%40<30) {
             const float banner_y=one_player_?71.f:kCssStartY+kCssCell;

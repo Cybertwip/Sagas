@@ -40,19 +40,6 @@ std::string_view hud_stock_dir(FighterKind kind) {
     return index<dirs.size()?dirs[index]:dirs[1];
 }
 
-void hud_letters(RenderEngine& r,std::string_view text,float x,float y,Color color={255,255,255,255}) {
-    for (unsigned char ch:text) {
-        ch=static_cast<unsigned char>(std::toupper(ch));
-        if (ch>='A' && ch<='Z') {
-            r.sprite_at("textures/IFCommonAnnounceCommon/Letter"+std::string(1,static_cast<char>(ch))+".png",{x,y},{1,1},color);
-            x+=28;
-        } else if (ch=='!') {
-            r.sprite_at("textures/IFCommonAnnounceCommon/SymbolExclaim.png",{x,y},{1,1},color);
-            x+=20;
-        } else x+=12;
-    }
-}
-
 class BattleScene final : public Scene {
 public:
     BattleScene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports={},std::vector<std::string> models={},bool team=false):ports_(std::move(ports)),stock_(stock),team_(team) {
@@ -629,7 +616,7 @@ public:
         renderer_->begin();
         Camera3D camera=camera_.view();
         if (finished_) {
-            camera={{0,0,1800},{0,0,0},{0,1,0},30,100,20000};
+            camera={{0,80,1600},{0,-400,0},{0,1,0},32,80,20000};
             camera.viewport={10,10,300,220};
             camera.aspect=300.f/220.f;
         } else {
@@ -637,7 +624,16 @@ public:
         }
         for (const auto& body:bodies_) {
             if (body.swallowed || (!finished_ && body.stocks<=0) || (!finished_ && body.status==FighterStatus::KO && (body.ko_mode==3 || body.ko_tics>=180)) || (body.invincible && tic_%6<2 && !finished_)) continue;
-            const auto model=body.status==FighterStatus::Captured?captured_model(body):posed(body);
+            auto model=body.status==FighterStatus::Captured?captured_model(body):posed(body);
+            if (finished_) {
+                model.scale={body.attr.size*1.8f,body.attr.size*1.8f,body.attr.size*1.8f};
+                const bool winner=winner_>=0 && &body==&bodies_[static_cast<unsigned>(winner_)];
+                if (winner) model.rotation.y=0;
+                else if (winner_>=0) {
+                    const auto& win=bodies_[winner_].position;
+                    model.rotation.y=std::atan2(win.x-body.position.x,win.z-body.position.z);
+                }
+            }
             renderer_->draw(r,model,camera,body.action_frame*(body.status==FighterStatus::Land?body.landing_speed:1.f),
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
             if(body.kind==FighterKind::Samus && body.status==FighterStatus::Special && body.special_index%3==0 && body.special_phase==1) {
@@ -820,9 +816,9 @@ private:
             const int stocks=std::max(0,bodies_[i].stocks);
             if (stocks<=6) {
                 for (int s=0;s<stocks;++s)
-                    r.sprite_at("textures/"+dir+"/Stock.png",{origin-28.f+s*10.f,185.f},{1,1},kPlayerTint[i]);
+                    r.sprite_at("textures/"+dir+"/Stock.png",{origin-28.f+s*10.f,185.f});
             } else {
-                r.sprite_at("textures/"+dir+"/Stock.png",{origin-28.f,185.f},{1,1},kPlayerTint[i]);
+                r.sprite_at("textures/"+dir+"/Stock.png",{origin-28.f,185.f});
                 r.sprite_at("textures/IFCommonDigits/Cross.png",{origin-14.f,185.f});
                 r.sprite_at("textures/IFCommonDigits/"+std::to_string(std::min(stocks,9))+".png",{origin-4.f,185.f});
             }
@@ -837,12 +833,10 @@ private:
         }
     }
     void draw_results(RenderEngine& r) {
-        r.sprite_at("textures/MNPlayersGameModes/FreeForAllText.png",{32,29});
         for (unsigned i=0;i<bodies_.size() && i<4;++i) {
             const float x=results_column_x(i);
             r.sprite_at("textures/MNVSResults/"+std::to_string(i+1)+"PArrow.png",{x+17,49});
-            r.sprite_at("textures/"+std::string(hud_stock_dir(bodies_[i].kind))+"/Stock.png",
-                        {x+7,49},{1,1},kPlayerTint[i]);
+            r.sprite_at("textures/"+std::string(hud_stock_dir(bodies_[i].kind))+"/Stock.png",{x+7,49});
         }
         r.sprite_at("textures/MNVSResults/PlaceText.png",{10,66});
         r.sprite_at("textures/MNVSResults/KOsText.png",{26,124});
@@ -851,19 +845,32 @@ private:
             const int place=(winner_>=0 && static_cast<unsigned>(winner_)==i)?1:2;
             r.sprite_at("textures/IFCommonDigits/"+std::to_string(place)+".png",{x+15,66});
             const int kos=i<kos_.size()?std::min(999,kos_[i]):0;
-            r.sprite_at("textures/IFCommonDigits/"+std::to_string(kos/100%10)+".png",{x+8,124},{1,1},
-                        kos<100?Color{255,255,255,0}:Color{255,255,255,255});
-            r.sprite_at("textures/IFCommonDigits/"+std::to_string(kos/10%10)+".png",{x+16,124},{1,1},
-                        kos<10?Color{255,255,255,0}:Color{255,255,255,255});
-            r.sprite_at("textures/IFCommonDigits/"+std::to_string(kos%10)+".png",{x+24,124});
+            auto digit=[&](int value,float dx,bool hide) {
+                r.sprite_at("textures/IFCommonDigits/"+std::to_string(value)+".png",{x+dx,124},{1,1},
+                            hide?Color{255,255,255,0}:Color{255,255,255,255});
+            };
+            digit(kos/100%10,8,kos<100);
+            digit(kos/10%10,16,kos<10);
+            digit(kos%10,24,false);
         }
         if (winner_>=0) {
             const auto& body=bodies_[winner_];
             const auto key=remix_key(body);
-            if (!key.empty()) hud_letters(r,key,30,180);
-            else r.sprite_at("textures/CharacterNames/"+std::string(fighter_kind_name(body.kind))+".png",{30,180});
-            hud_letters(r,"WIN!",175,180);
-            r.sprite_at("textures/MNVSResults/Winner.png",{139,8});
+            if (!key.empty()) {
+                custom_results_name(r,key,24,178);
+            } else {
+                r.sprite_at("textures/CharacterNames/"+std::string(fighter_kind_name(body.kind))+".png",{24,178});
+            }
+            r.sprite_at("textures/MNVSResults/Winner.png",{24,8});
+        }
+    }
+    static void custom_results_name(RenderEngine& r,std::string_view name,float x,float y) {
+        for (unsigned char ch:name) {
+            ch=static_cast<unsigned char>(std::toupper(ch));
+            if (ch>='A' && ch<='Z') {
+                r.sprite_at("textures/MNCommonFonts/Letter"+std::string(1,static_cast<char>(ch))+".png",{x,y});
+                x+=10;
+            } else x+=6;
         }
     }
     unsigned remix_clip(const FighterBody& body,unsigned clip) const {

@@ -11,7 +11,6 @@
 #include <array>
 #include <cctype>
 #include <cmath>
-#include <filesystem>
 #include <iomanip>
 #include <optional>
 #include <string>

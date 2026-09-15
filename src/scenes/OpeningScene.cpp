@@ -645,10 +645,13 @@ private:
     }
     static void newcomers(RenderEngine& r, int local) {
         const std::array<std::string_view, 4> names{"Link", "Kirby", "Donkey", "Yoshi"};
-        for (std::size_t i = 0; i < names.size(); ++i)
+        for (std::size_t i = 0; i < names.size(); ++i) {
+            const float phase = std::clamp((local - static_cast<int>(i) * 6) / 8.0f, 0.0f, 1.0f);
             r.sprite("textures/MVOpeningPortraitsSet2/" + std::string(names[i]) + ".png",
-                     {160, 37.5f + static_cast<float>(i)*55});
+                     {160.0f + (1-phase)*320.0f, 37.5f + static_cast<float>(i)*55});
+        }
         if (local < 8) r.fill(0,0,320,240,{255,255,255,static_cast<std::uint8_t>((8-local)*28)});
+        if (local > 32) r.fill(0,0,320,240,{255,255,255,static_cast<std::uint8_t>(std::min(255,(local-32)*32))});
     }
     [[nodiscard]] const Model3D& model(std::string_view key) const {
         return resources_->model(key);

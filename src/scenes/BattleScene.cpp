@@ -30,7 +30,6 @@ namespace {
 constexpr std::array<int,4> kHudDamageX{55,125,195,265};
 constexpr std::array<int,12> kHudDigitWidth{14,9,15,14,15,13,15,14,15,15,17,20};
 constexpr std::array<Color,4> kPlayerTint{{{255,80,80,255},{80,110,255,255},{255,210,50,255},{60,200,90,255}}};
-constexpr std::array<Color,4> kResultsPrim{{{92,43,39,255},{57,57,153,255},{105,88,43,255},{43,68,54,255}}};
 constexpr std::array<Color,4> kResultsEnv{{{152,111,108,255},{134,134,209,255},{155,142,108,255},{113,130,120,255}}};
 
 std::string_view hud_stock_dir(FighterKind kind) {
@@ -63,7 +62,7 @@ public:
             if (bodies_.size()<models.size()) body.custom_model=models[bodies_.size()];
             bodies_.push_back(body);
         }
-        kos_.assign(bodies_.size(),0);tko_.assign(bodies_.size(),0);last_hit_.assign(bodies_.size(),-1);
+        kos_.assign(bodies_.size(),0);last_hit_.assign(bodies_.size(),-1);
     }
     std::span<const FighterBody> fighters() const {return bodies_;}
     std::vector<BattleProjectileView> projectiles() const {std::vector<BattleProjectileView> out;for(const auto& p:projectiles_)out.push_back({p.weapon,p.owner,p.position,p.velocity,p.held,p.exploding});return out;}
@@ -763,8 +762,7 @@ private:
     }
     void credit_ko(const FighterBody& body) {
         const int victim=static_cast<int>(&body-&bodies_[0]);
-        if (victim<0 || static_cast<unsigned>(victim)>=tko_.size()) return;
-        tko_[victim]++;
+        if (victim<0 || static_cast<unsigned>(victim)>=kos_.size()) return;
         if (last_hit_[victim]>=0 && last_hit_[victim]!=victim &&
             static_cast<unsigned>(last_hit_[victim])<kos_.size())
             kos_[last_hit_[victim]]++;
@@ -1149,7 +1147,7 @@ private:
     std::vector<int> ports_;
     int stock_,tic_{},winner_{-1},finish_tics_{},intro_tics_{};
     bool done_{},finished_{},team_{};
-    std::vector<int> kos_,tko_,last_hit_;
+    std::vector<int> kos_,last_hit_;
     std::vector<FighterBody> bodies_;
     Stage3D stage_;
     BattleCamera camera_;

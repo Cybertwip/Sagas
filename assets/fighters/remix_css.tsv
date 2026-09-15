@@ -1,3 +1,33 @@
 SAGAS-DATA	1
-key
-FALCO
+key	portrait
+FALCO	css/portraits/FALCO.png
+GND	css/portraits/GND.png
+YLINK	css/portraits/YLINK.png
+DRM	css/portraits/DRM.png
+WARIO	css/portraits/WARIO.png
+DSAMUS	css/portraits/DSAMUS.png
+LUCAS	css/portraits/LUCAS.png
+BOWSER	css/portraits/BOWSER.png
+GBOWSER	css/portraits/GBOWSER.png
+PIANO	css/portraits/PIANO.png
+WOLF	css/portraits/WOLF.png
+CONKER	css/portraits/CONKER.png
+MTWO	css/portraits/MTWO.png
+MARTH	css/portraits/MARTH.png
+SONIC	css/portraits/SONIC.png
+SSONIC	css/portraits/SSONIC.png
+SHEIK	css/portraits/SHEIK.png
+MARINA	css/portraits/MARINA.png
+DEDEDE	css/portraits/DEDEDE.png
+GOEMON	css/portraits/GOEMON.png
+PEPPY	css/portraits/PEPPY.png
+SLIPPY	css/portraits/SLIPPY.png
+BANJO	css/portraits/BANJO.png
+MLUIGI	css/portraits/MLUIGI.png
+EBI	css/portraits/EBI.png
+DRAGONKING	css/portraits/DRAGONKING.png
+CRASH	css/portraits/CRASH.png
+PEACH	css/portraits/PEACH.png
+ROY	css/portraits/ROY.png
+DRL	css/portraits/DRL.png
+LANKY	css/portraits/LANKY.png

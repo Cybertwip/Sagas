@@ -23,9 +23,11 @@ inline void descriptor_read(std::istream& input,RemixFighter& value) {
     descriptor_read(input,value.files);
 }
 inline const DescriptorTable<RemixFighter> remix_roster{"remix_roster.tsv","id\tkey\tparent\tattribute_offset\textra_actions\tjab3\tcopy\tfiles[0]\tfiles[1]\tfiles[2]\tfiles[3]\tfiles[4]\tfiles[5]\tfiles[6]\tfiles[7]\tfiles[8]"};
-struct RemixCssEntry { std::string key; };
-inline void descriptor_read(std::istream& input,RemixCssEntry& value) { descriptor_read(input,value.key); }
-inline const DescriptorTable<RemixCssEntry> remix_css{"remix_css.tsv","key"};
+struct RemixCssEntry { std::string key,portrait; };
+inline void descriptor_read(std::istream& input,RemixCssEntry& value) {
+    descriptor_read(input,value.key);descriptor_read(input,value.portrait);
+}
+inline const DescriptorTable<RemixCssEntry> remix_css{"remix_css.tsv","key\tportrait"};
 struct RemixAction {
     unsigned fighter;
     unsigned action;

@@ -14,7 +14,9 @@ namespace sagas {
 // Set before creating scenes. Editing data files takes effect on the next run.
 void set_fighter_descriptor_root(const std::filesystem::path& asset_root);
 const std::filesystem::path& fighter_descriptor_root();
+const std::filesystem::path& scene_descriptor_root();
 unsigned fighter_descriptor_generation();
+enum class DescriptorBank { Fighters, Scenes };
 
 template<class T> requires std::is_arithmetic_v<T>
 void descriptor_read(std::istream& input,T& value) {
@@ -33,7 +35,9 @@ template<class T,std::size_t N> void descriptor_read(std::istream& input,std::ar
 
 template<class T> class DescriptorTable {
 public:
-    constexpr DescriptorTable(const char* file,const char* columns,std::size_t expected_rows=0):file_(file),columns_(columns),expected_rows_(expected_rows) {}
+    constexpr DescriptorTable(const char* file,const char* columns,std::size_t expected_rows=0,
+                              DescriptorBank bank=DescriptorBank::Fighters)
+        :file_(file),columns_(columns),expected_rows_(expected_rows),bank_(bank) {}
     const T& operator[](std::size_t index) const {return rows().at(index);}
     const T& at(std::size_t index) const {return rows().at(index);}
     auto begin() const {return rows().begin();}
@@ -44,12 +48,12 @@ public:
 private:
     const std::vector<T>& rows() const {
         if(generation_==fighter_descriptor_generation())return values_;
-        const auto path=fighter_descriptor_root()/file_;
+        const auto path=(bank_==DescriptorBank::Scenes?scene_descriptor_root():fighter_descriptor_root())/file_;
         std::ifstream input(path);
-        if(!input)throw std::runtime_error("Missing fighter descriptor: "+path.string());
+        if(!input)throw std::runtime_error("Missing descriptor: "+path.string());
         std::string line;
-        if(!std::getline(input,line) || line!="SAGAS-DATA\t1")throw std::runtime_error("Unsupported fighter descriptor version: "+path.string());
-        if(!std::getline(input,line) || line!=columns_)throw std::runtime_error("Fighter descriptor schema mismatch: "+path.string());
+        if(!std::getline(input,line) || line!="SAGAS-DATA\t1")throw std::runtime_error("Unsupported descriptor version: "+path.string());
+        if(!std::getline(input,line) || line!=columns_)throw std::runtime_error("Descriptor schema mismatch: "+path.string());
         std::vector<T> parsed;unsigned number=2;
         while(std::getline(input,line)) {
             ++number;if(line.empty() || line[0]=='#')continue;
@@ -61,11 +65,12 @@ private:
                 throw std::runtime_error(path.string()+":"+std::to_string(number)+": "+error.what());
             }
         }
-        if(parsed.empty())throw std::runtime_error("Empty fighter descriptor: "+path.string());
-        if(expected_rows_ && parsed.size()!=expected_rows_)throw std::runtime_error("Fighter descriptor row count mismatch: "+path.string());
+        if(parsed.empty())throw std::runtime_error("Empty descriptor: "+path.string());
+        if(expected_rows_ && parsed.size()!=expected_rows_)throw std::runtime_error("Descriptor row count mismatch: "+path.string());
         values_=std::move(parsed);generation_=fighter_descriptor_generation();return values_;
     }
     const char* file_;const char* columns_;std::size_t expected_rows_;
+    DescriptorBank bank_{};
     mutable unsigned generation_{};
     mutable std::vector<T> values_;
 };

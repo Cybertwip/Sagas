@@ -1,0 +1,20 @@
+SAGAS-DATA	1
+screen	index	sprite	tab_x	tab_y	label_x	label_y	action
+one_player	0	textures/MN1P/1PGameText.png	124	42	161	46	css_1p
+one_player	1	textures/MN1P/TrainingModeText.png	99	84	107	87	flash
+one_player	2	textures/MN1P/Bonus1PracticeText.png	78	126	97	127	flash
+one_player	3	textures/MN1P/Bonus2PracticeText.png	67	148	86	149	flash
+versus	0	textures/MNVSMode/VSStartText.png	120	31	153	36	css
+versus	1	textures/MNVSMode/RulePeriodText.png	97	70	108	75	rule
+versus	2	textures/MNVSMode/StockPeriodText.png	74	109	106	114	period
+versus	3	textures/MNVSMode/VSOptionsText.png	51	148	71	151	vs_options
+options	0	textures/MNOption/SoundText.png	113	42	116	46	stereo
+options	1	textures/MNOption/ScreenAdjustText.png	91	89	103	92	screen_adjust
+options	2	textures/MNOption/BackupClearText.png	69	136	86	140	backup_clear
+data	0	textures/MNData/CharactersText.png	133	42	159	46	characters
+data	1	textures/MNData/VSRecordText.png	101	89	128	93	vs_record
+data	2	textures/MNData/SoundTestText.png	69	136	95	140	sound_test
+main	0	textures/MNMain/1PModeText.png	169	27	224	52	one_player
+main	1	textures/MNMain/VsModeText.png	128	64	183	89	versus
+main	2	textures/MNMain/OptionText.png	87	101	142	126	options
+main	3	textures/MNMain/DataText.png	46	138	102	163	data

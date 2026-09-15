@@ -1,0 +1,15 @@
+SAGAS-DATA	1
+key	kind	portrait	card_name	stock_dir
+LUIGI	0	textures/MNPlayersPortraits/Luigi.png	textures/MNPlayersCommon/LuigiText.png	LuigiModel
+MARIO	1	textures/MNPlayersPortraits/Mario.png	textures/MNPlayersCommon/MarioText.png	MarioModel
+DONKEY	2	textures/MNPlayersPortraits/Donkey.png	textures/MNPlayersCommon/DKText.png	DkIcon
+LINK	3	textures/MNPlayersPortraits/Link.png	textures/MNPlayersCommon/LinkText.png	LinkModel
+SAMUS	4	textures/MNPlayersPortraits/Samus.png	textures/MNPlayersCommon/SamusText.png	SamusModel
+CAPTAIN	5	textures/MNPlayersPortraits/Captain.png	textures/MNPlayersCommon/CaptainFalconText.png	CaptainModel
+NESS	6	textures/MNPlayersPortraits/Ness.png	textures/MNPlayersCommon/NessText.png	NessModel
+YOSHI	7	textures/MNPlayersPortraits/Yoshi.png	textures/MNPlayersCommon/YoshiText.png	YoshiModel
+KIRBY	8	textures/MNPlayersPortraits/Kirby.png	textures/MNPlayersCommon/KirbyText.png	KirbyModel
+FOX	9	textures/MNPlayersPortraits/Fox.png	textures/MNPlayersCommon/FoxText.png	FoxModel
+PIKACHU	10	textures/MNPlayersPortraits/Pikachu.png	textures/MNPlayersCommon/PikachuText.png	PikachuModel
+PURIN	11	textures/MNPlayersPortraits/Purin.png	textures/MNPlayersCommon/JigglypuffText.png	PurinModel
+JIGGLYPUFF	11	textures/MNPlayersPortraits/Purin.png	textures/MNPlayersCommon/JigglypuffText.png	PurinModel

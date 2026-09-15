@@ -350,22 +350,21 @@ public:
 
         renderer_->begin();
         r.clear_depth();
+        Camera3D camera{{0,0,5000},{0,0,0},{0,1,0},30,100,20000};
+        camera.aspect=45.0f/44.0f;
+        if (!one_player_) camera.viewport={10,10,kCssW-20,kCssH-20};
+        const float vw=one_player_?300.f:kCssW-20;
+        const float lw=one_player_?320.f:kCssW, lh=one_player_?240.f:kCssH;
+        const float sx=vw/lw/(camera.aspect*(lw/lh));
+        const float world_per_px=5000.0f*std::tan(15.0f*std::numbers::pi_v<float>/180.0f)/(sx*lw*0.5f);
         for (int player=0;player<gates;++player) if (!previews_[player].nodes.empty() && slots_[player].kind!=SlotKind::None) {
             auto model=previews_[player];
             const float select=fighter_source_data[static_cast<unsigned>(slots_[player].fkind)].select_scale;
-            Camera3D camera{{0,80,3200},{0,-80,0},{0,1,0},30,80,20000};
-            if (one_player_) {
-                camera.aspect=45.0f/44.0f;
-                camera.eye={0,0,5000};camera.at={};
-                model.scale={select,select,select};
-                model.position={player*840.0f-1250,-850,0};
-            } else {
-                const float x=kCardX0+player*kCardStep;
-                const float vw=kCardW-20,vh=kCardH-40;
-                camera.viewport={x+10,kCardY+12,vw,vh};
-                camera.aspect=(vw/vh)*(kCssH/kCssW);
-                model.scale={select,select,select};
-                model.position={0,-200,0};
+            model.scale={select,select,select};
+            if (one_player_) model.position={player*840.0f-1250,-850,0};
+            else {
+                const float card_cx=kCardX0+kCardW*0.5f+player*kCardStep;
+                model.position={(card_cx-kCssW*0.5f)*world_per_px,-850,0};
             }
             model.rotation.y=slots_[player].selected?0.0f:tic_*std::numbers::pi_v<float>/90;
             renderer_->draw(r,model,camera,static_cast<float>(tic_-selected_tick_[player]));

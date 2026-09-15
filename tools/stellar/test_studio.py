@@ -2,6 +2,9 @@ from pathlib import Path
 import json, tempfile, unittest
 from unittest.mock import patch
 from server import initial, import_project, import_directory, save_roster
+from stellar_hd import import_hd
+from stellar_scenes import load_scenes, save_scenes
+from stellar_tsv import read_tsv, write_tsv
 
 class StudioTests(unittest.TestCase):
     def test_remove_slots_preserves_holes_and_packages(self):
@@ -34,12 +37,39 @@ class StudioTests(unittest.TestCase):
                 destination.mkdir(parents=True,exist_ok=True);path=destination/'rigid_mesh.json';path.write_text('{}');return path
             def native(proxy):
                 path=proxy.with_name('model.sgmesh');path.write_text('fixture');return path
-            with patch('server.convert',side_effect=conversion),patch('server.export_native',side_effect=native):
+            with patch('stellar_roster.convert',side_effect=conversion),patch('stellar_roster.export_native',side_effect=native):
                 first=import_project(root,source);second=import_project(root,source)
                 self.assertEqual(first,second);self.assertEqual(first['model_status'],'ready')
                 self.assertTrue((root/first['portrait']).is_file())
                 result=import_directory(root,source.parent);self.assertEqual(len(result['characters']),1);self.assertFalse(result['errors'])
             self.assertEqual((source/'stellar_project.json').read_bytes(),before)
             self.assertFalse(list(root.rglob('*.c')))
+    def test_scene_tsv_roundtrip(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);folder=root/'scenes';folder.mkdir()
+            write_tsv(folder/'ui_sprites.tsv',['id','path'],[{'id':'css.background','path':'textures/bg.png'}])
+            table=read_tsv(folder/'ui_sprites.tsv')
+            self.assertEqual(table['rows'][0]['path'],'textures/bg.png')
+            table['rows'][0]['path']='textures/edited.png'
+            save_scenes(root,{'tables':{'ui_sprites':table}})
+            self.assertEqual(read_tsv(folder/'ui_sprites.tsv')['rows'][0]['path'],'textures/edited.png')
+    def test_hd_import_writes_descriptor(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace=Path(temporary);root=workspace/'assets';hd=workspace/'HD';hd.mkdir(parents=True)
+            (hd/'Mia.fbx').write_bytes(b'fbx')
+            scenes=root/'scenes';scenes.mkdir(parents=True)
+            write_tsv(scenes/'hd_models.tsv',['key','parent','fbx','model','portrait'],
+                      [{'key':'MIA','parent':'Luigi','fbx':'HD/Mia.fbx','model':'-','portrait':'-'}])
+            def conversion(project,destination):
+                destination.mkdir(parents=True,exist_ok=True);path=destination/'rigid_mesh.json';path.write_text('{}');return path
+            def native(proxy):
+                path=proxy.with_name('model.sgmesh');path.write_text('mesh');return path
+            with patch('stellar_hd.WORKSPACE',workspace):
+                result=import_hd(root,{'path':'HD/Mia.fbx','key':'MIA','parent':'Luigi'},convert=conversion,export_native=native)
+            self.assertEqual(result['model'],'mods/hd/mia/converted/model.sgmesh')
+            self.assertTrue((root/result['model']).is_file())
+            rows=load_scenes(root)['tables']['hd_models']['rows']
+            self.assertEqual(rows[0]['model'],'mods/hd/mia/converted/model.sgmesh')
+            self.assertEqual(rows[0]['fbx'],'HD/Mia.fbx')
 
 if __name__=='__main__': unittest.main()

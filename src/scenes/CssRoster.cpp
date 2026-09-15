@@ -2,6 +2,7 @@
 #include <sagas/SceneDescriptors.hpp>
 #include <sagas/RemixDescriptors.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <iomanip>
 #include <sstream>

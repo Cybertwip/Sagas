@@ -18,10 +18,14 @@ TABLES = (
 
 
 def scene_roots(asset_root):
-    roots = [SOURCE_SCENES]
     runtime = Path(asset_root) / 'scenes'
-    if runtime.resolve() != SOURCE_SCENES.resolve():
-        roots.append(runtime)
+    roots = [runtime]
+    try:
+        runtime.resolve().relative_to(SAGAS_ROOT.resolve())
+        if runtime.resolve() != SOURCE_SCENES.resolve():
+            roots.append(SOURCE_SCENES)
+    except ValueError:
+        pass
     return roots
 
 

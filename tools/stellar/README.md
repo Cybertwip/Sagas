@@ -3,6 +3,12 @@
 Run `python3 sagas/tools/stellar/server.py` from the workspace and open
 http://127.0.0.1:8765. Restart an existing server after updating its code.
 
+The studio is a fighting editor suite: roster layout, full game scene edition
+(CSS, menus, title, HUD, opening sprites), and HD model import. Scene tables
+live in `sagas/assets/scenes/*.tsv` and are copied into the runtime asset root.
+HD example: `HD/Mia.fbx` (parent Luigi) writes `hd_models.tsv` and appears on
+the FFA character-select grid after conversion.
+
 Import an original `stellar_project.json`, its character directory, or a parent
 Characters directory. Source FBX conversion uses Blender at
 `/Applications/Blender.app/Contents/MacOS/Blender`. No StellarExport project or

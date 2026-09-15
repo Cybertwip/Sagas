@@ -1,6 +1,27 @@
 #include <sagas/CssRoster.hpp>
 #include <sagas/SceneDescriptors.hpp>
 #include <sagas/RemixDescriptors.hpp>
+
+CssLayout CssLayout::load() {
+    CssLayout layout;
+    layout.logical_w=layout_value("css.logical_w",640);
+    layout.logical_h=layout_value("css.logical_h",360);
+    layout.cell=layout_value("css.cell",48);
+    layout.start_x=layout_value("css.start_x",80);
+    layout.start_y=layout_value("css.start_y",40);
+    layout.card_x0=layout_value("css.card_x0",28);
+    layout.card_step=layout_value("css.card_step",152);
+    layout.card_y=layout_value("css.card_y",200);
+    layout.card_w=layout_value("css.card_w",132);
+    layout.card_h=layout_value("css.card_h",150);
+    layout.camera_z=layout_value("css.camera_z",5000);
+    layout.fighter_y=layout_value("css.fighter_y",-850);
+    layout.cell_1p_w=layout_value("css.1p_cell_w",45);
+    layout.cell_1p_h=layout_value("css.1p_cell_h",43);
+    layout.columns=static_cast<int>(layout_value("css.columns",10));
+    layout.visible_rows=static_cast<int>(layout_value("css.visible_rows",3));
+    return layout;
+}
 #include <cctype>
 #include <iomanip>
 #include <sstream>

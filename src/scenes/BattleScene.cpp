@@ -16,6 +16,7 @@
 #include <map>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <exception>
 #include <numbers>
@@ -25,15 +26,44 @@
 
 namespace sagas {
 namespace {
+
+constexpr std::array<int,4> kHudDamageX{55,125,195,265};
+constexpr std::array<int,12> kHudDigitWidth{14,9,15,14,15,13,15,14,15,15,17,20};
+constexpr std::array<Color,4> kPlayerTint{{{255,80,80,255},{80,110,255,255},{255,210,50,255},{60,200,90,255}}};
+constexpr std::array<Color,4> kResultsPrim{{{92,43,39,255},{57,57,153,255},{105,88,43,255},{43,68,54,255}}};
+constexpr std::array<Color,4> kResultsEnv{{{152,111,108,255},{134,134,209,255},{155,142,108,255},{113,130,120,255}}};
+
+std::string_view hud_stock_dir(FighterKind kind) {
+    constexpr std::array<std::string_view,12> dirs{
+        "LuigiModel","MarioModel","DkIcon","LinkModel","SamusModel","CaptainModel",
+        "NessModel","YoshiModel","KirbyModel","FoxModel","PikachuModel","PurinModel"};
+    const auto index=static_cast<unsigned>(kind);
+    return index<dirs.size()?dirs[index]:dirs[1];
+}
+
+void hud_letters(RenderEngine& r,std::string_view text,float x,float y,Color color={255,255,255,255}) {
+    for (unsigned char ch:text) {
+        ch=static_cast<unsigned char>(std::toupper(ch));
+        if (ch>='A' && ch<='Z') {
+            r.sprite_at("textures/IFCommonAnnounceCommon/Letter"+std::string(1,static_cast<char>(ch))+".png",{x,y},{1,1},color);
+            x+=28;
+        } else if (ch=='!') {
+            r.sprite_at("textures/IFCommonAnnounceCommon/SymbolExclaim.png",{x,y},{1,1},color);
+            x+=20;
+        } else x+=12;
+    }
+}
+
 class BattleScene final : public Scene {
 public:
-    BattleScene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports={},std::vector<std::string> models={}):ports_(std::move(ports)),stock_(stock) {
+    BattleScene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports={},std::vector<std::string> models={},bool team=false):ports_(std::move(ports)),stock_(stock),team_(team) {
         if (ports_.empty()) {ports_.assign(fighters.size(),-1);if (!ports_.empty()) ports_[0]=0;}
         for (const auto kind:fighters) {
             FighterBody body; body.kind=kind; body.attr=fighter_attributes(kind); body.stocks=stock;
             if (bodies_.size()<models.size()) body.custom_model=models[bodies_.size()];
             bodies_.push_back(body);
         }
+        kos_.assign(bodies_.size(),0);tko_.assign(bodies_.size(),0);last_hit_.assign(bodies_.size(),-1);
     }
     std::span<const FighterBody> fighters() const {return bodies_;}
     std::vector<BattleProjectileView> projectiles() const {std::vector<BattleProjectileView> out;for(const auto& p:projectiles_)out.push_back({p.weapon,p.owner,p.position,p.velocity,p.held,p.exploding});return out;}
@@ -567,6 +597,7 @@ public:
         }
         std::erase_if(projectiles_,[](const auto& shot){return shot.life<=0;});
         for (const auto& hit:hits) {
+            if (hit.defender<last_hit_.size()) last_hit_[hit.defender]=static_cast<int>(hit.attacker);
             const auto& victim=bodies_[hit.defender];
             emit({victim.position.x,victim.position.y+victim.attr.height*.5f,0},
                  hit.shield?Color{100,175,255,255}:hit.element==2?Color{125,195,255,255}:Color{255,235,130,255},hit.shield?6:12,true);
@@ -584,22 +615,27 @@ public:
         if (alive>1) winner_=-1;
         else if (!finished_) {
             finished_=true;finish_tics_=0;
-            for (unsigned i=0;i<bodies_.size();++i) {
-                auto& body=bodies_[i];
-                body.position=stage_.player_spawns[std::min(i,3U)];
-                body.grounded=true;body.status=FighterStatus::Wait;body.action_frame=0;
-                body.vel_air={};body.vel_damage={};body.vel_ground=0;body.hitlag=0;body.hitstun=0;
-                body.lr=body.position.x<0?1:-1;
-            }
+            place_results();
         }
         camera_.tick(bodies_,stage_);
     }
     void draw(Services& services) override {
         auto& r=services.render; r.begin({100,150,220,255});
-        r.sprite_rect("textures/StageDreamLand.png",0,0,320,240);
+        if (finished_) {
+            const int tint=winner_>=0?winner_%4:0;
+            r.sprite_at("textures/MNVSResults/Wallpaper.png",{10,10},{1,1},kResultsEnv[tint]);
+        } else {
+            r.sprite_rect("textures/StageDreamLand.png",0,0,320,240);
+        }
         renderer_->begin();
-        const auto& camera=camera_.view();
-        for (const auto& layer:stage_.layers) renderer_->draw(r,layer,camera,static_cast<float>(tic_));
+        Camera3D camera=camera_.view();
+        if (finished_) {
+            camera={{0,0,1800},{0,0,0},{0,1,0},30,100,20000};
+            camera.viewport={10,10,300,220};
+            camera.aspect=300.f/220.f;
+        } else {
+            for (const auto& layer:stage_.layers) renderer_->draw(r,layer,camera,static_cast<float>(tic_));
+        }
         for (const auto& body:bodies_) {
             if (body.swallowed || (!finished_ && body.stocks<=0) || (!finished_ && body.status==FighterStatus::KO && (body.ko_mode==3 || body.ko_tics>=180)) || (body.invincible && tic_%6<2 && !finished_)) continue;
             const auto model=body.status==FighterStatus::Captured?captured_model(body):posed(body);
@@ -641,48 +677,12 @@ public:
             }
         }
         renderer_->end(r);
-        draw_particles(r,camera);
-        for (unsigned i=0;i<bodies_.size();++i) {
-            const float x=12+i*76.0f;
-            r.fill(x,192,72,42,{0,0,0,180});
-            r.sprite_at(hud_portrait(bodies_[i]),{x,194},{.45f,.45f});
-            r.sprite_at("textures/IFCommonPlayerTags/"+std::to_string(i+1)+"P.png",{x+48,194},{.7f,.7f});
-            const int damage=std::min(999,static_cast<int>(bodies_[i].damage));
-            for (int digit=0;digit<3;++digit) {
-                const int divisor=digit==0?100:digit==1?10:1;
-                if (digit==0 && damage<100) continue;
-                r.sprite_at("textures/IFCommonPlayerDamage/Digit"+std::to_string(damage/divisor%10)+".png",{x+27+digit*10.0f,206},{.8f,.8f});
-            }
-            r.sprite_at("textures/IFCommonPlayerDamage/SymbolPercent.png",{x+59,210},{.8f,.8f});
-            const Color stock=i==0?Color{255,80,80,255}:i==1?Color{100,170,255,255}:i==2?Color{80,220,120,255}:Color{255,210,70,255};
-            for (int s=0;s<bodies_[i].stocks;++s) r.fill(x+4+s*6,226,4,4,stock);
-        }
-        if (intro_tics_>0 && intro_tics_<78) {
-            const float pulse=intro_tics_>24?1.f:intro_tics_/24.f;
-            r.fill(0,70,320,70,{0,0,0,static_cast<std::uint8_t>(140*pulse)});
-            r.sprite_rect("textures/IFCommonGameStatus/OrangeLetterG.png",88,78,52,58,{255,255,255,static_cast<std::uint8_t>(255*pulse)});
-            r.sprite_rect("textures/IFCommonGameStatus/OrangeLetterO.png",140,78,52,58,{255,255,255,static_cast<std::uint8_t>(255*pulse)});
-            r.sprite_rect("textures/IFCommonGameStatus/OrangeExclamationMark.png",192,78,28,58,{255,255,255,static_cast<std::uint8_t>(255*pulse)});
-        }
-        if (finished_) {
-            r.fill(0,0,320,48,{0,0,0,160});
-            r.fill(0,188,320,52,{0,0,0,160});
-            r.sprite_rect("textures/MNVSResults/Winner.png",139,8,42,28);
-            if (winner_>=0) {
-                r.sprite_rect(hud_portrait(bodies_[winner_]),144,40,32,32);
-                r.sprite_at("textures/IFCommonPlayerTags/"+std::to_string(winner_+1)+"P.png",{176,42});
-            }
-            r.sprite_at("textures/MNVSResults/PlaceText.png",{12,196});
-            for (unsigned i=0;i<bodies_.size();++i) {
-                const float x=70.f+i*60;
-                r.sprite_at("textures/IFCommonPlayerTags/"+std::to_string(i+1)+"P.png",{x,196});
-                r.sprite_rect(hud_portrait(bodies_[i]),x,210,24,24);
-                r.sprite_at("textures/IFCommonPlayerDamage/Digit"+std::to_string(i==static_cast<unsigned>(std::max(0,winner_))?1:2)+".png",{x+26,214},{.7f,.7f});
-            }
-        }
+        if (!finished_) draw_particles(r,camera);
+        if (!finished_) draw_hud(r);
+        if (finished_) draw_results(r);
         r.end();
     }
-    std::unique_ptr<Scene> next() override {return done_?make_character_select_scene(stock_,false):nullptr;}
+    std::unique_ptr<Scene> next() override {return done_?make_character_select_scene(stock_,team_):nullptr;}
 private:
     void update_cliff(FighterBody& body,bool advance=true) {
         if (body.hitlag) {--body.hitlag;return;}
@@ -732,6 +732,7 @@ private:
             }
         } else {
             --body.stocks;
+            credit_ko(body);
             emit({std::clamp(body.position.x,stage_.camera_bounds[3],stage_.camera_bounds[2]),std::clamp(body.position.y,stage_.camera_bounds[1],stage_.camera_bounds[0]),0},{255,230,120,255},32,true);
             if (!services.deterministic_clock) {services.audio.play_fgm(dead_explode_sfx);for(auto sound:data.dead_sfx) if(sound!=~0U) services.audio.play_character_fgm(body.custom_model,sound);}
         }
@@ -743,6 +744,7 @@ private:
             body.position.x+=body.vel_air.x;body.position.y+=body.vel_air.y;body.position.z+=body.vel_air.z;
             if (body.ko_tics==180) {
                 --body.stocks;
+                credit_ko(body);
                 emit(body.position,{255,255,255,255},20,true);
                 if (body.ko_mode==1) particles_.push_back({body.position,{},{255,255,255,255},0,30,700,true,false,10});
                 if (!services.deterministic_clock) services.audio.play_fgm(body.ko_mode==1?dead_star_sfx:dead_explode_sfx);
@@ -759,12 +761,112 @@ private:
     std::string remix_key(const FighterBody& body) const {
         return body.custom_model.rfind("remix:",0)==0?body.custom_model.substr(6):std::string{};
     }
-    std::string hud_portrait(const FighterBody& body) const {
-        if (const auto key=remix_key(body); !key.empty()) {
-            const auto path="css/portraits/"+key+".png";
-            if (assets_ && assets_->exists(path)) return path;
+    void credit_ko(const FighterBody& body) {
+        const int victim=static_cast<int>(&body-&bodies_[0]);
+        if (victim<0 || static_cast<unsigned>(victim)>=tko_.size()) return;
+        tko_[victim]++;
+        if (last_hit_[victim]>=0 && last_hit_[victim]!=victim &&
+            static_cast<unsigned>(last_hit_[victim])<kos_.size())
+            kos_[last_hit_[victim]]++;
+    }
+    float results_column_x(unsigned player) const {
+        const int count=static_cast<int>(bodies_.size());
+        if (count<=2) { constexpr float x[]{135,215}; return x[std::min(player,1U)]; }
+        if (count==3) { constexpr float x[]{125,175,225}; return x[std::min(player,2U)]; }
+        constexpr float x[]{115,155,195,235}; return x[std::min(player,3U)];
+    }
+    void place_results() {
+        const int count=static_cast<int>(bodies_.size());
+        constexpr float x2[2][4]{{-150,-350,-700,-1000},{100,250,600,1000}};
+        constexpr float x3[3][4]{{-450,-900,-2000,-3000},{0,0,0,0},{400,800,1800,2800}};
+        constexpr float x4[4][4]{{-450,-900,-2000,-3000},{-150,-350,-700,-1000},{150,300,700,1000},{400,800,1800,2800}};
+        constexpr float yz[4][2]{{-350,0},{-450,-2000},{-700,-5000},{-900,-9000}};
+        for (unsigned i=0;i<bodies_.size();++i) {
+            auto& body=bodies_[i];
+            const int place=(winner_>=0 && static_cast<unsigned>(winner_)==i)?0:1;
+            const int dist=static_cast<int>(i);
+            if (count<=2) body.position={x2[std::min(dist,1)][place],yz[place][0],yz[place][1]};
+            else if (count==3) body.position={x3[std::min(dist,2)][place],yz[place][0],yz[place][1]};
+            else body.position={x4[std::min(dist,3)][place],yz[place][0],yz[place][1]};
+            body.grounded=true;body.status=FighterStatus::Wait;body.action_frame=0;
+            body.vel_air={};body.vel_damage={};body.vel_ground=0;body.hitlag=0;body.hitstun=0;
+            if (place==0) body.lr=1;
+            else if (winner_>=0) body.lr=bodies_[winner_].position.x>=body.position.x?1:-1;
         }
-        return "textures/MNPlayersPortraits/"+std::string(fighter_portrait_file(body.kind));
+    }
+    void draw_percent(RenderEngine& r,unsigned player,int damage) const {
+        const float origin=static_cast<float>(kHudDamageX[std::min(player,3U)]);
+        std::array<int,4> glyphs{};
+        int shown=0;
+        if (damage>=100) glyphs[shown++]=damage/100%10;
+        if (damage>=10) glyphs[shown++]=damage/10%10;
+        glyphs[shown++]=damage%10;
+        glyphs[shown++]=10;
+        float total=0;
+        for (int i=0;i<shown;++i) total+=kHudDigitWidth[glyphs[i]];
+        float x=origin-total*0.5f;
+        for (int i=0;i<shown;++i) {
+            const int glyph=glyphs[i];
+            const auto path=glyph==10?"textures/IFCommonPlayerDamage/SymbolPercent.png":
+                "textures/IFCommonPlayerDamage/Digit"+std::to_string(glyph)+".png";
+            r.sprite_at(path,{x,210});
+            x+=kHudDigitWidth[glyph];
+        }
+    }
+    void draw_hud(RenderEngine& r) {
+        for (unsigned i=0;i<bodies_.size() && i<4;++i) {
+            const float origin=static_cast<float>(kHudDamageX[i]);
+            const auto dir=std::string(hud_stock_dir(bodies_[i].kind));
+            r.sprite_at("textures/"+dir+"/FTEmblem.png",
+                        {origin-10.5f,194.5f},{1,1},kPlayerTint[i]);
+            const int stocks=std::max(0,bodies_[i].stocks);
+            if (stocks<=6) {
+                for (int s=0;s<stocks;++s)
+                    r.sprite_at("textures/"+dir+"/Stock.png",{origin-28.f+s*10.f,185.f},{1,1},kPlayerTint[i]);
+            } else {
+                r.sprite_at("textures/"+dir+"/Stock.png",{origin-28.f,185.f},{1,1},kPlayerTint[i]);
+                r.sprite_at("textures/IFCommonDigits/Cross.png",{origin-14.f,185.f});
+                r.sprite_at("textures/IFCommonDigits/"+std::to_string(std::min(stocks,9))+".png",{origin-4.f,185.f});
+            }
+            draw_percent(r,i,std::min(999,static_cast<int>(bodies_[i].damage)));
+        }
+        if (intro_tics_>0 && intro_tics_<78) {
+            const float pulse=intro_tics_>24?1.f:intro_tics_/24.f;
+            const Color tint{255,255,255,static_cast<std::uint8_t>(255*pulse)};
+            r.sprite_at("textures/IFCommonGameStatus/OrangeLetterG.png",{82,93},{1,1},tint);
+            r.sprite_at("textures/IFCommonGameStatus/OrangeLetterO.png",{144,93},{1,1},tint);
+            r.sprite_at("textures/IFCommonGameStatus/OrangeExclamationMark.png",{214,93},{1,1},tint);
+        }
+    }
+    void draw_results(RenderEngine& r) {
+        r.sprite_at("textures/MNPlayersGameModes/FreeForAllText.png",{32,29});
+        for (unsigned i=0;i<bodies_.size() && i<4;++i) {
+            const float x=results_column_x(i);
+            r.sprite_at("textures/MNVSResults/"+std::to_string(i+1)+"PArrow.png",{x+17,49});
+            r.sprite_at("textures/"+std::string(hud_stock_dir(bodies_[i].kind))+"/Stock.png",
+                        {x+7,49},{1,1},kPlayerTint[i]);
+        }
+        r.sprite_at("textures/MNVSResults/PlaceText.png",{10,66});
+        r.sprite_at("textures/MNVSResults/KOsText.png",{26,124});
+        for (unsigned i=0;i<bodies_.size() && i<4;++i) {
+            const float x=results_column_x(i);
+            const int place=(winner_>=0 && static_cast<unsigned>(winner_)==i)?1:2;
+            r.sprite_at("textures/IFCommonDigits/"+std::to_string(place)+".png",{x+15,66});
+            const int kos=i<kos_.size()?std::min(999,kos_[i]):0;
+            r.sprite_at("textures/IFCommonDigits/"+std::to_string(kos/100%10)+".png",{x+8,124},{1,1},
+                        kos<100?Color{255,255,255,0}:Color{255,255,255,255});
+            r.sprite_at("textures/IFCommonDigits/"+std::to_string(kos/10%10)+".png",{x+16,124},{1,1},
+                        kos<10?Color{255,255,255,0}:Color{255,255,255,255});
+            r.sprite_at("textures/IFCommonDigits/"+std::to_string(kos%10)+".png",{x+24,124});
+        }
+        if (winner_>=0) {
+            const auto& body=bodies_[winner_];
+            const auto key=remix_key(body);
+            if (!key.empty()) hud_letters(r,key,30,180);
+            else r.sprite_at("textures/CharacterNames/"+std::string(fighter_kind_name(body.kind))+".png",{30,180});
+            hud_letters(r,"WIN!",175,180);
+            r.sprite_at("textures/MNVSResults/Winner.png",{139,8});
+        }
     }
     unsigned remix_clip(const FighterBody& body,unsigned clip) const {
         const auto key=remix_key(body);
@@ -1046,7 +1148,8 @@ private:
     std::unordered_map<std::string,Model3D> custom_models_;
     std::vector<int> ports_;
     int stock_,tic_{},winner_{-1},finish_tics_{},intro_tics_{};
-    bool done_{},finished_{};
+    bool done_{},finished_{},team_{};
+    std::vector<int> kos_,tko_,last_hit_;
     std::vector<FighterBody> bodies_;
     Stage3D stage_;
     BattleCamera camera_;
@@ -1066,8 +1169,8 @@ std::vector<BattleProjectileView> battle_projectiles(const Scene& scene) {
 std::size_t battle_projectile_count(const Scene& scene,unsigned weapon) {
     const auto* battle=dynamic_cast<const BattleScene*>(&scene);return battle?battle->projectile_count(weapon):0;
 }
-std::unique_ptr<Scene> make_battle_scene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports,std::vector<std::string> models) {
-    return std::make_unique<BattleScene>(std::move(fighters),stock,std::move(ports),std::move(models));
+std::unique_ptr<Scene> make_battle_scene(std::vector<FighterKind> fighters,int stock,std::vector<int> ports,std::vector<std::string> models,bool team) {
+    return std::make_unique<BattleScene>(std::move(fighters),stock,std::move(ports),std::move(models),team);
 }
 std::unique_ptr<Scene> make_battle_scene(FighterKind p1,FighterKind p2,int stock) {
     return make_battle_scene(std::vector<FighterKind>{p1,p2},stock);

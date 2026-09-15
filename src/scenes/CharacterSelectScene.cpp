@@ -9,12 +9,15 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <iomanip>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <sstream>
+#include <unordered_set>
 
 namespace sagas {
 namespace {
@@ -30,6 +33,14 @@ constexpr std::array<float,12> kBuiltinX{
 constexpr std::array<float,12> kBuiltinY{
     36, 36, 36, 36, 36, 36, 79, 79, 79, 79, 79, 79
 };
+// Smash Remix CharacterSelect.asm layout.slot_1 .. slot_30 (NUM_COLUMNS=10).
+constexpr std::array<std::string_view,30> kRemixSlots{
+    "MARINA","DRM","LUIGI","MARIO","DONKEY","LINK","SAMUS","CAPTAIN","GND","SONIC",
+    "DEDEDE","YLINK","NESS","YOSHI","KIRBY","FOX","PIKACHU","JIGGLYPUFF","FALCO","SHEIK",
+    "GOEMON","CRASH","WARIO","PEACH","BOWSER","WOLF","CONKER","MTWO","MARTH","BANJO"
+};
+constexpr int kCssColumns=10, kCssCell=24, kCssVisibleRows=3;
+constexpr float kCssStartX=39.f, kCssStartY=44.f;
 
 void custom_label(RenderEngine& render,std::string_view name,float x,float y,float width,float height,Color color={255,255,255,255}) {
     const float advance=std::min(height*.72f,width/std::max<std::size_t>(name.size(),1));
@@ -38,6 +49,46 @@ void custom_label(RenderEngine& render,std::string_view name,float x,float y,flo
         if (ch>='A' && ch<='Z') render.sprite_rect("textures/MNCommonFonts/Letter"+std::string(1,static_cast<char>(ch))+".png",x,y,advance,height,color);
         x+=advance;
     }
+}
+
+std::optional<FighterKind> builtin_kind(std::string_view key) {
+    static constexpr std::array<std::pair<std::string_view,FighterKind>,14> keys{{
+        {"LUIGI",FighterKind::Luigi},{"MARIO",FighterKind::Mario},{"DONKEY",FighterKind::Donkey},
+        {"LINK",FighterKind::Link},{"SAMUS",FighterKind::Samus},{"CAPTAIN",FighterKind::Captain},
+        {"NESS",FighterKind::Ness},{"YOSHI",FighterKind::Yoshi},{"KIRBY",FighterKind::Kirby},
+        {"FOX",FighterKind::Fox},{"PIKACHU",FighterKind::Pikachu},{"PURIN",FighterKind::Purin},
+        {"JIGGLYPUFF",FighterKind::Purin},{"JIGGLY",FighterKind::Purin}
+    }};
+    for (const auto& [name,kind]:keys) if (name==key) return kind;
+    return {};
+}
+
+std::string_view card_name_file(FighterKind kind) {
+    constexpr std::array<std::string_view,12> names{
+        "LuigiText.png","MarioText.png","DKText.png","LinkText.png","SamusText.png",
+        "CaptainFalconText.png","NessText.png","YoshiText.png","KirbyText.png","FoxText.png",
+        "PikachuText.png","JigglypuffText.png"};
+    const auto index=static_cast<unsigned>(kind);
+    return index<names.size()?names[index]:names[1];
+}
+
+std::string_view series_emblem(FighterKind kind) {
+    constexpr std::array<std::string_view,12> emblems{
+        "Mario","Mario","Donkey","Zelda","Metroid","FZero",
+        "Mother","Yoshi","Kirby","Fox","PMonsters","PMonsters"};
+    const auto index=static_cast<unsigned>(kind);
+    return index<emblems.size()?emblems[index]:emblems[1];
+}
+
+std::string css_portrait_for(std::string_view key) {
+    std::string alt;
+    for (const auto& entry:remix_css) {
+        if (entry.key==key) return entry.portrait;
+        if ((key=="PURIN" && entry.key=="JIGGLYPUFF") ||
+            (key=="JIGGLYPUFF" && (entry.key=="PURIN" || entry.key=="JIGGLY")))
+            alt=entry.portrait;
+    }
+    return alt;
 }
 
 enum class SlotKind { Human, Cpu, None };
@@ -49,60 +100,83 @@ public:
         slots_[0] = {SlotKind::Human, FighterKind::Mario, false};
         for (int i = 1; i < 4; ++i)
             slots_[i] = {SlotKind::None, FighterKind::Mario, false};
-        cursor_x_ = kPortraitX[1] + 22;
-        cursor_y_ = kPortraitY[1] + 22;
+        cursor_x_ = kBuiltinX[1] + 22;
+        cursor_y_ = kBuiltinY[1] + 22;
         slots_[0].puck=constrained_puck(cursor_x_,cursor_y_);
     }
     void enter(Services& services) override {
         assets_=&services.assets;
-        std::vector<FighterKind> kinds{kBuiltinKinds.begin(),kBuiltinKinds.end()};
-        std::vector<std::string> portraits(kinds.size()),models(kinds.size()),names(kinds.size());
-        std::vector<int> cells;for (int i=0;i<static_cast<int>(kinds.size());++i) cells.push_back(i);
-        if (services.assets.exists("mods/roster.tsv")) {
-            const auto bytes=services.assets.blob("mods/roster.tsv");
-            std::istringstream input(std::string(reinterpret_cast<const char*>(bytes->data()),bytes->size()));
-            std::string line;std::getline(input,line);
-            std::vector<FighterKind> custom_kinds;std::vector<std::string> custom_portraits,custom_models,custom_names;std::vector<int> custom_cells;
-            while (std::getline(input,line) && custom_kinds.size()<120) {
-                std::istringstream fields(line);std::string base,name,portrait,model,cell;
-                if (!std::getline(fields,base,'\t') || !std::getline(fields,name,'\t')) continue;
-                std::getline(fields,portrait,'\t');std::getline(fields,model,'\t');std::getline(fields,cell,'\t');
-                int index=-1;try {index=std::stoi(base);} catch (...) {continue;}
-                if (index<0 || index>=12) continue;
-                if (!portrait.empty() && (portrait.find("..")!=std::string::npos ||
-                    (portrait.find("mods/")!=0 && portrait.find("css/")!=0 && portrait.find("textures/")!=0) ||
-                    !services.assets.exists(portrait))) portrait.clear();
-                if (!model.empty() && model.rfind("remix:",0)!=0 &&
-                    (model.find("mods/")!=0 || model.find("..")!=std::string::npos || !services.assets.exists(model))) model.clear();
-                int position=static_cast<int>(custom_kinds.size());try {if (!cell.empty()) position=std::clamp(std::stoi(cell),0,119);} catch (...) {}
-                custom_kinds.push_back(static_cast<FighterKind>(index));custom_portraits.push_back(portrait);
-                custom_models.push_back(model);custom_names.push_back(name);custom_cells.push_back(position);
+        std::vector<FighterKind> kinds;
+        std::vector<std::string> portraits,models,names;
+        std::unordered_set<std::string> used;
+        const auto push=[&](FighterKind kind,std::string portrait,std::string model,std::string name) {
+            if (!portrait.empty() && (portrait.find("..")!=std::string::npos ||
+                (portrait.find("mods/")!=0 && portrait.find("css/")!=0 && portrait.find("textures/")!=0) ||
+                !services.assets.exists(portrait))) portrait.clear();
+            if (!model.empty() && model.rfind("remix:",0)!=0 &&
+                (model.find("mods/")!=0 || model.find("..")!=std::string::npos || !services.assets.exists(model)))
+                model.clear();
+            kinds.push_back(kind);
+            portraits.push_back(std::move(portrait));
+            models.push_back(std::move(model));
+            names.push_back(std::move(name));
+        };
+        const auto add_remix=[&](const RemixFighter& fighter) {
+            if (fighter.key=="RANDOM" || fighter.parent>=static_cast<unsigned>(FighterKind::Count)) return;
+            if (!used.insert(fighter.key).second) return;
+            std::ostringstream reloc;reloc<<"reloc/"<<std::setw(4)<<std::setfill('0')<<fighter.files[3]<<".bin";
+            if (!services.assets.exists(reloc.str())) return;
+            auto portrait=css_portrait_for(fighter.key);
+            push(static_cast<FighterKind>(fighter.parent),std::move(portrait),"remix:"+fighter.key,fighter.key);
+        };
+        if (one_player_) {
+            for (unsigned i=0;i<kBuiltinKinds.size();++i) {
+                const auto kind=kBuiltinKinds[i];
+                push(kind,std::string("textures/MNPlayersPortraits/")+std::string(fighter_portrait_file(kind)),
+                     "",std::string(fighter_kind_name(kind)));
             }
-            if (!custom_kinds.empty()) {
-                kinds=std::move(custom_kinds);portraits=std::move(custom_portraits);
-                models=std::move(custom_models);names=std::move(custom_names);cells=std::move(custom_cells);
+        } else {
+            for (const auto slot:kRemixSlots) {
+                if (const auto kind=builtin_kind(slot)) {
+                    used.insert(std::string(slot));
+                    auto portrait=css_portrait_for(slot);
+                    if (portrait.empty())
+                        portrait=std::string("textures/MNPlayersPortraits/")+std::string(fighter_portrait_file(*kind));
+                    push(*kind,std::move(portrait),"",std::string(slot));
+                    continue;
+                }
+                const auto* fighter=remix_fighter(slot);
+                if (fighter) add_remix(*fighter);
             }
-        }
-        if (std::filesystem::exists(fighter_descriptor_root()/"remix_css.tsv")) {
-            for (const auto& entry:remix_css) {
-                const auto fighter=std::find_if(remix_roster.begin(),remix_roster.end(),
-                    [&](const auto& row){return row.key==entry.key;});
-                if (fighter==remix_roster.end() || fighter->parent>=static_cast<unsigned>(FighterKind::Count)) continue;
-                std::ostringstream reloc;reloc<<"reloc/"<<std::setw(4)<<std::setfill('0')<<fighter->files[3]<<".bin";
-                if (!services.assets.exists(reloc.str())) continue;
-                const auto tag="remix:"+fighter->key;
-                if (std::any_of(models.begin(),models.end(),[&](const auto& model){return model==tag;})) continue;
-                std::string portrait=entry.portrait;
-                if (!portrait.empty() && (portrait.find("..")!=std::string::npos || !services.assets.exists(portrait))) portrait.clear();
-                kinds.push_back(static_cast<FighterKind>(fighter->parent));
-                portraits.push_back(portrait);models.push_back(tag);names.push_back(fighter->key);
-                cells.push_back(cells.empty()?0:*std::max_element(cells.begin(),cells.end())+1);
+            for (const auto& fighter:remix_roster) add_remix(fighter);
+            if (services.assets.exists("mods/roster.tsv")) {
+                const auto bytes=services.assets.blob("mods/roster.tsv");
+                std::istringstream input(std::string(reinterpret_cast<const char*>(bytes->data()),bytes->size()));
+                std::string line;std::getline(input,line);
+                int seen=0;
+                while (std::getline(input,line) && kinds.size()<120) {
+                    std::istringstream fields(line);std::string base,name,portrait,model,cell;
+                    if (!std::getline(fields,base,'\t') || !std::getline(fields,name,'\t')) continue;
+                    std::getline(fields,portrait,'\t');std::getline(fields,model,'\t');std::getline(fields,cell,'\t');
+                    ++seen;if (seen<=12) continue;
+                    int index=-1;try {index=std::stoi(base);} catch (...) {continue;}
+                    if (index<0 || index>=12) continue;
+                    if (!used.insert(name).second) continue;
+                    push(static_cast<FighterKind>(index),portrait,model,name);
+                }
             }
         }
         kPortraitKind=std::move(kinds);custom_portraits_=std::move(portraits);custom_models_=std::move(models);custom_names_=std::move(names);
-        portrait_page_.assign(kPortraitKind.size(),0);
-        for (unsigned i=0;i<kPortraitKind.size();++i) if (i>=12) portrait_page_[i]=1;
-        layout_pages();
+        css_scroll_=0;layout_pages();
+        int mario=1;
+        for (unsigned i=0;i<custom_names_.size();++i)
+            if (custom_names_[i]=="MARIO" && (i>=custom_models_.size() || custom_models_[i].empty())) {mario=static_cast<int>(i);break;}
+        if (static_cast<unsigned>(mario)<kPortraitX.size()) {
+            cursor_x_=kPortraitX[mario]+cell_w()*0.5f;
+            cursor_y_=kPortraitY[mario]+cell_h()*0.5f;
+            slots_[0].entry=mario;slots_[0].fkind=kPortraitKind[mario];
+            slots_[0].puck=constrained_puck(cursor_x_,cursor_y_);
+        }
         archive_=&services.resources.archive();
         loader_ = std::make_unique<Scene3DLoader>(*archive_);
         renderer_ = std::make_unique<Scene3DRenderer>(services.resources.archive());
@@ -120,11 +194,14 @@ public:
             cursor_x_=std::clamp(input.pointer_x,0.f,300.f);
             cursor_y_=std::clamp(input.pointer_y,10.f,230.f);
         }
-        if (cursor_y_>=16 && cursor_y_<32 && (input.accept_pressed || input.pointer_pressed)) {
-            if (cursor_x_>=130 && cursor_x_<156) css_page_=0;
-            else if (cursor_x_>=156 && cursor_x_<220) css_page_=1;
-            portrait_width_=css_page_==0?45.f:33.75f;
-            portrait_height_=css_page_==0?43.f:22.f;
+        if (!one_player_) {
+            const int rows=static_cast<int>((kPortraitKind.size()+kCssColumns-1)/kCssColumns);
+            const int max_scroll=std::max(0,rows-kCssVisibleRows);
+            int next=css_scroll_;
+            if (cursor_y_<=46.f && input.stick_y>28 && tic_%8==0) next=css_scroll_-1;
+            if (cursor_y_>=110.f && input.stick_y<-28 && tic_%8==0) next=css_scroll_+1;
+            next=std::clamp(next,0,max_scroll);
+            if (next!=css_scroll_) {css_scroll_=next;layout_pages();}
         }
         if (held_slot_>=0 && portrait_at(cursor_x_,cursor_y_)>=0) slots_[held_slot_].puck=constrained_puck(cursor_x_,cursor_y_);
         const int hover = portrait_at(cursor_x_,cursor_y_);
@@ -193,7 +270,7 @@ public:
             auto& slot=slots_[player];
             if (slot.kind!=SlotKind::Human) {
                 slot.kind=SlotKind::Human;slot.selected=false;
-                cursors_[player]={47+45.f*(player+1),58};slot.puck={cursors_[player].x-6,cursors_[player].y-6};
+                cursors_[player]={kCssStartX+24.f*(player+1),kCssStartY+12.f};slot.puck={cursors_[player].x-6,cursors_[player].y-6};
                 const int discovered=portrait_at(cursors_[player].x,cursors_[player].y);
                 if (discovered>=0) {
                     slot.entry=discovered;slot.fkind=kPortraitKind[discovered];
@@ -221,7 +298,6 @@ public:
     void draw(Services& services) override {
         auto& r = services.render;
         r.begin({0,0,0,255});
-        // mnPlayers1PGameMakeWallpaper: 64x32 wrap, anchored at (10,10).
         r.scissor_game(10,10,300,220);
         for (float y=10;y<230;y+=32)
             for (float x=10;x<310;x+=64)
@@ -233,30 +309,19 @@ public:
             r.sprite_at("textures/MNPlayersGameModes/FreeForAllText.png", {24,18}, {1,1},
                         team_ ? Color{180,180,180,255} : Color{227,172,4,255});
             if (team_) r.sprite_at("textures/MNPlayersGameModes/TeamBattleText.png", {140,18});
-            custom_label(r,"64",132,18,22,10,css_page_==0?Color{227,172,4,255}:Color{160,160,160,255});
-            custom_label(r,"REMIX",158,18,48,10,css_page_==1?Color{227,172,4,255}:Color{160,160,160,255});
         }
 
+        r.scissor_game(10,34,300,90);
         for (unsigned portrait = 0; portrait < kPortraitKind.size(); ++portrait) {
-            if (portrait<portrait_page_.size() && portrait_page_[portrait]!=css_page_) continue;
-            const auto kind = kPortraitKind[static_cast<std::size_t>(portrait)];
-            const Vec2 pos{kPortraitX[static_cast<std::size_t>(portrait)],
-                           kPortraitY[static_cast<std::size_t>(portrait)]};
-            const float width=css_page_==0?45.f:portrait_width_;
-            const float height=css_page_==0?43.f:portrait_height_;
-            r.sprite_rect("textures/MNPlayersPortraits/PortraitFireBg.png",pos.x,pos.y,width,height);
+            const Vec2 pos{kPortraitX[portrait],kPortraitY[portrait]};
+            if (pos.y<34.f || pos.y>=124.f) continue;
+            const float width=cell_w(),height=cell_h();
+            const auto kind = kPortraitKind[portrait];
             const auto portrait_file=portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty()?custom_portraits_[portrait]:std::string("textures/MNPlayersPortraits/")+std::string(fighter_portrait_file(kind));
-            const bool remix=portrait<custom_models_.size() && custom_models_[portrait].rfind("remix:",0)==0;
-            const float label_h=remix|| (portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty())?7.f:0.f;
-            const float side=std::min(width,height-label_h);
-            r.sprite_rect(portrait_file,pos.x+(width-side)*.5f,pos.y+label_h,side,side);
-            if (label_h>0) {
-                r.fill(pos.x,pos.y,width,1,{109,89,64,255});r.fill(pos.x,pos.y,1,height,{109,89,64,255});
-                r.fill(pos.x,pos.y+height-1,width,1,{35,27,20,255});r.fill(pos.x+width-1,pos.y,1,height,{35,27,20,255});
-                r.fill(pos.x+1,pos.y+1,width-2,label_h,{0,0,0,200});
-                if (portrait<custom_names_.size()) custom_label(r,custom_names_[portrait],pos.x+2,pos.y+1,width-4,6,{185,178,144,255});
-            }
+            if (one_player_) r.sprite_rect("textures/MNPlayersPortraits/PortraitFireBg.png",pos.x,pos.y,width,height);
+            r.sprite_rect(portrait_file,pos.x,pos.y,width,height);
         }
+        r.reset_scissor();
 
         const int gates = one_player_ ? 1 : 4;
         static constexpr std::array<const char*,4> pucks{
@@ -268,22 +333,21 @@ public:
             const std::string card=slots_[player].kind==SlotKind::None?"GrayCard.png":cards[player];
             r.sprite_at("textures/MNPlayersCommon/"+card,{x,one_player_?131.f:126.f});
             const auto entry=slots_[player].entry;
-            const bool custom=entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() && !custom_models_[entry].empty();
-            const bool named=entry>=0 && static_cast<unsigned>(entry)<custom_names_.size() && !custom_names_[entry].empty() &&
-                (custom || (static_cast<unsigned>(entry)<custom_portraits_.size() && !custom_portraits_[entry].empty()));
-            if (named && slots_[player].kind!=SlotKind::None) {
-                custom_label(r,custom_names_[entry],x+8,146,50,10);
-            } else if (slots_[player].selected) {
-                r.sprite_at(std::string("textures/CharacterNames/") +
-                            std::string(fighter_kind_name(slots_[player].fkind)) + ".png",{x+8,146});
+            const bool remix=entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() &&
+                custom_models_[entry].rfind("remix:",0)==0;
+            if (slots_[player].kind!=SlotKind::None) {
+                r.sprite_at("textures/FTEmblemSprites/"+std::string(series_emblem(slots_[player].fkind))+".png",
+                            {x+2,143},{1,1},{30,30,30,255});
+                if (remix && entry>=0 && static_cast<unsigned>(entry)<custom_names_.size())
+                    custom_label(r,custom_names_[entry],x+4,201,60,10);
+                else
+                    r.sprite_at("textures/MNPlayersCommon/"+std::string(card_name_file(slots_[player].fkind)),{x,201});
             }
         }
 
         renderer_->begin();
         r.clear_depth();
         Camera3D camera{{0,0,5000},{0,0,0},{0,1,0},30,100,20000};
-        // This is a UI camera: preserve its source layout across the wide
-        // canvas, so each preview stays inside its player's card.
         camera.aspect=45.0f/44.0f;
         for (int player=0;player<gates;++player) if (!previews_[player].nodes.empty() && slots_[player].kind!=SlotKind::None) {
             auto model=previews_[player];
@@ -314,9 +378,8 @@ public:
         r.sprite_at("textures/MNPlayersCommon/BackButton.png",{244,16});
         for (int player=0;player<gates;++player)
             if (slots_[player].selected) r.sprite_at(pucks[player],slots_[player].puck);
-        // Pucks render beneath the hand in both held and placed states.
         if (held_slot_>=0) r.sprite_at(pucks[held_slot_],slots_[held_slot_].puck);
-        const bool portrait_band=cursor_y_>=36 && cursor_y_<=(css_page_==0?124.f:124.f);
+        const bool portrait_band=cursor_y_>=36 && cursor_y_<=124.f;
         const int hand=portrait_band?(held_slot_>=0?1:2):0;
         constexpr std::array<const char*,3> hands{"CursorHandPoint.png","CursorHandGrab.png","CursorHandHover.png"};
         constexpr std::array<Vec2,3> label_offset{{{7,15},{9,10},{9,15}}};
@@ -337,48 +400,42 @@ private:
     std::vector<FighterKind> kPortraitKind{kBuiltinKinds.begin(),kBuiltinKinds.end()};
     std::vector<float> kPortraitX{kBuiltinX.begin(),kBuiltinX.end()},kPortraitY{kBuiltinY.begin(),kBuiltinY.end()};
     std::vector<std::string> custom_portraits_,custom_models_,custom_names_;
-    std::vector<int> portrait_page_;
     AssetRepository* assets_{};
-    float portrait_width_{45},portrait_height_{43};
-    int css_page_{};
+    int css_scroll_{};
+    [[nodiscard]] float cell_w() const { return one_player_?45.f:static_cast<float>(kCssCell); }
+    [[nodiscard]] float cell_h() const { return one_player_?43.f:static_cast<float>(kCssCell); }
     void layout_pages() {
         kPortraitX.assign(kPortraitKind.size(),0);kPortraitY.assign(kPortraitKind.size(),0);
-        unsigned vanilla=0,remix=0;
-        for (unsigned i=0;i<kPortraitKind.size();++i) {
-            if (i<portrait_page_.size() && portrait_page_[i]==1) {
-                const int columns=8;
-                kPortraitX[i]=25+(remix%columns)*33.75f;
-                kPortraitY[i]=36+(remix/columns)*22.f;
-                ++remix;
-            } else {
-                if (vanilla<12) {
-                    kPortraitX[i]=kBuiltinX[vanilla];kPortraitY[i]=kBuiltinY[vanilla];
-                } else {
-                    kPortraitX[i]=25+((vanilla-12)%6)*45.f;
-                    kPortraitY[i]=36+86.f+((vanilla-12)/6)*22.f;
+        if (one_player_) {
+            for (unsigned i=0;i<kPortraitKind.size();++i) {
+                if (i<12) {kPortraitX[i]=kBuiltinX[i];kPortraitY[i]=kBuiltinY[i];}
+                else {
+                    kPortraitX[i]=25.f+((i-12)%6)*45.f;
+                    kPortraitY[i]=36.f+((i-12)/6)*43.f;
                 }
-                ++vanilla;
             }
+            return;
         }
-        portrait_width_=css_page_==0?45.f:33.75f;
-        portrait_height_=css_page_==0?43.f:22.f;
+        for (unsigned i=0;i<kPortraitKind.size();++i) {
+            const int column=static_cast<int>(i%kCssColumns);
+            const int row=static_cast<int>(i/kCssColumns);
+            kPortraitX[i]=kCssStartX+column*kCssCell;
+            kPortraitY[i]=kCssStartY+(row-css_scroll_)*kCssCell;
+        }
     }
     Vec2 constrained_puck(float x,float y) const {
         const float top=36.f;
-        const float bottom=css_page_==0?98.f:36.f+4*22.f-6.f;
+        const float bottom=one_player_?98.f:116.f;
         return {std::clamp(x-6,25.f,269.f),std::clamp(y-6,top,bottom)};
     }
     struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{};int entry{1}; };
     [[nodiscard]] int portrait_at(float x, float y) const {
+        const float width=cell_w(),height=cell_h();
         for (unsigned i = 0; i < kPortraitKind.size(); ++i) {
-            if (i<portrait_page_.size() && portrait_page_[i]!=css_page_) continue;
-            const float width=css_page_==0?45.f:portrait_width_;
-            const float height=css_page_==0?43.f:portrait_height_;
-            if (x >= kPortraitX[static_cast<std::size_t>(i)] &&
-                x < kPortraitX[static_cast<std::size_t>(i)] + width &&
-                y >= kPortraitY[static_cast<std::size_t>(i)] &&
-                y < kPortraitY[static_cast<std::size_t>(i)] + height)
-                return i;
+            if (kPortraitY[i]<34.f || kPortraitY[i]>=124.f) continue;
+            if (x >= kPortraitX[i] && x < kPortraitX[i] + width &&
+                y >= kPortraitY[i] && y < kPortraitY[i] + height)
+                return static_cast<int>(i);
         }
         return -1;
     }
@@ -434,7 +491,7 @@ std::unique_ptr<Scene> CharacterSelectScene::next() {
             fighters.push_back(slots_[i].fkind);ports.push_back(slots_[i].kind==SlotKind::Human?static_cast<int>(i):-1);
         }
         if (one_player_) {fighters.push_back(FighterKind::Donkey);ports.push_back(-1);}
-        return make_battle_scene(std::move(fighters),stock_,std::move(ports),std::move(models));
+        return make_battle_scene(std::move(fighters),stock_,std::move(ports),std::move(models),team_);
     }
     return {};
 }

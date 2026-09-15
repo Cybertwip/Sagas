@@ -129,16 +129,22 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
         }
     }
     for (std::size_t node_index=0; node_index<model.nodes.size(); ++node_index) {
-        auto node=model.nodes[node_index];
-        if (node_index < model.animation.size() && model.animation[node_index])
+        const auto rest=model.nodes[node_index];
+        auto node=rest;
+        if (node_index < model.animation.size() && model.animation[node_index]) {
+            auto initial=animation.pose(node);
+            if (model.compose_rest_rotation) initial.tracks[0]=initial.tracks[1]=initial.tracks[2]=0;
             n64::AnimationDecoder::apply(node, model.fighter_animation
-                ? animation.sample16(*model.animation[node_index],frame,animation.pose(node))
-                : animation.sample(*model.animation[node_index],frame,animation.pose(node)));
+                ? animation.sample16(*model.animation[node_index],frame,initial)
+                : animation.sample(*model.animation[node_index],frame,initial));
+        }
         if (model.joint4_rotation_x && node_index<model.source_joint_ids.size() && model.source_joint_ids[node_index]==4)
             node.rotate[0]=*model.joint4_rotation_x;
         if (node_index<model.imported_rest_offsets.size())
             for (unsigned axis=0;axis<3;++axis) node.translate[axis]+=model.imported_rest_offsets[node_index][axis];
-        const Matrix local=multiply(multiply(translation(node.translate),rotation(node.rotate)),scale(node.scale));
+        Matrix oriented=rotation(node.rotate);
+        if (model.compose_rest_rotation) oriented=multiply(rotation(rest.rotate),oriented);
+        const Matrix local=multiply(multiply(translation(node.translate),oriented),scale(node.scale));
         // A sibling ends the previous branch. Disabled fighter descriptors
         // can leave depth gaps; they must not pick up a cousin's old matrix.
         for (int depth=std::max(node.depth,0);depth<kMaxDepth;++depth)
@@ -583,6 +589,9 @@ Model3D Scene3DLoader::fighter_motion(FighterKind kind, unsigned clip, std::uint
         }
         actor=fighter_model(*tree,joint_pairs?GeometryLayout::JointPairs:GeometryLayout::Direct,
                             {0xffffffffU,0xffffffffU},flags,0,attributes);
+        // Unique Yoshi-parent remix (Bowser / Giga Bowser) keeps DObjDesc rest
+        // rotations as a parent of the figatree, matching the authored idle.
+        if (fighter->copy && spec.joint_pairs) actor.compose_rest_rotation=true;
     } else {
         actor=fighter_model(spec.descriptor,spec.joint_pairs ? GeometryLayout::JointPairs :
                             GeometryLayout::Direct,spec.setup_parts,flags);

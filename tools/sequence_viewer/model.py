@@ -73,6 +73,7 @@ class Model3D:
     fighter_root_animation: Optional[Address] = None
     fighter_wrapper: FighterWrapper = FighterWrapper.None_
     fighter_animation: bool = False
+    compose_rest_rotation: bool = False
     is_fighter: bool = False
     receive_lighting: bool = True
     emit_spotlight: bool = False
@@ -333,8 +334,14 @@ def matrix_sets(archive: RelocArchive, model: Model3D, frame: float) -> tuple[li
         node = source
         if index < len(model.animation) and model.animation[index]:
             sampler = sample16 if model.fighter_animation else sample32
-            node = apply_pose(node, sampler(archive, model.animation[index], frame, pose_from_node(node)))
-        local = multiply(multiply(translation(node.translate), rotation(node.rotate)), scale(node.scale))
+            initial = pose_from_node(node)
+            if model.compose_rest_rotation:
+                initial.tracks[0] = initial.tracks[1] = initial.tracks[2] = 0.0
+            node = apply_pose(node, sampler(archive, model.animation[index], frame, initial))
+        oriented = rotation(node.rotate)
+        if model.compose_rest_rotation:
+            oriented = multiply(rotation(source.rotate), oriented)
+        local = multiply(multiply(translation(node.translate), oriented), scale(node.scale))
         for depth in range(max(node.depth, 0), max_depth):
             have_parent[depth] = False
         parent = model_matrix

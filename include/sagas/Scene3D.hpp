@@ -44,6 +44,10 @@ struct Model3D {
     std::optional<n64::Address> fighter_root_animation;
     FighterWrapper fighter_wrapper{FighterWrapper::None};
     bool fighter_animation{};
+    // Unique Yoshi-parent remix models (Bowser, Giga Bowser) author figatree
+    // rotations from identity rest. Compose DObjDesc rest * anim so the
+    // inherited −90° limb offsets still point legs down.
+    bool compose_rest_rotation{};
     bool is_fighter{};
     bool receive_lighting{true};
     bool emit_spotlight{};

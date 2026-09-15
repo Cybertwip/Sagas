@@ -134,6 +134,15 @@ add_custom_target(sagas_fighter_descriptors ALL
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/fighters" "${SAGAS_ASSET_ROOT}/fighters"
     VERBATIM)
 
+file(GLOB SAGAS_SCENE_DESCRIPTOR_FILES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/*.tsv")
+add_custom_target(sagas_scene_descriptors ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${SAGAS_ASSET_ROOT}/scenes"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes" "${SAGAS_ASSET_ROOT}/scenes"
+    DEPENDS ${SAGAS_SCENE_DESCRIPTOR_FILES}
+    VERBATIM)
+
 # Editable Remix resources live in-tree; deploy them to the runtime bundle.
 add_custom_target(sagas_remix_assets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -157,13 +166,15 @@ add_library(sagas_engine
     src/Scene.cpp
     src/Scene3D.cpp
     src/SceneResources.cpp)
-add_dependencies(sagas_engine sagas_fighter_descriptors sagas_remix_assets)
+add_dependencies(sagas_engine sagas_fighter_descriptors sagas_scene_descriptors sagas_remix_assets)
 target_sources(sagas_engine PRIVATE
     src/scenes/StartupScene.cpp
     src/scenes/OpeningScene.cpp
     src/scenes/TitleScene.cpp
     src/scenes/MenuScene.cpp
+    src/scenes/CssRoster.cpp
     src/scenes/CharacterSelectScene.cpp
+    src/scenes/BattleHud.cpp
     src/scenes/BattleScene.cpp)
 target_include_directories(sagas_engine PUBLIC include)
 target_link_libraries(sagas_engine PUBLIC SDL3::SDL3 PNG::PNG OpenGL::GL)
@@ -174,7 +185,7 @@ target_compile_options(sagas_engine PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(sagas app/main.cpp)
 target_link_libraries(sagas PRIVATE sagas_engine)
 add_dependencies(sagas_music_assets sagas_assets)
-add_dependencies(sagas_scene_assets sagas_assets)
+add_dependencies(sagas_scene_assets sagas_assets sagas_scene_descriptors)
 add_dependencies(sagas sagas_music_assets)
 add_dependencies(sagas sagas_scene_assets)
 add_dependencies(sagas sagas_asset_unpack)
@@ -197,6 +208,11 @@ if(SAGAS_BUILD_TESTS)
     target_link_libraries(sagas_fighter_descriptor_tests PRIVATE sagas_engine)
     target_compile_options(sagas_fighter_descriptor_tests PRIVATE -UNDEBUG)
     add_test(NAME sagas_fighter_descriptors COMMAND sagas_fighter_descriptor_tests)
+    add_executable(sagas_scene_descriptor_tests tests/scene_descriptors.cpp)
+    target_link_libraries(sagas_scene_descriptor_tests PRIVATE sagas_engine)
+    target_compile_options(sagas_scene_descriptor_tests PRIVATE -UNDEBUG)
+    add_dependencies(sagas_scene_descriptor_tests sagas_scene_descriptors)
+    add_test(NAME sagas_scene_descriptors COMMAND sagas_scene_descriptor_tests)
     add_executable(sagas_tests tests/core_tests.cpp)
     target_link_libraries(sagas_tests PRIVATE sagas_engine)
     target_compile_options(sagas_tests PRIVATE -UNDEBUG)

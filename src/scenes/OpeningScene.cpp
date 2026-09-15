@@ -3,6 +3,7 @@
 #include <sagas/Fighter.hpp>
 #include <sagas/N64.hpp>
 #include <sagas/Scene3D.hpp>
+#include <sagas/SceneDescriptors.hpp>
 #include <sagas/SceneResources.hpp>
 
 #include <algorithm>
@@ -18,12 +19,12 @@ class OpeningScene final : public Scene {
 public:
     void enter(Services& services) override {
         resources_ = &services.resources;
-        resources_->load_manifest("scenes/opening.sgscene");
+        resources_->load_manifest(ui_path("opening.manifest"));
         resources_->activate("room.base");
         loader_ = &resources_->loader();
         renderer_ = std::make_unique<Scene3DRenderer>(resources_->archive());
         for (const auto& segment : resources_->timeline()) total_duration_ += segment.duration;
-        services.audio.play_music("audio/opening.sgpcm", 1.0f);
+        services.audio.play_music(ui_path("opening.music"), 1.0f);
         resources_->prefetch("room.action");
     }
     void update(Services& services, const InputState& input, float) override {
@@ -110,7 +111,7 @@ public:
             }
             if (segment.renderer == "models_cockpit") {
                 renderer_->flush(r);
-                r.sprite("textures/MVOpeningSector/Cockpit.png", {160,120});
+                r.sprite(ui_path("opening.cockpit"), {160,120});
             }
 
         } else if (segment.renderer == "newcomers") {
@@ -180,7 +181,7 @@ private:
         return {&last, static_cast<int>(last.duration) - 1};
     }
     static void wallpaper(RenderEngine& r, std::string_view name, Vec2 scale = {1,1}) {
-        r.sprite(std::string("textures/") + std::string(name), {160,120}, scale);
+        r.sprite(ui_path("opening.texture_root") + std::string(name), {160,120}, scale);
     }
     void draw_room_shell(RenderEngine& r, const Camera3D& camera, float camera_frame,
                          int local, const LightingRig& lights) {
@@ -343,7 +344,7 @@ private:
         for (std::size_t i = 0; i < set.size(); ++i) {
             const float phase = std::clamp((local % 75 - static_cast<int>(i) * 15) / 8.0f, 0.0f, 1.0f);
             const float x = local < 75 ? 160.0f - (1-phase)*320.0f : 160.0f + (1-phase)*320.0f;
-            r.sprite("textures/MVOpeningPortraitsSet" + std::to_string(local < 75 ? 1 : 2) + "/" + std::string(set[i]) + ".png",
+            r.sprite(ui_path("opening.portrait_set") + std::to_string(local < 75 ? 1 : 2) + "/" + std::string(set[i]) + ".png",
                      {x, 37.5f + static_cast<float>(i) * 55.0f});
         }
     }
@@ -373,7 +374,7 @@ private:
         const auto& intro=*found;
         if (local<15) {
             for (std::size_t i=0;i<intro.letters.size();++i)
-                r.sprite_at(std::string("textures/IFCommonAnnounceCommon/Letter")+intro.letters[i]+".png",
+                r.sprite_at(ui_path("opening.letter")+intro.letters[i]+".png",
                             {intro.name_x+intro.letter_x[i],100});
             return;
         }
@@ -429,7 +430,7 @@ private:
         }
         const auto& vp=view.viewport;
         r.scissor_game(vp[0],vp[1],vp[2],vp[3]);
-        r.sprite_rect("textures/"+std::string(view.wallpaper)+".png",vp[0],vp[1],vp[2],vp[3]);
+        r.sprite_rect(ui_path("opening.texture_root")+std::string(view.wallpaper)+".png",vp[0],vp[1],vp[2],vp[3]);
         r.reset_scissor();
         Camera3D camera;
         camera.viewport=vp;
@@ -520,7 +521,7 @@ private:
             motion_stage_=loader_->stage("llGRJungleMapMapHeader");
             motion_stage_name_="jungle";
         }
-        r.sprite_rect("textures/StageJungle.png",10,10,300,220);
+        r.sprite_rect(ui_path("opening.jungle"),10,10,300,220);
         Camera3D initial;
         initial.fov_y=38;
         initial.aspect=15.0f/11.0f;
@@ -611,15 +612,15 @@ private:
         }
         if (!has_fighter) {
             const float scale = 1.0f + 0.1f * local / 60.0f;
-            r.sprite(std::string("textures/") + std::string(portrait), {160,120}, {scale, 4.0f});
+            r.sprite(ui_path("opening.texture_root") + std::string(portrait), {160,120}, {scale, 4.0f});
         }
         r.fill(10, 10, 300, 45, {0,0,0,120});
         r.fill(10, 185, 300, 45, {0,0,0,120});
     }
     void run(RenderEngine& r,int local) {
         const float scroll=std::fmod(local*30.0f,320.0f);
-        r.sprite_rect("textures/MVOpeningRun/Wallpaper.png",scroll-320,0,320,240);
-        r.sprite_rect("textures/MVOpeningRun/Wallpaper.png",scroll,0,320,240);
+        r.sprite_rect(ui_path("opening.run_wallpaper"),scroll-320,0,320,240);
+        r.sprite_rect(ui_path("opening.run_wallpaper"),scroll,0,320,240);
         static constexpr std::array<std::string_view,8> names{
             "Mario","Fox","Donkey","Samus","Link","Yoshi","Kirby","Pikachu"};
         n64::AnimationDecoder decoder(resources_->archive());
@@ -647,7 +648,7 @@ private:
         const std::array<std::string_view, 4> names{"Link", "Kirby", "Donkey", "Yoshi"};
         for (std::size_t i = 0; i < names.size(); ++i) {
             const float phase = std::clamp((local - static_cast<int>(i) * 6) / 8.0f, 0.0f, 1.0f);
-            r.sprite("textures/MVOpeningPortraitsSet2/" + std::string(names[i]) + ".png",
+            r.sprite(ui_path("opening.portrait_set") + "2/" + std::string(names[i]) + ".png",
                      {160.0f + (1-phase)*320.0f, 37.5f + static_cast<float>(i)*55});
         }
         if (local < 8) r.fill(0,0,320,240,{255,255,255,static_cast<std::uint8_t>((8-local)*28)});

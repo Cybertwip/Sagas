@@ -7,6 +7,7 @@
 #include <sagas/RemixDescriptors.hpp>
 #include <sagas/FighterThrowData.hpp>
 #include <sagas/WeaponSourceData.hpp>
+#include <sagas/BattleHud.hpp>
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
 #include <sagas/OpeningMotionAudio.hpp>
@@ -26,19 +27,6 @@
 
 namespace sagas {
 namespace {
-
-constexpr std::array<int,4> kHudDamageX{55,125,195,265};
-constexpr std::array<int,12> kHudDigitWidth{14,9,15,14,15,13,15,14,15,15,17,20};
-constexpr std::array<Color,4> kPlayerTint{{{255,80,80,255},{80,110,255,255},{255,210,50,255},{60,200,90,255}}};
-constexpr std::array<Color,4> kResultsEnv{{{152,111,108,255},{134,134,209,255},{155,142,108,255},{113,130,120,255}}};
-
-std::string_view hud_stock_dir(FighterKind kind) {
-    constexpr std::array<std::string_view,12> dirs{
-        "LuigiModel","MarioModel","DkIcon","LinkModel","SamusModel","CaptainModel",
-        "NessModel","YoshiModel","KirbyModel","FoxModel","PikachuModel","PurinModel"};
-    const auto index=static_cast<unsigned>(kind);
-    return index<dirs.size()?dirs[index]:dirs[1];
-}
 
 class BattleScene final : public Scene {
 public:
@@ -607,12 +595,7 @@ public:
     }
     void draw(Services& services) override {
         auto& r=services.render; r.begin({100,150,220,255});
-        if (finished_) {
-            const int tint=winner_>=0?winner_%4:0;
-            r.sprite_at("textures/MNVSResults/Wallpaper.png",{10,10},{1,1},kResultsEnv[tint]);
-        } else {
-            r.sprite_rect("textures/StageDreamLand.png",0,0,320,240);
-        }
+        draw_battle_stage(r,finished_,winner_);
         renderer_->begin();
         Camera3D camera=camera_.view();
         if (finished_) {
@@ -673,8 +656,9 @@ public:
         }
         renderer_->end(r);
         if (!finished_) draw_particles(r,camera);
-        if (!finished_) draw_hud(r);
-        if (finished_) draw_results(r);
+        const BattleHudState hud{bodies_,kos_,winner_,intro_tics_};
+        if (!finished_) draw_battle_hud(r,hud);
+        if (finished_) draw_battle_results(r,hud);
         r.end();
     }
     std::unique_ptr<Scene> next() override {return done_?make_character_select_scene(stock_,team_):nullptr;}
@@ -763,12 +747,6 @@ private:
             static_cast<unsigned>(last_hit_[victim])<kos_.size())
             kos_[last_hit_[victim]]++;
     }
-    float results_column_x(unsigned player) const {
-        const int count=static_cast<int>(bodies_.size());
-        if (count<=2) { constexpr float x[]{135,215}; return x[std::min(player,1U)]; }
-        if (count==3) { constexpr float x[]{125,175,225}; return x[std::min(player,2U)]; }
-        constexpr float x[]{115,155,195,235}; return x[std::min(player,3U)];
-    }
     void place_results() {
         const int count=static_cast<int>(bodies_.size());
         constexpr float x2[2][4]{{-150,-350,-700,-1000},{100,250,600,1000}};
@@ -786,91 +764,6 @@ private:
             body.vel_air={};body.vel_damage={};body.vel_ground=0;body.hitlag=0;body.hitstun=0;
             if (place==0) body.lr=1;
             else if (winner_>=0) body.lr=bodies_[winner_].position.x>=body.position.x?1:-1;
-        }
-    }
-    void draw_percent(RenderEngine& r,unsigned player,int damage) const {
-        const float origin=static_cast<float>(kHudDamageX[std::min(player,3U)]);
-        std::array<int,4> glyphs{};
-        int shown=0;
-        if (damage>=100) glyphs[shown++]=damage/100%10;
-        if (damage>=10) glyphs[shown++]=damage/10%10;
-        glyphs[shown++]=damage%10;
-        glyphs[shown++]=10;
-        float total=0;
-        for (int i=0;i<shown;++i) total+=kHudDigitWidth[glyphs[i]];
-        float x=origin-total*0.5f;
-        for (int i=0;i<shown;++i) {
-            const int glyph=glyphs[i];
-            const auto path=glyph==10?"textures/IFCommonPlayerDamage/SymbolPercent.png":
-                "textures/IFCommonPlayerDamage/Digit"+std::to_string(glyph)+".png";
-            r.sprite_at(path,{x,210});
-            x+=kHudDigitWidth[glyph];
-        }
-    }
-    void draw_hud(RenderEngine& r) {
-        for (unsigned i=0;i<bodies_.size() && i<4;++i) {
-            const float origin=static_cast<float>(kHudDamageX[i]);
-            const auto dir=std::string(hud_stock_dir(bodies_[i].kind));
-            r.sprite_at("textures/"+dir+"/FTEmblem.png",
-                        {origin-10.5f,194.5f},{1,1},kPlayerTint[i]);
-            const int stocks=std::max(0,bodies_[i].stocks);
-            if (stocks<=6) {
-                for (int s=0;s<stocks;++s)
-                    r.sprite_at("textures/"+dir+"/Stock.png",{origin-28.f+s*10.f,185.f});
-            } else {
-                r.sprite_at("textures/"+dir+"/Stock.png",{origin-28.f,185.f});
-                r.sprite_at("textures/IFCommonDigits/Cross.png",{origin-14.f,185.f});
-                r.sprite_at("textures/IFCommonDigits/"+std::to_string(std::min(stocks,9))+".png",{origin-4.f,185.f});
-            }
-            draw_percent(r,i,std::min(999,static_cast<int>(bodies_[i].damage)));
-        }
-        if (intro_tics_>0 && intro_tics_<78) {
-            const float pulse=intro_tics_>24?1.f:intro_tics_/24.f;
-            const Color tint{255,255,255,static_cast<std::uint8_t>(255*pulse)};
-            r.sprite_at("textures/IFCommonGameStatus/OrangeLetterG.png",{82,93},{1,1},tint);
-            r.sprite_at("textures/IFCommonGameStatus/OrangeLetterO.png",{144,93},{1,1},tint);
-            r.sprite_at("textures/IFCommonGameStatus/OrangeExclamationMark.png",{214,93},{1,1},tint);
-        }
-    }
-    void draw_results(RenderEngine& r) {
-        for (unsigned i=0;i<bodies_.size() && i<4;++i) {
-            const float x=results_column_x(i);
-            r.sprite_at("textures/MNVSResults/"+std::to_string(i+1)+"PArrow.png",{x+17,49});
-            r.sprite_at("textures/"+std::string(hud_stock_dir(bodies_[i].kind))+"/Stock.png",{x+7,49});
-        }
-        r.sprite_at("textures/MNVSResults/PlaceText.png",{10,66});
-        r.sprite_at("textures/MNVSResults/KOsText.png",{26,124});
-        for (unsigned i=0;i<bodies_.size() && i<4;++i) {
-            const float x=results_column_x(i);
-            const int place=(winner_>=0 && static_cast<unsigned>(winner_)==i)?1:2;
-            r.sprite_at("textures/IFCommonDigits/"+std::to_string(place)+".png",{x+15,66});
-            const int kos=i<kos_.size()?std::min(999,kos_[i]):0;
-            auto digit=[&](int value,float dx,bool hide) {
-                r.sprite_at("textures/IFCommonDigits/"+std::to_string(value)+".png",{x+dx,124},{1,1},
-                            hide?Color{255,255,255,0}:Color{255,255,255,255});
-            };
-            digit(kos/100%10,8,kos<100);
-            digit(kos/10%10,16,kos<10);
-            digit(kos%10,24,false);
-        }
-        if (winner_>=0) {
-            const auto& body=bodies_[winner_];
-            const auto key=remix_key(body);
-            if (!key.empty()) {
-                custom_results_name(r,key,24,178);
-            } else {
-                r.sprite_at("textures/CharacterNames/"+std::string(fighter_kind_name(body.kind))+".png",{24,178});
-            }
-            r.sprite_at("textures/MNVSResults/Winner.png",{24,8});
-        }
-    }
-    static void custom_results_name(RenderEngine& r,std::string_view name,float x,float y) {
-        for (unsigned char ch:name) {
-            ch=static_cast<unsigned char>(std::toupper(ch));
-            if (ch>='A' && ch<='Z') {
-                r.sprite_at("textures/MNCommonFonts/Letter"+std::string(1,static_cast<char>(ch))+".png",{x,y});
-                x+=10;
-            } else x+=6;
         }
     }
     unsigned remix_clip(const FighterBody& body,unsigned clip) const {

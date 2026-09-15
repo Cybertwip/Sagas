@@ -69,10 +69,11 @@ constexpr const char* vertex_2d=R"GLSL(#version 410 core
 layout(location=0) in vec2 inPosition;
 layout(location=1) in vec4 inColor;
 layout(location=2) in vec2 inUV;
+uniform vec2 logicalSize;
 out vec4 vertexColor;
 out vec2 textureUV;
 void main() {
-    gl_Position=vec4(inPosition.x/160.0-1.0,1.0-inPosition.y/120.0,0.0,1.0);
+    gl_Position=vec4(inPosition.x/(logicalSize.x*0.5)-1.0,1.0-inPosition.y/(logicalSize.y*0.5),0.0,1.0);
     vertexColor=inColor;
     textureUV=inUV;
 }
@@ -531,7 +532,14 @@ std::uint32_t RenderEngine::raster_texture(const std::shared_ptr<const RasterIma
     return handle;
 }
 
+void RenderEngine::set_logical_size(int width, int height) {
+    logical_width_=std::max(1,width);
+    logical_height_=std::max(1,height);
+}
+
 void RenderEngine::begin(Color clear) {
+    logical_width_=320;
+    logical_height_=240;
     SDL_GL_MakeCurrent(window_,context_);
     shadows_ready_=false;
     for (auto it=raster_textures_.begin();it!=raster_textures_.end();) {
@@ -579,6 +587,8 @@ void RenderEngine::draw_2d(std::span<const TriangleVertex> vertices,GLuint textu
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
     glUseProgram(program_2d_);
+    glUniform2f(glGetUniformLocation(program_2d_,"logicalSize"),
+                static_cast<float>(logical_width_),static_cast<float>(logical_height_));
     glUniform1i(glGetUniformLocation(program_2d_,"colorTexture"),0);
     glUniform1i(glGetUniformLocation(program_2d_,"useTexture"),texture_handle!=0);
     glActiveTexture(GL_TEXTURE0);
@@ -722,9 +732,11 @@ void RenderEngine::forward(std::span<const ForwardVertex> vertices,const Forward
     const auto uniform=[&](const char* name) { return glGetUniformLocation(program_forward_,name); };
     const auto& viewport=material.viewport;
     scissor_game(viewport[0],viewport[1],viewport[2],viewport[3]);
-    glUniform2f(uniform("viewportScale"),viewport[2]/320.0f/(material.aspect*(4.0f/3.0f)),viewport[3]/240.0f);
-    glUniform2f(uniform("viewportOffset"),(viewport[0]+viewport[2]*0.5f)/160.0f-1.0f,
-                1.0f-(viewport[1]+viewport[3]*0.5f)/120.0f);
+    const float logical_w=static_cast<float>(logical_width_);
+    const float logical_h=static_cast<float>(logical_height_);
+    glUniform2f(uniform("viewportScale"),viewport[2]/logical_w/(material.aspect*(logical_w/logical_h)),viewport[3]/logical_h);
+    glUniform2f(uniform("viewportOffset"),(viewport[0]+viewport[2]*0.5f)/(logical_w*0.5f)-1.0f,
+                1.0f-(viewport[1]+viewport[3]*0.5f)/(logical_h*0.5f));
     glUniform1f(uniform("focal"),1.0f/std::tan(material.fov_y*0.008726646259971648f));
     glUniform1f(uniform("nearPlane"),material.near_plane);
     glUniform1f(uniform("farPlane"),material.far_plane);
@@ -806,11 +818,11 @@ void RenderEngine::clear_depth() {
 }
 
 void RenderEngine::scissor_game(float x, float y, float w, float h) {
-    const float sx=viewport_width_/320.0f;
-    const float sy=viewport_height_/240.0f;
+    const float sx=viewport_width_/static_cast<float>(logical_width_);
+    const float sy=viewport_height_/static_cast<float>(logical_height_);
     glEnable(GL_SCISSOR_TEST);
     glScissor(viewport_x_+static_cast<int>(std::lround(x*sx)),
-              viewport_y_+static_cast<int>(std::lround((240.0f-y-h)*sy)),
+              viewport_y_+static_cast<int>(std::lround((logical_height_-y-h)*sy)),
               std::max(1,static_cast<int>(std::lround(w*sx))),
               std::max(1,static_cast<int>(std::lround(h*sy))));
 }

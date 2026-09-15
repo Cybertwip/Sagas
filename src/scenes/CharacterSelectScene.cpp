@@ -38,8 +38,10 @@ constexpr std::array<std::string_view,30> kRemixSlots{
     "DEDEDE","YLINK","NESS","YOSHI","KIRBY","FOX","PIKACHU","JIGGLYPUFF","FALCO","SHEIK",
     "GOEMON","CRASH","WARIO","PEACH","BOWSER","WOLF","CONKER","MTWO","MARTH","BANJO"
 };
-constexpr int kCssColumns=10, kCssCell=24, kCssVisibleRows=3;
-constexpr float kCssStartX=39.f, kCssStartY=44.f;
+constexpr int kCssColumns=10, kCssVisibleRows=3;
+constexpr float kCssCell=48.f, kCssStartX=80.f, kCssStartY=40.f;
+constexpr float kCssW=640.f, kCssH=360.f;
+constexpr float kCardX0=28.f, kCardStep=152.f, kCardY=200.f, kCardW=132.f, kCardH=150.f;
 
 void custom_label(RenderEngine& render,std::string_view name,float x,float y,float width,float height,Color color={255,255,255,255}) {
     const float advance=std::min(height*.72f,width/std::max<std::size_t>(name.size(),1));
@@ -128,6 +130,11 @@ public:
             auto portrait=css_portrait_for(fighter.key);
             push(static_cast<FighterKind>(fighter.parent),std::move(portrait),"remix:"+fighter.key,fighter.key);
         };
+        const auto clone_key=[&](std::string_view key) {
+            if (key.empty()) return true;
+            const char prefix=key[0];
+            return prefix=='J' || prefix=='E' || prefix=='N';
+        };
         if (one_player_) {
             for (unsigned i=0;i<kBuiltinKinds.size();++i) {
                 const auto kind=kBuiltinKinds[i];
@@ -138,16 +145,18 @@ public:
             for (const auto slot:kRemixSlots) {
                 if (const auto kind=builtin_kind(slot)) {
                     used.insert(std::string(slot));
-                    auto portrait=css_portrait_for(slot);
-                    if (portrait.empty())
-                        portrait=std::string("textures/MNPlayersPortraits/")+std::string(fighter_portrait_file(*kind));
-                    push(*kind,std::move(portrait),"",std::string(slot));
+                    if (kind==FighterKind::Purin) used.insert("PURIN");
+                    push(*kind,std::string("textures/MNPlayersPortraits/")+std::string(fighter_portrait_file(*kind)),
+                         "",std::string(slot));
                     continue;
                 }
                 const auto* fighter=remix_fighter(slot);
                 if (fighter) add_remix(*fighter);
             }
-            for (const auto& fighter:remix_roster) add_remix(fighter);
+            for (const auto& fighter:remix_roster) {
+                if (clone_key(fighter.key)) continue;
+                add_remix(fighter);
+            }
             if (services.assets.exists("mods/roster.tsv")) {
                 const auto bytes=services.assets.blob("mods/roster.tsv");
                 std::istringstream input(std::string(reinterpret_cast<const char*>(bytes->data()),bytes->size()));
@@ -166,6 +175,7 @@ public:
             }
         }
         kPortraitKind=std::move(kinds);custom_portraits_=std::move(portraits);custom_models_=std::move(models);custom_names_=std::move(names);
+        if (!one_player_) services.render.set_logical_size(static_cast<int>(kCssW),static_cast<int>(kCssH));
         css_scroll_=0;layout_pages();
         int mario=1;
         for (unsigned i=0;i<custom_names_.size();++i)
@@ -185,20 +195,23 @@ public:
     }
     void update(Services& services, const InputState& input, float) override {
         ++tic_;
+        if (!one_player_) services.render.set_logical_size(static_cast<int>(kCssW),static_cast<int>(kCssH));
+        const float max_x=one_player_?280.f:kCssW-20.f;
+        const float max_y=one_player_?230.f:kCssH-10.f;
         for (unsigned i=0;i<slots_.size();++i)
             door_offset_[i]=std::clamp(door_offset_[i]+(slots_[i].kind==SlotKind::None?2.f:-2.f),0.f,41.f);
-        cursor_x_ = std::clamp(cursor_x_ + input.stick_x / 20.0f, 0.0f, 280.0f);
-        cursor_y_ = std::clamp(cursor_y_ - input.stick_y / 20.0f, 10.0f, 230.0f);
+        cursor_x_ = std::clamp(cursor_x_ + input.stick_x / 20.0f, 0.0f, max_x);
+        cursor_y_ = std::clamp(cursor_y_ - input.stick_y / 20.0f, 10.0f, max_y);
         if (input.pointer_moved || input.pointer_pressed || input.pointer_released) {
-            cursor_x_=std::clamp(input.pointer_x,0.f,300.f);
-            cursor_y_=std::clamp(input.pointer_y,10.f,230.f);
+            cursor_x_=std::clamp(input.pointer_x,0.f,max_x);
+            cursor_y_=std::clamp(input.pointer_y,10.f,max_y);
         }
         if (!one_player_) {
             const int rows=static_cast<int>((kPortraitKind.size()+kCssColumns-1)/kCssColumns);
             const int max_scroll=std::max(0,rows-kCssVisibleRows);
             int next=css_scroll_;
-            if (cursor_y_<=46.f && input.stick_y>28 && tic_%8==0) next=css_scroll_-1;
-            if (cursor_y_>=110.f && input.stick_y<-28 && tic_%8==0) next=css_scroll_+1;
+            if (cursor_y_<=kCssStartY+8.f && input.stick_y>28 && tic_%8==0) next=css_scroll_-1;
+            if (cursor_y_>=kCssStartY+kCssCell*kCssVisibleRows-8.f && input.stick_y<-28 && tic_%8==0) next=css_scroll_+1;
             next=std::clamp(next,0,max_scroll);
             if (next!=css_scroll_) {css_scroll_=next;layout_pages();}
         }
@@ -236,8 +249,9 @@ public:
                 slots_[pickup].puck=constrained_puck(cursor_x_,cursor_y_);
                 load_preview(slots_[pickup].fkind,pickup,false);
                 services.audio.play(AudioCue::MenuSelect);
-            } else if ((one_player_?(cursor_y_>=195 && cursor_y_<214):(cursor_y_>=128 && cursor_y_<143)) && cursor_x_>=22) {
-                const int slot=static_cast<int>((cursor_x_-22)/69);
+            } else if ((one_player_?(cursor_y_>=195 && cursor_y_<214):(cursor_y_>=kCardY && cursor_y_<kCardY+24)) &&
+                       cursor_x_>=(one_player_?22.f:kCardX0)) {
+                const int slot=static_cast<int>((cursor_x_-(one_player_?22.f:kCardX0))/(one_player_?69.f:kCardStep));
                 if (slot>=0 && slot<(one_player_?1:4)) {
                     if (held_slot_>=0 && held_slot_!=slot) slots_[held_slot_].selected=false;
                     active_slot_=slot;
@@ -252,7 +266,7 @@ public:
                     services.audio.play(AudioCue::MenuSelect);
                 }
             } else if (input.accept_pressed) place();
-            if (cursor_y_>=16 && cursor_y_<30 && cursor_x_>=244) back_=true;
+            if (cursor_y_>=16 && cursor_y_<36 && cursor_x_>=(one_player_?244.f:540.f)) back_=true;
         }
         if (input.pointer_released) place();
         if (input.cancel_pressed) {
@@ -269,14 +283,14 @@ public:
             auto& slot=slots_[player];
             if (slot.kind!=SlotKind::Human) {
                 slot.kind=SlotKind::Human;slot.selected=false;
-                cursors_[player]={kCssStartX+24.f*(player+1),kCssStartY+12.f};slot.puck={cursors_[player].x-6,cursors_[player].y-6};
+                cursors_[player]={kCssStartX+kCssCell*(player+1),kCssStartY+kCssCell*0.5f};slot.puck={cursors_[player].x-6,cursors_[player].y-6};
                 const int discovered=portrait_at(cursors_[player].x,cursors_[player].y);
                 if (discovered>=0) {
                     slot.entry=discovered;slot.fkind=kPortraitKind[discovered];
                     load_preview(slot.fkind,player,false);
                 }
             }
-            auto& cursor=cursors_[player];cursor.x=std::clamp(cursor.x+c.x/20,0.f,300.f);cursor.y=std::clamp(cursor.y-c.y/20,10.f,230.f);
+            auto& cursor=cursors_[player];cursor.x=std::clamp(cursor.x+c.x/20,0.f,one_player_?300.f:kCssW-20.f);cursor.y=std::clamp(cursor.y-c.y/20,10.f,one_player_?230.f:kCssH-10.f);
             const int portrait=portrait_at(cursor.x,cursor.y);
             if (!slot.selected) {
                 if (portrait>=0) slot.puck=constrained_puck(cursor.x,cursor.y);
@@ -297,28 +311,35 @@ public:
     void draw(Services& services) override {
         auto& r = services.render;
         r.begin({0,0,0,255});
-        r.scissor_game(10,10,300,220);
-        for (float y=10;y<230;y+=32)
-            for (float x=10;x<310;x+=64)
+        if (!one_player_) r.set_logical_size(static_cast<int>(kCssW),static_cast<int>(kCssH));
+        const float screen_w=one_player_?320.f:kCssW;
+        const float screen_h=one_player_?240.f:kCssH;
+        r.scissor_game(10,10,screen_w-20,screen_h-20);
+        for (float y=10;y<screen_h-10;y+=32)
+            for (float x=10;x<screen_w-10;x+=64)
                 r.sprite_at("textures/MNSelectCommon/StoneBackground.png",{x,y});
         r.reset_scissor();
         if (one_player_)
             r.sprite_at("textures/MNPlayers1PMode/1PlayerGameText.png", {24,18});
         else {
-            r.sprite_at("textures/MNPlayersGameModes/FreeForAllText.png", {24,18}, {1,1},
+            r.sprite_at("textures/MNPlayersGameModes/FreeForAllText.png", {24,16},{1.5f,1.5f},
                         team_ ? Color{180,180,180,255} : Color{227,172,4,255});
-            if (team_) r.sprite_at("textures/MNPlayersGameModes/TeamBattleText.png", {140,18});
+            if (team_) r.sprite_at("textures/MNPlayersGameModes/TeamBattleText.png", {220,16},{1.5f,1.5f});
         }
 
-        r.scissor_game(10,34,300,90);
+        const float band_top=one_player_?36.f:kCssStartY;
+        const float band_bottom=one_player_?124.f:kCssStartY+kCssCell*kCssVisibleRows;
+        r.scissor_game(10,band_top,screen_w-20,band_bottom-band_top);
         for (unsigned portrait = 0; portrait < kPortraitKind.size(); ++portrait) {
             const Vec2 pos{kPortraitX[portrait],kPortraitY[portrait]};
-            if (pos.y<34.f || pos.y>=124.f) continue;
+            if (pos.y<band_top-1.f || pos.y>=band_bottom) continue;
             const float width=cell_w(),height=cell_h();
             const auto kind = kPortraitKind[portrait];
             const auto portrait_file=portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty()?custom_portraits_[portrait]:std::string("textures/MNPlayersPortraits/")+std::string(fighter_portrait_file(kind));
-            if (one_player_) r.sprite_rect("textures/MNPlayersPortraits/PortraitFireBg.png",pos.x,pos.y,width,height);
-            r.sprite_rect(portrait_file,pos.x,pos.y,width,height);
+            const bool vanilla=portrait_file.find("MNPlayersPortraits/")!=std::string::npos;
+            r.sprite_rect("textures/MNPlayersPortraits/PortraitFireBg.png",pos.x,pos.y,width,height);
+            if (vanilla) r.sprite_rect(portrait_file,pos.x+1,pos.y+1,width-2,height-2);
+            else r.sprite_rect(portrait_file,pos.x,pos.y,width,height);
         }
         r.reset_scissor();
 
@@ -327,20 +348,25 @@ public:
             "textures/MNPlayersCommon/1PPuck.png", "textures/MNPlayersCommon/2PPuck.png",
             "textures/MNPlayersCommon/3PPuck.png", "textures/MNPlayersCommon/4PPuck.png"};
         for (int player = 0; player < gates; ++player) {
-            const float x = static_cast<float>(player * 69 + 22);
+            const float x = one_player_?static_cast<float>(player*69+22):kCardX0+player*kCardStep;
+            const float y = one_player_?131.f:kCardY;
             static constexpr std::array<const char*,4> cards{"RedCard.png","GrayCard.png","GrayCard.png","GrayCard.png"};
             const std::string card=slots_[player].kind==SlotKind::None?"GrayCard.png":cards[player];
-            r.sprite_at("textures/MNPlayersCommon/"+card,{x,one_player_?131.f:126.f});
+            if (one_player_) r.sprite_at("textures/MNPlayersCommon/"+card,{x,y});
+            else r.sprite_rect("textures/MNPlayersCommon/"+card,x,y,kCardW,kCardH);
             const auto entry=slots_[player].entry;
             const bool remix=entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() &&
                 custom_models_[entry].rfind("remix:",0)==0;
             if (slots_[player].kind!=SlotKind::None) {
+                const float emblem_y=one_player_?143.f:kCardY+16;
+                const float name_y=one_player_?201.f:kCardY+kCardH-22;
                 r.sprite_at("textures/FTEmblemSprites/"+std::string(series_emblem(slots_[player].fkind))+".png",
-                            {x+2,143},{1,1},{30,30,30,255});
+                            {x+8,emblem_y},{one_player_?1.f:1.5f,one_player_?1.f:1.5f},{30,30,30,255});
                 if (remix && entry>=0 && static_cast<unsigned>(entry)<custom_names_.size())
-                    custom_label(r,custom_names_[entry],x+4,201,60,10);
+                    custom_label(r,custom_names_[entry],x+8,name_y,one_player_?60.f:kCardW-16,one_player_?10.f:16.f);
                 else
-                    r.sprite_at("textures/MNPlayersCommon/"+std::string(card_name_file(slots_[player].fkind)),{x,201});
+                    r.sprite_at("textures/MNPlayersCommon/"+std::string(card_name_file(slots_[player].fkind)),
+                                {x+(one_player_?0.f:8.f),name_y},{one_player_?1.f:1.5f,one_player_?1.f:1.5f});
             }
         }
 
@@ -348,49 +374,59 @@ public:
         r.clear_depth();
         Camera3D camera{{0,0,5000},{0,0,0},{0,1,0},30,100,20000};
         camera.aspect=45.0f/44.0f;
+        if (!one_player_) camera.viewport={10,10,kCssW-20,kCssH-20};
         for (int player=0;player<gates;++player) if (!previews_[player].nodes.empty() && slots_[player].kind!=SlotKind::None) {
             auto model=previews_[player];
             const float scale=fighter_source_data[static_cast<unsigned>(slots_[player].fkind)].select_scale;
             model.scale={scale,scale,scale};
-            model.position={player*840.0f-1250,-850,0};
+            model.position={player*(one_player_?840.f:1680.f)-(one_player_?1250.f:2500.f),-850,0};
             model.rotation.y=slots_[player].selected?0.0f:tic_*std::numbers::pi_v<float>/90;
             renderer_->draw(r,model,camera,static_cast<float>(tic_-selected_tick_[player]));
         }
         renderer_->end(r);
 
         for (int player=0;player<gates;++player) {
-            const float x=22+player*69.f;
-            if (!one_player_ && door_offset_[player]>0) {
+            const float x=one_player_?22+player*69.f:kCardX0+player*kCardStep;
+            if (one_player_ && door_offset_[player]>0) {
                 r.scissor_game(x,126,66,91);
                 r.sprite_at("textures/MNPlayersCommon/SmashLogoCardLeft.png",{x-41+door_offset_[player],126});
                 r.sprite_at("textures/MNPlayersCommon/SmashLogoCardRight.png",{x+66-door_offset_[player],126});
                 r.reset_scissor();
             }
             const auto label=slots_[player].kind==SlotKind::None?"NALabel.png":slots_[player].kind==SlotKind::Cpu?"CPLabel.png":"HmnLabel.png";
-            r.sprite_at("textures/MNPlayersCommon/"+std::string(label),{x+(one_player_?8.f:42.f),one_player_?201.f:131.f});
+            r.sprite_at("textures/MNPlayersCommon/"+std::string(label),
+                        {x+(one_player_?8.f:kCardW-40.f),one_player_?201.f:kCardY+8},
+                        {one_player_?1.f:1.5f,one_player_?1.f:1.5f});
         }
         if (ready() && (tic_-selected_tick_[active_slot_])%40<30) {
-            for (float x=0;x<320;x+=8)
-                r.sprite_at("textures/MNPlayersCommon/ReadyBanner.png",{x,71},{1,1},{244,86,127,255});
-            r.sprite_rect("textures/MNPlayersCommon/ReadyToFightText.png",50,71,224,17,{255,255,157,255});
+            const float banner_y=one_player_?71.f:kCssStartY+kCssCell;
+            for (float x=0;x<screen_w;x+=8)
+                r.sprite_at("textures/MNPlayersCommon/ReadyBanner.png",{x,banner_y},{1,1},{244,86,127,255});
+            r.sprite_rect("textures/MNPlayersCommon/ReadyToFightText.png",screen_w*0.5f-112,banner_y,224,17,{255,255,157,255});
         }
-        r.sprite_at("textures/MNPlayersCommon/BackButton.png",{244,16});
+        r.sprite_at("textures/MNPlayersCommon/BackButton.png",
+                    {one_player_?244.f:screen_w-90.f,16},{one_player_?1.f:1.5f,one_player_?1.f:1.5f});
+        const Vec2 puck_scale=one_player_?Vec2{1,1}:Vec2{1.6f,1.6f};
         for (int player=0;player<gates;++player)
-            if (slots_[player].selected) r.sprite_at(pucks[player],slots_[player].puck);
-        if (held_slot_>=0) r.sprite_at(pucks[held_slot_],slots_[held_slot_].puck);
-        const bool portrait_band=cursor_y_>=36 && cursor_y_<=124.f;
+            if (slots_[player].selected) r.sprite_at(pucks[player],slots_[player].puck,puck_scale);
+        if (held_slot_>=0) r.sprite_at(pucks[held_slot_],slots_[held_slot_].puck,puck_scale);
+        const bool portrait_band=cursor_y_>=band_top && cursor_y_<=band_bottom;
         const int hand=portrait_band?(held_slot_>=0?1:2):0;
         constexpr std::array<const char*,3> hands{"CursorHandPoint.png","CursorHandGrab.png","CursorHandHover.png"};
         constexpr std::array<Vec2,3> label_offset{{{7,15},{9,10},{9,15}}};
-        const Vec2 hand_pos{cursor_x_-17,cursor_y_+8};
-        r.sprite_at("textures/MNPlayersCommon/"+std::string(hands[hand]),hand_pos);
+        const float hand_scale=one_player_?1.f:1.6f;
+        const Vec2 hand_pos{cursor_x_-17*hand_scale,cursor_y_+8*hand_scale};
+        r.sprite_at("textures/MNPlayersCommon/"+std::string(hands[hand]),hand_pos,{hand_scale,hand_scale});
         r.sprite_at("textures/MNPlayersCommon/1PTextGradient.png",
-                    {hand_pos.x+label_offset[hand].x,hand_pos.y+label_offset[hand].y},{1,1},{224,21,21,255});
+                    {hand_pos.x+label_offset[hand].x*hand_scale,hand_pos.y+label_offset[hand].y*hand_scale},
+                    {hand_scale,hand_scale},{224,21,21,255});
         if (!one_player_) for (unsigned player=1;player<4;++player) if (slots_[player].kind==SlotKind::Human) {
-            if (!slots_[player].selected) r.sprite_at(pucks[player],slots_[player].puck);
-            const auto cursor=cursors_[player];const Vec2 pos{cursor.x-17,cursor.y+8};
-            r.sprite_at("textures/MNPlayersCommon/"+std::string(slots_[player].selected?"CursorHandHover.png":"CursorHandGrab.png"),pos);
-            r.sprite_at("textures/MNPlayersCommon/"+std::to_string(player+1)+"PTextGradient.png",{pos.x+9,pos.y+10});
+            if (!slots_[player].selected) r.sprite_at(pucks[player],slots_[player].puck,puck_scale);
+            const auto cursor=cursors_[player];const Vec2 pos{cursor.x-17*hand_scale,cursor.y+8*hand_scale};
+            r.sprite_at("textures/MNPlayersCommon/"+std::string(slots_[player].selected?"CursorHandHover.png":"CursorHandGrab.png"),
+                        pos,{hand_scale,hand_scale});
+            r.sprite_at("textures/MNPlayersCommon/"+std::to_string(player+1)+"PTextGradient.png",
+                        {pos.x+9*hand_scale,pos.y+10*hand_scale},{hand_scale,hand_scale});
         }
         r.end();
     }
@@ -423,15 +459,19 @@ private:
         }
     }
     Vec2 constrained_puck(float x,float y) const {
-        const float top=36.f;
-        const float bottom=one_player_?98.f:116.f;
-        return {std::clamp(x-6,25.f,269.f),std::clamp(y-6,top,bottom)};
+        const float top=one_player_?36.f:kCssStartY;
+        const float bottom=one_player_?98.f:kCssStartY+kCssCell*kCssVisibleRows-8.f;
+        const float left=one_player_?25.f:kCssStartX;
+        const float right=one_player_?269.f:kCssStartX+kCssColumns*kCssCell-12.f;
+        return {std::clamp(x-6,left,right),std::clamp(y-6,top,bottom)};
     }
     struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{};int entry{1}; };
     [[nodiscard]] int portrait_at(float x, float y) const {
         const float width=cell_w(),height=cell_h();
+        const float band_top=one_player_?34.f:kCssStartY-1.f;
+        const float band_bottom=one_player_?124.f:kCssStartY+kCssCell*kCssVisibleRows;
         for (unsigned i = 0; i < kPortraitKind.size(); ++i) {
-            if (kPortraitY[i]<34.f || kPortraitY[i]>=124.f) continue;
+            if (kPortraitY[i]<band_top || kPortraitY[i]>=band_bottom) continue;
             if (x >= kPortraitX[i] && x < kPortraitX[i] + width &&
                 y >= kPortraitY[i] && y < kPortraitY[i] + height)
                 return static_cast<int>(i);

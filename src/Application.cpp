@@ -162,7 +162,9 @@ InputState Application::poll_input() {
         if (event.type==SDL_EVENT_MOUSE_MOTION || event.type==SDL_EVENT_MOUSE_BUTTON_DOWN || event.type==SDL_EVENT_MOUSE_BUTTON_UP) {
             int width,height;SDL_GetWindowSize(window_,&width,&height);
             float x,y;SDL_GetMouseState(&x,&y);
-            input.pointer_x=x*320.f/std::max(1,width);input.pointer_y=y*240.f/std::max(1,height);
+            const float logical_w=render_?static_cast<float>(render_->logical_width()):320.f;
+            const float logical_h=render_?static_cast<float>(render_->logical_height()):240.f;
+            input.pointer_x=x*logical_w/std::max(1,width);input.pointer_y=y*logical_h/std::max(1,height);
             input.pointer_moved=true;
             if (event.type==SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button==SDL_BUTTON_LEFT) input.pointer_pressed=true;
             if (event.type==SDL_EVENT_MOUSE_BUTTON_UP && event.button.button==SDL_BUTTON_LEFT) input.pointer_released=true;

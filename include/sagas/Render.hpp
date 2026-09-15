@@ -41,6 +41,9 @@ public:
     RenderEngine(const RenderEngine&) = delete;
     RenderEngine& operator=(const RenderEngine&) = delete;
     void begin(Color clear);
+    void set_logical_size(int width, int height);
+    [[nodiscard]] int logical_width() const noexcept { return logical_width_; }
+    [[nodiscard]] int logical_height() const noexcept { return logical_height_; }
     void sprite(std::string_view logical, Vec2 center, Vec2 scale = {1, 1},
                 Color tint = {255, 255, 255, 255});
     void sprite_at(std::string_view logical, Vec2 top_left, Vec2 scale = {1, 1},
@@ -76,6 +79,7 @@ private:
     Vec3 shadow_min_{-1,-1,-1}, shadow_max_{1,1,1};
     bool shadows_ready_{};
     int viewport_x_{}, viewport_y_{}, viewport_width_{320}, viewport_height_{240};
+    int logical_width_{320}, logical_height_{240};
     std::filesystem::path capture_path_;
 };
 

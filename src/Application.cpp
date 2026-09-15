@@ -229,6 +229,9 @@ InputState Application::poll_input() {
             SDL_GetGamepadButton(gamepad_,static_cast<SDL_GamepadButton>(bindings_[i].button)));
     }
     input.shield_held=held[2] || (bindings_[2].key==SDL_SCANCODE_LSHIFT && keys && (keys[SDL_SCANCODE_U] || keys[SDL_SCANCODE_Z]));input.special_held=held[8];
+    input.attack_pressed|=held[0] && !attack_held_;
+    input.special_pressed|=held[8] && !special_held_edge_;
+    attack_held_=held[0];special_held_edge_=held[8];
     for (unsigned slot=0;slot<4;++slot) {
         auto* pad=slot==0?gamepad_:extra_gamepads_[slot-1];
         if (!pad) {trigger_held_[slot]=c_jump_held_[slot]=false;continue;}

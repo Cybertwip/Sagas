@@ -195,5 +195,12 @@ public:
 
 [[nodiscard]] FighterAttributes fighter_attributes(FighterKind kind);
 [[nodiscard]] FighterModelSpec fighter_model_spec(FighterKind kind) noexcept;
+[[nodiscard]] inline bool remix_uses_parent_specials(const FighterBody& body) {
+    if (body.custom_model.rfind("remix:",0)!=0) return true;
+    if (body.custom_model.size()<8) return true;
+    const char prefix=body.custom_model[6];
+    if (prefix=='J' || prefix=='E' || prefix=='N') return true;
+    return body.custom_model=="remix:FALCO";
+}
 
 } // namespace sagas

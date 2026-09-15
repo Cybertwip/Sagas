@@ -45,6 +45,7 @@ private:
     SDL_Gamepad* gamepad_{};
     std::array<SDL_Gamepad*,3> extra_gamepads_{};
     std::array<bool,4> trigger_held_{},c_jump_held_{};
+    bool attack_held_{},special_held_edge_{};
     std::unique_ptr<AssetRepository> assets_;
     std::unique_ptr<RenderEngine> render_;
     std::unique_ptr<AudioEngine> audio_;

@@ -584,15 +584,17 @@ bool FighterCombat::start_special(FighterBody& body,bool pressed) {
     body.special_projectile=false;body.status=FighterStatus::Special;body.action_frame=0;
     body.attack_motion=0;body.hit_mask=0;body.hit_group_masks.fill(0);body.hit_group_epochs.fill(~0U);body.fastfall=false;
     if ((direction==0 || (direction==1 && (body.kind==FighterKind::Mario || body.kind==FighterKind::Luigi))) && std::abs(body.stick_x)>=20) body.lr=body.stick_x>0?1:-1;
-    if (direction==2 && body.kind==FighterKind::Yoshi) {body.grounded=false;body.jumps_used=body.attr.jumps_max;}
-    if (direction==1 && body.kind==FighterKind::Captain) {body.grounded=false;body.vel_air={};body.jumps_used=body.attr.jumps_max;}
-    if (direction==1 && body.kind==FighterKind::Donkey && !body.grounded) body.vel_air.y=special_physics[0].donkey_hi_launch;
-    if (direction==1 && body.kind==FighterKind::Link && !body.grounded) body.vel_air.y=special_physics[0].link_hi_launch;
-    if (direction==1 && body.kind==FighterKind::Samus && !body.grounded) {body.vel_air.y=special_physics[0].samus_hi_launch;body.jumps_used=body.attr.jumps_max;}
-    if (direction==2 && body.kind==FighterKind::Samus && !body.grounded) {body.vel_air.y=special_physics[0].samus_lw_air_launch;body.jumps_used=body.attr.jumps_max;}
-    if (direction==1 && body.kind==FighterKind::Ness) {body.vel_air.y=0;body.vel_air.x*=.5f;body.vel_damage={};body.aerial_jump=false;}
-    if (direction==0 && body.kind==FighterKind::Samus) {body.charge_ticks=0;body.special_second=body.charge_level==7;}
-    if (direction==0 && body.kind==FighterKind::Donkey) {body.charge_ticks=0;body.special_second=body.charge_level==10;}
+    if (remix_uses_parent_specials(body)) {
+        if (direction==2 && body.kind==FighterKind::Yoshi) {body.grounded=false;body.jumps_used=body.attr.jumps_max;}
+        if (direction==1 && body.kind==FighterKind::Captain) {body.grounded=false;body.vel_air={};body.jumps_used=body.attr.jumps_max;}
+        if (direction==1 && body.kind==FighterKind::Donkey && !body.grounded) body.vel_air.y=special_physics[0].donkey_hi_launch;
+        if (direction==1 && body.kind==FighterKind::Link && !body.grounded) body.vel_air.y=special_physics[0].link_hi_launch;
+        if (direction==1 && body.kind==FighterKind::Samus && !body.grounded) {body.vel_air.y=special_physics[0].samus_hi_launch;body.jumps_used=body.attr.jumps_max;}
+        if (direction==2 && body.kind==FighterKind::Samus && !body.grounded) {body.vel_air.y=special_physics[0].samus_lw_air_launch;body.jumps_used=body.attr.jumps_max;}
+        if (direction==1 && body.kind==FighterKind::Ness) {body.vel_air.y=0;body.vel_air.x*=.5f;body.vel_damage={};body.aerial_jump=false;}
+        if (direction==0 && body.kind==FighterKind::Samus) {body.charge_ticks=0;body.special_second=body.charge_level==7;}
+        if (direction==0 && body.kind==FighterKind::Donkey) {body.charge_ticks=0;body.special_second=body.charge_level==10;}
+    }
     return true;
 }
 void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animation_ended) {
@@ -600,6 +602,17 @@ void FighterCombat::advance_special(FighterBody& body,bool pressed,bool animatio
     ++body.special_tics;
     const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
     const auto index=body.special_index;
+    if (!remix_uses_parent_specials(body)) {
+        if (body.special_phase==0 && animation_ended && data.special_loop[index]) {
+            body.special_phase=1;body.special_motion=data.special_loop[index];body.action_frame=0;return;
+        }
+        if (body.special_phase==1 && (pressed || body.special_tics>=120)) {
+            if (data.special_end[index]) {body.special_phase=2;body.special_motion=data.special_end[index];body.action_frame=0;return;}
+            animation_ended=true;
+        } else if (body.special_phase==1) return;
+        if (animation_ended) {body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;body.action_frame=0;}
+        return;
+    }
     if (body.kind==FighterKind::Yoshi && index%3==2) {
         if(body.special_phase==0 && animation_ended) {
             body.special_phase=1;
@@ -887,7 +900,8 @@ void FighterCombat::advance_jab(FighterBody& body,bool pressed,bool animation_en
             start(next); return;
         }
         if (animation_ended) body.status=body.grounded?FighterStatus::Wait:FighterStatus::Fall;
-    } else if (pressed && body.grounded && (body.status==FighterStatus::Wait || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash || body.status==FighterStatus::Run)) {
+    } else if (pressed && body.grounded && (body.status==FighterStatus::Wait || body.status==FighterStatus::Walk || body.status==FighterStatus::Dash || body.status==FighterStatus::Run || body.status==FighterStatus::CrouchEnd ||
+               ((body.status==FighterStatus::Crouch || body.status==FighterStatus::CrouchWait) && std::abs(body.stick_x)<20 && body.stick_y>-20))) {
         if (!body.jab_followup_left) body.rapid_inputs=0;
         start(body.jab_followup_left>0 && next?next:1); return;
     }

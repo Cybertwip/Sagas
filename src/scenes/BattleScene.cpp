@@ -124,7 +124,7 @@ public:
                 body.jump_button=true; body.jump_released=false;
                 attack=std::abs(dx)<420 && tic_%32==static_cast<int>(i)*3;
             }
-            if (intro_tics_>0) {attack=false;body.jump_pressed=false;body.jump_button=false;body.shield_held=false;player_input.special_pressed=false;player_input.special_held=false;}
+            if (intro_tics_>24) {attack=false;body.jump_pressed=false;body.jump_button=false;body.shield_held=false;player_input.special_pressed=false;player_input.special_held=false;}
             body.tap_stick_x=std::abs(body.stick_x)>=53 && (std::abs(old_x)<53 || old_x*body.stick_x<0)?0:std::min(255,body.tap_stick_x+1);
             body.tap_stick_y=std::abs(body.stick_y)>=53 && (std::abs(old_y)<53 || old_y*body.stick_y<0)?0:std::min(255,body.tap_stick_y+1);
             if(attack && !body.hitlag && body.status!=FighterStatus::Captured) {
@@ -287,6 +287,7 @@ public:
                 particles_.push_back({body.position,{},{235,225,190,220},0,12,450,false,true});
             }
             if (!body.hitlag && body.status==FighterStatus::Special && !body.special_projectile &&
+                remix_uses_parent_specials(body) &&
                 !(body.kind==FighterKind::Yoshi && body.special_index%3==1) &&
                 !(body.kind==FighterKind::Samus && body.special_index%3==0 && body.special_phase!=2)) {
                 for (const auto& flag:source_special_flags)

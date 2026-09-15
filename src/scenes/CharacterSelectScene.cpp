@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <exception>
 #include <numbers>
 #include <string>
 #include <string_view>
@@ -375,11 +376,15 @@ private:
             clip=remix_motion_clip(remix,kind,parent_clip);
             flags=remix_motion_flags(remix,kind,parent_clip);
         }
-        auto preview=loader_->fighter_motion(kind,clip,flags,remix);
-        if (!custom.empty() && remix.empty()) {
-            const auto bytes=assets_->blob(custom);loader_->apply_custom_mesh(preview,*bytes);
+        try {
+            auto preview=loader_->fighter_motion(kind,clip,flags,remix);
+            if (!custom.empty() && remix.empty()) {
+                const auto bytes=assets_->blob(custom);loader_->apply_custom_mesh(preview,*bytes);
+            }
+            previews_[player]=std::move(preview);
+        } catch (const std::exception&) {
+            previews_[player]={};
         }
-        previews_[player]=std::move(preview);
         selected_tick_[player]=tic_;
     }
     int stock_{3};

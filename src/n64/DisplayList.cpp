@@ -510,7 +510,10 @@ void DisplayListDecoder::list(Mesh& mesh, State& state, Address address, int dep
                 const unsigned end = (w0 >> 1) & 0x7fU;
                 const unsigned first = end >= count ? end - count : 32;
                 const auto source = archive_.resolve({address.file, address.offset + 4});
-                if (!source || count > 32 || first + count > 32) throw std::runtime_error("invalid N64 vertex load");
+                if (!source || count == 0 || count > 32 || first + count > 32) {
+                    ++mesh.unsupported_commands;
+                    break;
+                }
                 for (unsigned i = 0; i < count; ++i) {
                     const Address vertex{source->file, source->offset + i * 16};
                     auto& out = state.cache[first + i];

@@ -565,11 +565,24 @@ Model3D Scene3DLoader::fighter_motion(FighterKind kind, unsigned clip, std::uint
         const auto common=archive_.resolve({attributes.file,attributes.offset+0x2d4});
         const auto tree=common?archive_.resolve(*common):std::nullopt;
         if (!tree) throw std::runtime_error("Remix fighter has no joint tree: "+std::string(remix_key));
-        // Yoshi-style pair DLs are only valid on Yoshi's own MAIN. Unique Remix
-        // MAIN files are authored as one display list per joint.
-        const bool joint_pairs=spec.joint_pairs && fighter->files[0]<1000;
+        bool joint_pairs=spec.joint_pairs;
+        const auto nodes=n64::SkeletonDecoder(archive_).decode(*tree);
+        for (const auto& node:nodes) {
+            if (!node.display_list) continue;
+            const auto opcode=archive_.u32(*node.display_list)>>24;
+            if (opcode==0x01 || opcode==0xda || opcode==0xde || opcode==0xdf || opcode==0xe7)
+                {joint_pairs=false;break;}
+            const auto before=archive_.resolve(*node.display_list);
+            const auto after=archive_.resolve({node.display_list->file,node.display_list->offset+4});
+            if (before && after) {
+                const auto bop=archive_.u32(*before)>>24;
+                if (bop==0x01 || bop==0xda || bop==0xde || bop==0xe7)
+                    {joint_pairs=true;break;}
+            }
+            break;
+        }
         actor=fighter_model(*tree,joint_pairs?GeometryLayout::JointPairs:GeometryLayout::Direct,
-                            spec.setup_parts,flags,0,attributes);
+                            {0xffffffffU,0xffffffffU},flags,0,attributes);
     } else {
         actor=fighter_model(spec.descriptor,spec.joint_pairs ? GeometryLayout::JointPairs :
                             GeometryLayout::Direct,spec.setup_parts,flags);

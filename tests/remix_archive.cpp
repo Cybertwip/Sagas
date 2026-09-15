@@ -55,6 +55,14 @@ int main(int argc,char** argv) {
     assert(model.nodes.size()>=20);
     auto posed=loader.fighter_motion(sagas::FighterKind::Fox,sagas::fighter_source_data[9].idle,0,"FALCO");
     assert(!posed.meshes.empty());
+    auto bowser=loader.fighter_motion(sagas::FighterKind::Yoshi,sagas::fighter_source_data[7].idle,0,"BOWSER");
+    assert(!bowser.meshes.empty());
+    unsigned bowser_tris=0;for (const auto& mesh:bowser.meshes) bowser_tris+=mesh.vertices.size();
+    assert(bowser_tris>0);
+    auto peach=loader.fighter_motion(sagas::FighterKind::Fox,sagas::fighter_source_data[9].idle,0,"PEACH");
+    assert(peach.nodes.size()>=26);
+    auto gbowser=loader.fighter_motion(sagas::FighterKind::Yoshi,sagas::fighter_source_data[7].idle,0,"GBOWSER");
+    assert(!gbowser.meshes.empty());
     const auto attr=loader.remix_fighter_attributes("FALCO");
     assert(std::isfinite(attr.size) && attr.size>0 && attr.gravity>0);
     std::cout<<"Validated "<<count<<" Remix fighter attribute blocks and skeletons, "<<links<<" in-range relocations, Falco model\n";

@@ -36,6 +36,7 @@ public:
     [[nodiscard]] bool exists(std::string_view logical) const;
 private:
     std::filesystem::path root_;
+    std::vector<std::filesystem::path> overlays_;
     std::mutex mutex_;
     std::unordered_map<std::string, std::weak_ptr<const std::vector<std::byte>>> blobs_;
 };

@@ -6,6 +6,8 @@
 #include <sagas/Render.hpp>
 
 #include <array>
+#include <optional>
+#include <string_view>
 
 namespace sagas {
 
@@ -78,7 +80,8 @@ class Scene3DLoader final {
 public:
     explicit Scene3DLoader(n64::RelocArchive& archive) : archive_(archive) {}
     [[nodiscard]] Model3D fighter_motion(FighterKind kind, unsigned clip,
-                                          std::uint32_t animation_flags = 0);
+                                          std::uint32_t animation_flags = 0,
+                                          std::string_view remix_key = {});
     [[nodiscard]] Model3D model(std::string_view descriptor, std::string_view animation = {},
                                 GeometryLayout layout = GeometryLayout::DisplayListLinks,
                                 std::string_view materials = {},
@@ -96,6 +99,11 @@ public:
                                         std::array<std::uint32_t,2> setup_parts = {
                                             0xffffffffU, 0xffffffffU},
                                         std::uint32_t animation_flags = 0, unsigned costume = 0);
+    [[nodiscard]] Model3D fighter_model(n64::Address descriptor, GeometryLayout layout,
+                                        std::array<std::uint32_t,2> setup_parts,
+                                        std::uint32_t animation_flags, unsigned costume,
+                                        std::optional<n64::Address> attributes);
+    [[nodiscard]] FighterAttributes remix_fighter_attributes(std::string_view key);
     [[nodiscard]] Model3D display_list(std::string_view symbol,
                                       GeometryLayout layout = GeometryLayout::Direct,
                                       std::string_view materials = {},

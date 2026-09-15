@@ -5,7 +5,7 @@
   "archive_offset": 1755248,
   "resources": 5455,
   "relocations": 195107,
-  "out_of_range_references": 14,
+  "out_of_range_references": 0,
   "decoded_bytes": 64278117,
   "decoder_sha256": "7e6e6887f563c0f66972eb2573e5730933823d0989ebe823eceede59d4ce9f87"
 }

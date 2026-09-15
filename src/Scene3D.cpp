@@ -1,11 +1,18 @@
 #include <sagas/Scene3D.hpp>
+#include <sagas/RemixDescriptors.hpp>
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 #include <sstream>
+#include <string>
+#include <string_view>
 #include <map>
+#include <unordered_map>
 
 namespace sagas {
 namespace {
@@ -186,15 +193,102 @@ ModelMatrices world_matrices(n64::AnimationDecoder& animation, const Model3D& mo
 
 } // namespace
 
-void Scene3DLoader::apply_custom_mesh(Model3D& model,std::span<const std::byte> bytes) {
-    std::istringstream input(std::string(reinterpret_cast<const char*>(bytes.data()),bytes.size()));
-    std::string magic;unsigned count{};input>>magic>>count;
-    if ((magic!="SGMESH1" && magic!="SGMESH2") || count>128) throw std::runtime_error("Invalid custom mesh header");
-    std::map<unsigned,Vec3> binds;std::map<unsigned,int> source_parents;
-    for (unsigned i=0;i<count;++i) {
-        unsigned id;Vec3 point;int parent=-1;input>>id;if (magic=="SGMESH2") input>>parent;
-        input>>point.x>>point.y>>point.z;binds[id]=point;source_parents[id]=parent;
+namespace {
+struct ParsedCustomMesh {
+    bool version2{};
+    std::map<unsigned,Vec3> binds;
+    std::map<unsigned,int> source_parents;
+    std::shared_ptr<RasterImage> texture;
+    struct Vert {
+        unsigned joint_a{},joint_b{};
+        float weight{},x{},y{},z{},sx{},sy{},sz{},u{},v{};
+        unsigned r{},g{},b{};
+    };
+    std::vector<Vert> verts;
+};
+struct TokenReader {
+    const char* p{};
+    const char* end{};
+    bool next(std::string_view& token) {
+        while (p<end && std::isspace(static_cast<unsigned char>(*p))) ++p;
+        if (p>=end) return false;
+        const char* start=p;
+        while (p<end && !std::isspace(static_cast<unsigned char>(*p))) ++p;
+        token=std::string_view(start,static_cast<std::size_t>(p-start));
+        return true;
     }
+    template<class T> T number() {
+        std::string_view token;
+        if (!next(token)) throw std::runtime_error("Invalid custom mesh token");
+        T value{};
+        const auto result=std::from_chars(token.data(),token.data()+token.size(),value);
+        if (result.ec!=std::errc{} || result.ptr!=token.data()+token.size())
+            throw std::runtime_error("Invalid custom mesh number");
+        return value;
+    }
+};
+ParsedCustomMesh parse_custom_mesh(std::span<const std::byte> bytes) {
+    TokenReader reader{reinterpret_cast<const char*>(bytes.data()),
+                       reinterpret_cast<const char*>(bytes.data())+bytes.size()};
+    std::string_view magic;if (!reader.next(magic)) throw std::runtime_error("Invalid custom mesh header");
+    ParsedCustomMesh parsed;
+    parsed.version2=magic=="SGMESH2";
+    if (magic!="SGMESH1" && magic!="SGMESH2") throw std::runtime_error("Invalid custom mesh header");
+    const auto count=reader.number<unsigned>();
+    if (count>128) throw std::runtime_error("Invalid custom mesh header");
+    for (unsigned i=0;i<count;++i) {
+        const auto id=reader.number<unsigned>();
+        int parent=-1;if (parsed.version2) parent=reader.number<int>();
+        Vec3 point{reader.number<float>(),reader.number<float>(),reader.number<float>()};
+        parsed.binds[id]=point;parsed.source_parents[id]=parent;
+    }
+    parsed.texture=std::make_shared<RasterImage>();
+    parsed.texture->width=reader.number<int>();parsed.texture->height=reader.number<int>();
+    if (parsed.texture->width<0 || parsed.texture->height<0 || parsed.texture->width>2048 || parsed.texture->height>2048)
+        throw std::runtime_error("Invalid custom texture size");
+    const int pixels=parsed.texture->width*parsed.texture->height;
+    parsed.texture->rgba.resize(static_cast<std::size_t>(pixels)*4);
+    for (int i=0;i<pixels;++i) {
+        const auto pixel=reader.number<unsigned>();
+        auto* out=&parsed.texture->rgba[static_cast<std::size_t>(i)*4];
+        out[0]=static_cast<std::uint8_t>(((pixel>>11)&31)*255/31);
+        out[1]=static_cast<std::uint8_t>(((pixel>>6)&31)*255/31);
+        out[2]=static_cast<std::uint8_t>(((pixel>>1)&31)*255/31);
+        out[3]=255;
+    }
+    const auto verts=reader.number<unsigned>();
+    if (verts>300000 || verts%3) throw std::runtime_error("Invalid custom vertex count");
+    parsed.verts.reserve(verts);
+    for (unsigned i=0;i<verts;++i) {
+        ParsedCustomMesh::Vert vertex;
+        vertex.joint_a=reader.number<unsigned>();vertex.weight=reader.number<float>();
+        vertex.x=reader.number<float>();vertex.y=reader.number<float>();vertex.z=reader.number<float>();
+        vertex.joint_b=reader.number<unsigned>();
+        vertex.sx=reader.number<float>();vertex.sy=reader.number<float>();vertex.sz=reader.number<float>();
+        vertex.u=reader.number<float>();vertex.v=reader.number<float>();
+        vertex.r=reader.number<unsigned>();vertex.g=reader.number<unsigned>();vertex.b=reader.number<unsigned>();
+        (void)reader.number<unsigned>();
+        if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y) || !std::isfinite(vertex.z) ||
+            !std::isfinite(vertex.weight) || vertex.weight<0 || vertex.weight>1)
+            throw std::runtime_error("Invalid custom mesh vertex");
+        parsed.verts.push_back(vertex);
+    }
+    return parsed;
+}
+const ParsedCustomMesh& cached_custom_mesh(std::span<const std::byte> bytes) {
+    struct Entry { const std::byte* data; std::size_t size; ParsedCustomMesh mesh; };
+    static std::vector<Entry> cache;
+    for (const auto& entry:cache)
+        if (entry.data==bytes.data() && entry.size==bytes.size()) return entry.mesh;
+    cache.push_back({bytes.data(),bytes.size(),parse_custom_mesh(bytes)});
+    return cache.back().mesh;
+}
+}
+
+void Scene3DLoader::apply_custom_mesh(Model3D& model,std::span<const std::byte> bytes) {
+    const auto& parsed=cached_custom_mesh(bytes);
+    const auto& binds=parsed.binds;
+    const auto& source_parents=parsed.source_parents;
     auto rest=model;rest.animation.clear();rest.fighter_root_animation.reset();
     n64::AnimationDecoder decoder(archive_);
     const auto matrices=world_matrices(decoder,rest,0);
@@ -205,47 +299,45 @@ void Scene3DLoader::apply_custom_mesh(Model3D& model,std::span<const std::byte> 
         while (!ancestors.empty() && model.nodes[ancestors.back()].depth>=depth) ancestors.pop_back();
         const unsigned id=model.source_joint_ids[i];
         const auto stock=transform(matrices.world[i],{});
-        const auto origin=binds.contains(id)?binds[id]:stock;
+        const auto origin=binds.contains(id)?binds.at(id):stock;
         Vec3 parent_origin{};
         if (!ancestors.empty()) {
             const auto parent=ancestors.back();const auto pid=model.source_joint_ids[parent];
-            parent_origin=binds.contains(pid)?binds[pid]:transform(matrices.world[parent],{});
+            parent_origin=binds.contains(pid)?binds.at(pid):transform(matrices.world[parent],{});
         }
         const auto delta=sub(origin,parent_origin);const auto& m=matrices.parent[i].m;
         const std::array<float,3> local{m[0]*delta.x+m[4]*delta.y+m[8]*delta.z,m[1]*delta.x+m[5]*delta.y+m[9]*delta.z,m[2]*delta.x+m[6]*delta.y+m[10]*delta.z};
         for (unsigned axis=0;axis<3;++axis) model.imported_rest_offsets[i][axis]=local[axis]-model.nodes[i].translate[axis];
         ancestors.push_back(i);
     }
-    if (magic=="SGMESH2") {
+    if (parsed.version2) {
         model.imported_rest_offsets.clear();model.imported_pivots.resize(model.nodes.size());
         for (unsigned i=0;i<model.nodes.size();++i) {
-            const auto id=model.source_joint_ids[i];int parent_id=source_parents.contains(id)?source_parents[id]:-1;
+            const auto id=model.source_joint_ids[i];int parent_id=source_parents.contains(id)?source_parents.at(id):-1;
             // The imported pelvis height belongs to the stable root frame,
             // so a spinning pelvis cannot orbit the whole mesh around itself.
             if (id==5) parent_id=4;
             const auto found=std::find(model.source_joint_ids.begin(),model.source_joint_ids.end(),parent_id);
             if (parent_id<0 || found==model.source_joint_ids.end() || !binds.contains(id)) continue;
             const unsigned parent=found-model.source_joint_ids.begin();
-            Vec3 difference=sub(binds[id],transform(matrices.world[i],{}));
+            Vec3 difference=sub(binds.at(id),transform(matrices.world[i],{}));
             if (id!=5 && binds.contains(parent_id))
-                difference=sub(difference,sub(binds[parent_id],transform(matrices.world[parent],{})));
+                difference=sub(difference,sub(binds.at(parent_id),transform(matrices.world[parent],{})));
             const auto& m=matrices.world[parent].m;
             model.imported_pivots[i]={static_cast<int>(parent),{m[0]*difference.x+m[4]*difference.y+m[8]*difference.z,
                 m[1]*difference.x+m[5]*difference.y+m[9]*difference.z,m[2]*difference.x+m[6]*difference.y+m[10]*difference.z}};
         }
     }
-    auto texture=std::make_shared<RasterImage>();input>>texture->width>>texture->height;
-    if (texture->width<0 || texture->height<0 || texture->width>2048 || texture->height>2048) throw std::runtime_error("Invalid custom texture size");
-    for (int i=0;i<texture->width*texture->height;++i) {unsigned pixel;input>>pixel;texture->rgba.insert(texture->rgba.end(),{static_cast<std::uint8_t>(((pixel>>11)&31)*255/31),static_cast<std::uint8_t>(((pixel>>6)&31)*255/31),static_cast<std::uint8_t>(((pixel>>1)&31)*255/31),255});}
-    input>>count;if (count>300000 || count%3) throw std::runtime_error("Invalid custom vertex count");
     const auto node_for=[&](unsigned joint) {const auto it=std::find(model.source_joint_ids.begin(),model.source_joint_ids.end(),joint);if (it==model.source_joint_ids.end()) throw std::runtime_error("Custom mesh references absent joint");return static_cast<std::uint16_t>(it-model.source_joint_ids.begin());};
     n64::Mesh mesh;
-    for (unsigned i=0;i<count;++i) {
-        n64::Vertex vertex;unsigned a,b,r,g,blue,alpha;
-        input>>a>>vertex.skin_weight>>vertex.x>>vertex.y>>vertex.z>>b>>vertex.skin_position.x>>vertex.skin_position.y>>vertex.skin_position.z>>vertex.u>>vertex.v>>r>>g>>blue>>alpha;
-        if (!input || !std::isfinite(vertex.x) || !std::isfinite(vertex.y) || !std::isfinite(vertex.z) || !std::isfinite(vertex.skin_weight) || vertex.skin_weight<0 || vertex.skin_weight>1) throw std::runtime_error("Invalid custom mesh vertex");
-        vertex.transform_node=node_for(a);vertex.skin_node=node_for(b);vertex.color={static_cast<std::uint8_t>(r),static_cast<std::uint8_t>(g),static_cast<std::uint8_t>(blue),255};
-        if (!texture->rgba.empty()) {vertex.texture=texture;vertex.color={255,255,255,255};}
+    mesh.vertices.reserve(parsed.verts.size());
+    for (const auto& src:parsed.verts) {
+        n64::Vertex vertex;
+        vertex.skin_weight=src.weight;vertex.x=src.x;vertex.y=src.y;vertex.z=src.z;
+        vertex.skin_position={src.sx,src.sy,src.sz};vertex.u=src.u;vertex.v=src.v;
+        vertex.transform_node=node_for(src.joint_a);vertex.skin_node=node_for(src.joint_b);
+        vertex.color={static_cast<std::uint8_t>(src.r),static_cast<std::uint8_t>(src.g),static_cast<std::uint8_t>(src.b),255};
+        if (parsed.texture && !parsed.texture->rgba.empty()) {vertex.texture=parsed.texture;vertex.color={255,255,255,255};}
         mesh.vertices.push_back(vertex);
     }
     model.meshes.assign(model.nodes.size(),{});model.parent_meshes.clear();model.materials.clear();model.material_animation.clear();
@@ -431,10 +523,54 @@ void Scene3DLoader::set_fighter_part(Model3D& model,FighterKind kind,unsigned jo
     model.material_animation[node]=material_animation_table(archive_,{variant.file,variant.offset+12},materials)[0];
 }
 
-Model3D Scene3DLoader::fighter_motion(FighterKind kind, unsigned clip, std::uint32_t flags) {
+FighterAttributes Scene3DLoader::remix_fighter_attributes(std::string_view key) {
+    const auto fighter=std::find_if(remix_roster.begin(),remix_roster.end(),
+        [&](const auto& row){return row.key==key;});
+    if (fighter==remix_roster.end() || fighter->parent>=static_cast<unsigned>(FighterKind::Count))
+        throw std::runtime_error("Unknown Remix fighter: "+std::string(key));
+    auto attr=fighter_attributes(static_cast<FighterKind>(fighter->parent));
+    const n64::Address base{fighter->files[0],fighter->attribute_offset};
+    attr.size=archive_.f32(base);
+    attr.walk_speed=80*archive_.f32({base.file,base.offset+32});
+    attr.traction=archive_.f32({base.file,base.offset+36});
+    attr.dash_speed=archive_.f32({base.file,base.offset+40});
+    attr.run_speed=archive_.f32({base.file,base.offset+48});
+    attr.knee_bend=static_cast<int>(archive_.f32({base.file,base.offset+52}));
+    attr.jump_vel_x=archive_.f32({base.file,base.offset+56});
+    attr.jump_height_mul=archive_.f32({base.file,base.offset+60});
+    attr.jump_height_base=archive_.f32({base.file,base.offset+64});
+    attr.jump_vel_y=80*attr.jump_height_mul+attr.jump_height_base;
+    attr.aerial_vel_x=archive_.f32({base.file,base.offset+68});
+    attr.aerial_height=archive_.f32({base.file,base.offset+72});
+    attr.air_accel=archive_.f32({base.file,base.offset+76});
+    attr.air_speed_max_x=archive_.f32({base.file,base.offset+80});
+    attr.air_friction=archive_.f32({base.file,base.offset+84});
+    attr.gravity=archive_.f32({base.file,base.offset+88});
+    attr.tvel_base=archive_.f32({base.file,base.offset+92});
+    attr.tvel_fast=archive_.f32({base.file,base.offset+96});
+    attr.jumps_max=static_cast<int>(archive_.u32({base.file,base.offset+100}));
+    attr.weight=archive_.f32({base.file,base.offset+104});
+    return attr;
+}
+
+Model3D Scene3DLoader::fighter_motion(FighterKind kind, unsigned clip, std::uint32_t flags,
+                                     std::string_view remix_key) {
     const auto spec=fighter_model_spec(kind);
-    auto actor=fighter_model(spec.descriptor,spec.joint_pairs ? GeometryLayout::JointPairs :
-                             GeometryLayout::Direct,spec.setup_parts,flags);
+    Model3D actor;
+    if (!remix_key.empty()) {
+        const auto fighter=std::find_if(remix_roster.begin(),remix_roster.end(),
+            [&](const auto& row){return row.key==remix_key;});
+        if (fighter==remix_roster.end()) throw std::runtime_error("Unknown Remix fighter: "+std::string(remix_key));
+        const n64::Address attributes{fighter->files[0],fighter->attribute_offset};
+        const auto common=archive_.resolve({attributes.file,attributes.offset+0x2d4});
+        const auto tree=common?archive_.resolve(*common):std::nullopt;
+        if (!tree) throw std::runtime_error("Remix fighter has no joint tree: "+std::string(remix_key));
+        actor=fighter_model(*tree,spec.joint_pairs?GeometryLayout::JointPairs:GeometryLayout::Direct,
+                            spec.setup_parts,flags,0,attributes);
+    } else {
+        actor=fighter_model(spec.descriptor,spec.joint_pairs ? GeometryLayout::JointPairs :
+                            GeometryLayout::Direct,spec.setup_parts,flags);
+    }
     const bool wrapper=(flags&0xc0000000U)!=0;
     const auto scripts=n64::AnimationDecoder(archive_).table({clip,0},actor.nodes.size()+(wrapper?1:0));
     if (wrapper) {
@@ -453,22 +589,33 @@ Model3D Scene3DLoader::fighter_model(std::string_view descriptor, GeometryLayout
                                     std::uint32_t animation_flags, unsigned costume) {
     const auto desc=archive_.symbol(descriptor);
     if (!desc) throw std::runtime_error("missing fighter descriptor symbol: "+std::string(descriptor));
+    return fighter_model(*desc,layout,setup_parts,animation_flags,costume,{});
+}
+
+Model3D Scene3DLoader::fighter_model(n64::Address desc, GeometryLayout layout,
+                                    std::array<std::uint32_t,2> setup_parts,
+                                    std::uint32_t animation_flags, unsigned costume,
+                                    std::optional<n64::Address> attributes) {
     Model3D model;
-    const auto source_nodes=n64::SkeletonDecoder(archive_).decode(*desc);
+    const auto source_nodes=n64::SkeletonDecoder(archive_).decode(desc);
     std::unordered_map<unsigned,int> attachment_parents;
     n64::DisplayListDecoder decoder(archive_);
-    auto source_materials=decoder.materials({desc->file,0},source_nodes.size());
+    auto source_materials=decoder.materials({desc.file,0},source_nodes.size());
     // FTData.o_attributes and FTCommonPart.p_costume_matanim_joints from
     // ftdata.c / lbCommonAddMObjForFighterPartsDObj. Costume 0 is evaluated
     // once, before decoding the DL (including its palette loads).
-    static const std::unordered_map<std::uint32_t,n64::Address> attributes{
+    static const std::unordered_map<std::uint32_t,n64::Address> vanilla_attributes{
         {296,{203,0x428}}, {313,{209,0x46c}}, {317,{213,0x4a4}},
         {320,{217,0x610}}, {323,{221,0x580}}, {324,{225,0x708}},
         {338,{247,0x47c}}, {332,{236,0x488}}, {328,{229,0x808}},
         {341,{243,0x41c}}, {330,{233,0x474}}, {335,{239,0x5bc}}
     };
-    if (const auto entry=attributes.find(desc->file); entry!=attributes.end()) {
-        const auto attr=entry->second;
+    if (!attributes) {
+        if (const auto entry=vanilla_attributes.find(desc.file); entry!=vanilla_attributes.end())
+            attributes=entry->second;
+    }
+    if (attributes) {
+        const auto attr=*attributes;
         // Motion descriptors enable auxiliary joints before the figatree is
         // bound. Omitting these shifts every subsequent animation pointer.
         if (const auto hidden=archive_.resolve({attr.file,attr.offset+0x2d0})) {

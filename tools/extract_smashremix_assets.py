@@ -54,6 +54,104 @@ def links_for(data,internal,external,dependencies,file_id,count):
             links.append((offset,target_file,target*4))
     return links
 
+# Parent MAIN files keyed by the moveset file stored at MAIN+0.
+# Remix clones keep the parent's pointer offsets but sometimes retarget the
+# dependency list at those slots to a smaller projectile/info file.
+MOVESET_TO_MAIN={
+    202:203,208:209,212:213,216:217,220:221,224:225,228:229,232:233,235:236,238:239,242:243,246:247
+}
+
+def load_link_map(path):
+    rows=[]
+    with path.open() as f:
+        reader=csv.DictReader(f,delimiter="\t")
+        for row in reader:
+            rows.append((int(row["location"]),int(row["target_file"]),int(row["target_offset"])))
+    return rows
+
+def write_link_map(path,rows):
+    with path.open("w") as f:
+        writer=csv.writer(f,delimiter="\t",lineterminator="\n")
+        writer.writerow(["location","target_file","target_offset"]);writer.writerows(rows)
+
+def repair_out_of_range_links(directory,sizes,all_links):
+    """Fix extracted relocs whose word offsets land past the target file.
+
+    Cloned MAIN files keep parent graphic offsets while the ROM dependency list
+    names a smaller info file. Stage headers sometimes name the info table
+    instead of the graphic file it points at. Remaining overflow nodes are
+    display-list words that continued a reloc chain; those links are dropped.
+    """
+    by_owner={}
+    for owner,location,target,offset in all_links:
+        by_owner.setdefault(owner,[]).append((location,target,offset))
+    parent_main={}
+    for owner,rows in by_owner.items():
+        at={location: (target,offset) for location,target,offset in rows}
+        if 0 in at and at[0][0] in MOVESET_TO_MAIN:
+            parent_main[owner]=MOVESET_TO_MAIN[at[0][0]]
+    repaired=[]
+    dangling=[]
+    for owner,location,target,offset in all_links:
+        limit=sizes[target] if target<len(sizes) else 0
+        if offset<=limit:
+            repaired.append((owner,location,target,offset));continue
+        replacement=None
+        parent=parent_main.get(owner)
+        if parent is not None:
+            for ploc,ptarget,poffset in by_owner.get(parent,()):
+                if ploc==location and poffset==offset and ptarget<len(sizes) and offset<=sizes[ptarget]:
+                    replacement=(ptarget,poffset);break
+        if replacement is None and target<len(sizes):
+            successors=sorted({row[1] for row in by_owner.get(target,()) if row[1]<len(sizes) and offset<=sizes[row[1]]})
+            if len(successors)==1:replacement=(successors[0],offset)
+        if replacement is None and offset%4==0 and target<len(sizes) and offset//4<=sizes[target]:
+            replacement=(target,offset//4)
+        if replacement is None:
+            dangling.append(dict(file=owner,location=location,target_file=target,target_offset=offset,
+                                 target_size=limit,action="dropped"))
+            continue
+        repaired.append((owner,location,*replacement))
+        if replacement!=(target,offset):
+            dangling.append(dict(file=owner,location=location,target_file=target,target_offset=offset,
+                                 target_size=limit,action="retargeted",
+                                 new_file=replacement[0],new_offset=replacement[1]))
+    grouped={}
+    for owner,location,target,offset in repaired:
+        grouped.setdefault(owner,[]).append((location,target,offset))
+    for owner,rows in grouped.items():
+        if rows!=by_owner.get(owner):
+            write_link_map(directory/f"{owner:04d}.links.tsv",rows)
+    still_oor=[item for item in dangling if item.get("action")=="dropped"]
+    print(json.dumps({"retargeted":sum(1 for item in dangling if item.get("action")=="retargeted"),
+                      "dropped":len(still_oor)},indent=2))
+    return repaired,still_oor
+
+def repair_extracted_assets(output):
+    directory=output/"reloc"
+    sizes=[]
+    with (directory/"manifest.tsv").open() as f:
+        for row in csv.DictReader(f,delimiter="\t"):
+            ident=int(row["id"])
+            while len(sizes)<=ident:sizes.append(0)
+            sizes[ident]=int(row["size"])
+    all_links=[]
+    for path in sorted(directory.glob("*.links.tsv")):
+        if path.name=="manifest.tsv":continue
+        try:owner=int(path.stem.split(".")[0])
+        except ValueError:continue
+        for location,target,offset in load_link_map(path):
+            all_links.append((owner,location,target,offset))
+    repaired,dangling=repair_out_of_range_links(directory,sizes,all_links)
+    (output/"relocation_diagnostics.json").write_text(json.dumps(dangling,indent=2)+"\n")
+    report_path=output/"extraction.json"
+    if report_path.exists():
+        report=json.loads(report_path.read_text())
+        report["out_of_range_references"]=len(dangling)
+        report["relocations"]=len(repaired)
+        report_path.write_text(json.dumps(report,indent=2)+"\n")
+    return dangling
+
 def extract(rom_path,source,output):
     (output/".complete").unlink(missing_ok=True)
     rom=rom_path.read_bytes()
@@ -89,8 +187,7 @@ def extract(rom_path,source,output):
         sizes.append(len(data));all_links.extend((ident,*link) for link in links)
         manifest.append([ident,names.get(ident,f"RemixResource{ident}"),len(data),hashlib.sha256(data).hexdigest()])
         if ident%500==0:print(f"Decoded {ident}/{count} resources",flush=True)
-    dangling=[dict(file=owner,location=location,target_file=target,target_offset=offset,target_size=sizes[target])
-              for owner,location,target,offset in all_links if offset>sizes[target]]
+    all_links,dangling=repair_out_of_range_links(directory,sizes,all_links)
     (output/"relocation_diagnostics.json").write_text(json.dumps(dangling,indent=2)+"\n")
     with (directory/"manifest.tsv").open("w") as f:
         writer=csv.writer(f,delimiter="\t",lineterminator="\n")
@@ -112,7 +209,11 @@ if __name__=="__main__":
     parser.add_argument("--base-rom",type=Path,default=workspace/"ssb-decomp-re/baserom.us.z64")
     parser.add_argument("--output",type=Path,default=workspace/"sagas/assets/remix")
     parser.add_argument("--overwrite",action="store_true",help="Explicitly replace existing extracted assets, discarding local edits")
+    parser.add_argument("--repair",action="store_true",help="Retarget out-of-range relocations in an existing extraction without re-decoding the ROM")
     args=parser.parse_args()
+    if args.repair:
+        dangling=repair_extracted_assets(args.output)
+        print(json.dumps({"remaining_out_of_range_references":len(dangling)},indent=2));raise SystemExit(0)
     if args.output.exists() and any(args.output.iterdir()) and not args.overwrite:
         parser.error("Asset output is not empty; choose another --output or use --overwrite to replace it")
     if args.patch:

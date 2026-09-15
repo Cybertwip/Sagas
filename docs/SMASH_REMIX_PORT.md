@@ -36,8 +36,8 @@ execution, assembler or Python packages outside the standard library.
 `remix_hitboxes_at(script, frame)` rejects scripts that need linking rather
 than exposing incomplete hitboxes. The native integration test translates
 Falco's jab, checks frames 3–5 and four damage, and feeds the resulting hitbox
-into Sagas's existing combat resolver. This is the first tested data-to-native-
-combat path for the port; it does not yet enable Falco in character select.
+into Sagas's existing combat resolver. Falco is selectable on the CSS through
+`remix_css.tsv`; he uses Fox parent callbacks with Falco's model and attributes.
 
 The decoder handles bounded loops and hitbox creation, clearing, mutation,
 signed fields and timing. Unknown extended opcodes, malformed data, pointers,
@@ -48,14 +48,14 @@ Preserving a timed event is not the same as implementing its runtime behavior.
 
 1. Link ASM moveset labels, inserted binary continuations and subroutines;
    resolve conditional action edits in assembly inclusion order.
-2. Integrate the recovered archive into fighter rendering and resolve the 14
-   out-of-range resource references recorded by extraction. The verified 2.0.1
-   patch now supplies all file bindings referenced by the 69 roster declarations.
-3. Extend native fighter identity and selection beyond the twelve base behavior
-   kinds, with descriptor inheritance, asset bindings and per-action callbacks.
-4. Translate each fighter's executable movement, interrupts, collision, weapon,
-   capture and copy behavior into native state handlers; connect timed event
-   dispatch and verify each fighter before enabling it.
+2. Translate remaining fighters' executable movement, interrupts, collision,
+   weapon, capture and copy behavior into native state handlers. Falco is the
+   first Remix character on the dynamic CSS: Fox parent behavior, Falco model
+   and attributes, selected through `remix_css.tsv` / `remix:FALCO`.
+3. Extend native fighter identity beyond parent behavior kinds, with per-action
+   callbacks and CSS portraits that are not inherited from the parent.
+4. Connect timed event dispatch for imported scripts and verify each fighter
+   before enabling it on the CSS.
 5. Port stage geometry/hazards, items, music routing, menu/game modes and Remix
    engine-wide mechanics through the same data/callback boundary.
 
@@ -64,8 +64,8 @@ declarations, 663 decoded scripts, 1,441 hitbox windows and 9,399 timed events.
 It also identifies 1,612 callback declarations and 248 unresolved action
 declarations. These are source import metrics, not playable-character counts.
 
-No new fighter currently bypasses missing assets or unported behavior by
-silently reusing an original fighter's implementation.
+Enabled Remix characters inherit their parent's native callbacks until those
+callbacks are ported. They do not substitute a missing model or archive file.
 
 
 ## Recovered 2.0.1 resources
@@ -75,10 +75,12 @@ to the local US base ROM. The output MD5
 `2b2d6b295106c54216b7fc7a2f14346e` matches the release README exactly.
 
 `tools/extract_smashremix_assets.py` produces an isolated asset root at
-`assets/remix/`: 5,455 decompressed resources, 195,107 relocation
-links, SHA-256 per-file manifest, archive provenance, and a diagnostic list of
-14 out-of-range references. References are preserved, not guessed or silently
-replaced. Resource 5439 has a one-byte tail beyond its table's word count; the
+`assets/remix/`: 5,455 decompressed resources, relocation links, SHA-256
+per-file manifest, and archive provenance. Cloned MAIN files that kept parent
+graphic offsets but listed a smaller info file are retargeted onto the parent
+graphics; remaining overflow chain nodes are repaired the same way. Re-run
+`extract_smashremix_assets.py --repair` on an existing bundle after edits.
+The original 14 out-of-range references are gone. Resource 5439 has a one-byte tail beyond its table's word count; the
 verified VPK byte length is used. This bundle contains the resource archive,
 not a complete replacement for the default Sagas asset root.
 

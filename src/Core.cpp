@@ -36,8 +36,18 @@ void InputState::latch_edges(const InputState& previous) noexcept {
 AssetRepository::AssetRepository(std::filesystem::path root) : root_(std::move(root)) {
     if (!std::filesystem::exists(root_ / ".complete"))
         throw std::runtime_error("asset bundle is missing or incomplete: " + root_.string());
+    const auto overlay=root_.parent_path()/"remix"/"assets";
+    if (std::filesystem::exists(overlay/"extraction.json")) overlays_.push_back(overlay);
 }
-std::filesystem::path AssetRepository::path(std::string_view logical) const { return root_ / logical; }
+std::filesystem::path AssetRepository::path(std::string_view logical) const {
+    const std::filesystem::path relative{logical};
+    if (std::filesystem::is_regular_file(root_/relative)) return root_/relative;
+    for (const auto& overlay:overlays_) {
+        const auto candidate=overlay/relative;
+        if (std::filesystem::is_regular_file(candidate)) return candidate;
+    }
+    return root_/relative;
+}
 bool AssetRepository::exists(std::string_view logical) const { return std::filesystem::is_regular_file(path(logical)); }
 std::shared_ptr<const std::vector<std::byte>> AssetRepository::blob(std::string_view logical) {
     const std::scoped_lock lock(mutex_);

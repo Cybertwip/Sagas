@@ -1,6 +1,8 @@
 #include <sagas/Engine.hpp>
 #include <sagas/Fighter.hpp>
+#include <sagas/FighterDescriptors.hpp>
 #include <sagas/FighterSourceData.hpp>
+#include <sagas/RemixDescriptors.hpp>
 #include <numbers>
 #include <sagas/Scene3D.hpp>
 #include <sagas/SceneResources.hpp>
@@ -8,7 +10,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <filesystem>
+#include <iomanip>
 #include <string>
+#include <string_view>
 #include <sstream>
 
 namespace sagas {
@@ -50,29 +55,57 @@ public:
     }
     void enter(Services& services) override {
         assets_=&services.assets;
+        std::vector<FighterKind> kinds{kBuiltinKinds.begin(),kBuiltinKinds.end()};
+        std::vector<std::string> portraits(kinds.size()),models(kinds.size()),names(kinds.size());
+        std::vector<int> cells;for (int i=0;i<static_cast<int>(kinds.size());++i) cells.push_back(i);
+        int columns=6;
         if (services.assets.exists("mods/roster.tsv")) {
             const auto bytes=services.assets.blob("mods/roster.tsv");
             std::istringstream input(std::string(reinterpret_cast<const char*>(bytes->data()),bytes->size()));
             std::string line;std::getline(input,line);
-            int columns=6;try {columns=std::clamp(std::stoi(line),3,12);} catch (...) {}
-            std::vector<FighterKind> kinds;std::vector<std::string> portraits,models,names;std::vector<int> cells;
-            while (std::getline(input,line) && kinds.size()<120) {
+            try {columns=std::clamp(std::stoi(line),3,12);} catch (...) {}
+            std::vector<FighterKind> custom_kinds;std::vector<std::string> custom_portraits,custom_models,custom_names;std::vector<int> custom_cells;
+            while (std::getline(input,line) && custom_kinds.size()<120) {
                 std::istringstream fields(line);std::string base,name,portrait,model,cell;
                 if (!std::getline(fields,base,'\t') || !std::getline(fields,name,'\t')) continue;
                 std::getline(fields,portrait,'\t');std::getline(fields,model,'\t');std::getline(fields,cell,'\t');
                 int index=-1;try {index=std::stoi(base);} catch (...) {continue;}
                 if (index<0 || index>=12) continue;
                 if (!portrait.empty() && (portrait.find("mods/")!=0 || portrait.find("..")!=std::string::npos || !services.assets.exists(portrait))) portrait.clear();
-                if (!model.empty() && (model.find("mods/")!=0 || model.find("..")!=std::string::npos || !services.assets.exists(model))) model.clear();
-                int position=static_cast<int>(kinds.size());try {if (!cell.empty()) position=std::clamp(std::stoi(cell),0,119);} catch (...) {}
-                kinds.push_back(static_cast<FighterKind>(index));portraits.push_back(portrait);models.push_back(model);names.push_back(name);cells.push_back(position);
+                if (!model.empty() && model.rfind("remix:",0)!=0 &&
+                    (model.find("mods/")!=0 || model.find("..")!=std::string::npos || !services.assets.exists(model))) model.clear();
+                int position=static_cast<int>(custom_kinds.size());try {if (!cell.empty()) position=std::clamp(std::stoi(cell),0,119);} catch (...) {}
+                custom_kinds.push_back(static_cast<FighterKind>(index));custom_portraits.push_back(portrait);
+                custom_models.push_back(model);custom_names.push_back(name);custom_cells.push_back(position);
             }
-            if (!kinds.empty()) {
-                kPortraitKind=std::move(kinds);custom_portraits_=std::move(portraits);custom_models_=std::move(models);custom_names_=std::move(names);
-                const int rows=(*std::max_element(cells.begin(),cells.end())+columns)/columns;
-                portrait_width_=270.f/columns;portrait_height_=86.f/rows;
-                kPortraitX.clear();kPortraitY.clear();
-                for (unsigned i=0;i<kPortraitKind.size();++i) {kPortraitX.push_back(25+(cells[i]%columns)*portrait_width_);kPortraitY.push_back(36+(cells[i]/columns)*portrait_height_);}
+            if (!custom_kinds.empty()) {
+                kinds=std::move(custom_kinds);portraits=std::move(custom_portraits);
+                models=std::move(custom_models);names=std::move(custom_names);cells=std::move(custom_cells);
+            }
+        }
+        if (std::filesystem::exists(fighter_descriptor_root()/"remix_css.tsv")) {
+            for (const auto& entry:remix_css) {
+                const auto fighter=std::find_if(remix_roster.begin(),remix_roster.end(),
+                    [&](const auto& row){return row.key==entry.key;});
+                if (fighter==remix_roster.end() || fighter->parent>=static_cast<unsigned>(FighterKind::Count)) continue;
+                std::ostringstream reloc;reloc<<"reloc/"<<std::setw(4)<<std::setfill('0')<<fighter->files[3]<<".bin";
+                if (!services.assets.exists(reloc.str())) continue;
+                const auto tag="remix:"+fighter->key;
+                if (std::any_of(models.begin(),models.end(),[&](const auto& model){return model==tag;})) continue;
+                kinds.push_back(static_cast<FighterKind>(fighter->parent));
+                portraits.push_back({});models.push_back(tag);names.push_back(fighter->key);
+                cells.push_back(cells.empty()?0:*std::max_element(cells.begin(),cells.end())+1);
+            }
+        }
+        kPortraitKind=std::move(kinds);custom_portraits_=std::move(portraits);custom_models_=std::move(models);custom_names_=std::move(names);
+        if (kPortraitKind.size()!=12 || std::any_of(custom_models_.begin(),custom_models_.end(),[](const auto& model){return !model.empty();}) ||
+            std::any_of(custom_portraits_.begin(),custom_portraits_.end(),[](const auto& portrait){return !portrait.empty();})) {
+            const int rows=std::max(1,(*std::max_element(cells.begin(),cells.end())+columns)/columns);
+            portrait_width_=270.f/columns;portrait_height_=86.f/rows;
+            kPortraitX.clear();kPortraitY.clear();
+            for (unsigned i=0;i<kPortraitKind.size();++i) {
+                kPortraitX.push_back(25+(cells[i]%columns)*portrait_width_);
+                kPortraitY.push_back(36+(cells[i]/columns)*portrait_height_);
             }
         }
         archive_=&services.resources.archive();
@@ -198,7 +231,8 @@ public:
             r.sprite_rect("textures/MNPlayersPortraits/PortraitFireBg.png",pos.x,pos.y,portrait_width_,portrait_height_);
             const auto portrait_file=portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty()?custom_portraits_[portrait]:std::string("textures/MNPlayersPortraits/")+std::string(fighter_portrait_file(kind));
             r.sprite_rect(portrait_file,pos.x,pos.y,portrait_width_,portrait_height_);
-            if (portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty()) {
+            const bool remix=portrait<custom_models_.size() && custom_models_[portrait].rfind("remix:",0)==0;
+            if ((portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty()) || remix) {
                 r.fill(pos.x,pos.y,portrait_width_,1,{109,89,64,255});r.fill(pos.x,pos.y,1,portrait_height_,{109,89,64,255});
                 r.fill(pos.x,pos.y+portrait_height_-1,portrait_width_,1,{35,27,20,255});r.fill(pos.x+portrait_width_-1,pos.y,1,portrait_height_,{35,27,20,255});
                 r.fill(pos.x+1,pos.y+1,portrait_width_-2,7,{0,0,0,200});
@@ -217,7 +251,9 @@ public:
             r.sprite_at("textures/MNPlayersCommon/"+card,{x,one_player_?131.f:126.f});
             const auto entry=slots_[player].entry;
             const bool custom=entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() && !custom_models_[entry].empty();
-            if (custom && slots_[player].kind!=SlotKind::None && static_cast<unsigned>(entry)<custom_names_.size()) {
+            const bool named=entry>=0 && static_cast<unsigned>(entry)<custom_names_.size() && !custom_names_[entry].empty() &&
+                (custom || (static_cast<unsigned>(entry)<custom_portraits_.size() && !custom_portraits_[entry].empty()));
+            if (named && slots_[player].kind!=SlotKind::None) {
                 custom_label(r,custom_names_[entry],x+8,146,50,10);
             } else if (slots_[player].selected) {
                 r.sprite_at(std::string("textures/CharacterNames/") +
@@ -311,10 +347,12 @@ private:
     void load_preview(FighterKind kind,unsigned player,bool selected) {
         if (!loader_) return;
         const auto& data=fighter_source_data[static_cast<unsigned>(kind)];
-        auto preview=loader_->fighter_motion(kind,selected?data.selected:data.idle,
-                                             selected?data.selected_flags:0);
         const auto entry=slots_[player].entry;
-        if (entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() && !custom_models_[entry].empty()) {
+        const auto remix=entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() &&
+            custom_models_[entry].rfind("remix:",0)==0?std::string_view(custom_models_[entry]).substr(6):std::string_view{};
+        auto preview=loader_->fighter_motion(kind,selected?data.selected:data.idle,
+                                             selected?data.selected_flags:0,remix);
+        if (entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() && !custom_models_[entry].empty() && remix.empty()) {
             const auto bytes=assets_->blob(custom_models_[entry]);loader_->apply_custom_mesh(preview,*bytes);
         }
         previews_[player]=std::move(preview);

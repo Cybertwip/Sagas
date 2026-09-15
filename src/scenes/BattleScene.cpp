@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 
 namespace sagas {
@@ -44,6 +46,8 @@ public:
             auto& body=bodies_[i]; body.position=stage_.player_spawns[i];
             body.grounded=false; body.lr=body.position.x<0?1:-1;
             body.status=FighterStatus::Fall;
+            if (body.custom_model.rfind("remix:",0)==0)
+                body.attr=loader_->remix_fighter_attributes(body.custom_model.substr(6));
         }
         services.audio.stop();
         if (!services.deterministic_clock) {
@@ -763,10 +767,11 @@ private:
     }
     Model3D posed(const FighterBody& body,bool with_root=false) {
         const unsigned clip=motion(body);
-        const unsigned key=static_cast<unsigned>(body.kind)*4096+clip;
+        const auto remix=body.custom_model.rfind("remix:",0)==0?std::string_view(body.custom_model).substr(6):std::string_view{};
+        const auto key=body.custom_model+"/"+std::to_string(static_cast<unsigned>(body.kind))+"/"+std::to_string(clip);
         if (!models_.contains(key)) {
             const unsigned flags=fighter_motion_flags(clip);
-            models_.emplace(key,loader_->fighter_motion(body.kind,clip,flags));
+            models_.emplace(key,loader_->fighter_motion(body.kind,clip,flags,remix));
         }
         auto model=models_.at(key);
         const unsigned event=body.status==FighterStatus::Special?FighterCombat::special_event_motion(body):clip;
@@ -778,7 +783,7 @@ private:
             parts[21]=-1;parts[19]=0; // Source item-held shield: stow it on the back.
         }
         if (!parts.empty()) {
-            std::string variant=std::to_string(key);
+            std::string variant=key;
             for(const auto& [joint,part]:parts)variant+=":"+std::to_string(joint)+"="+std::to_string(part);
             if(!part_models_.contains(variant)) {
                 if(parts.contains(~0U))for(unsigned joint:model.source_joint_ids)loader_->set_fighter_part(model,body.kind,joint,-1);
@@ -786,8 +791,8 @@ private:
                 part_models_.emplace(variant,model);
             } else model=part_models_.at(variant);
         }
-        if (!body.custom_model.empty()) {
-            const auto custom_key=body.custom_model+":"+std::to_string(key);
+        if (!body.custom_model.empty() && remix.empty()) {
+            const auto custom_key=body.custom_model+":"+key;
             if (!custom_models_.contains(custom_key)) {
                 auto imported=model;const auto bytes=assets_->blob(body.custom_model);
                 loader_->apply_custom_mesh(imported,*bytes);custom_models_.emplace(custom_key,std::move(imported));
@@ -970,7 +975,7 @@ private:
     Stage3D stage_;
     BattleCamera camera_;
     n64::RelocArchive* archive_{};
-    std::unordered_map<unsigned,Model3D> models_;
+    std::unordered_map<std::string,Model3D> models_;
     std::unordered_map<unsigned,float> lengths_;
     std::unique_ptr<Scene3DLoader> loader_;
     std::unique_ptr<Scene3DRenderer> renderer_;

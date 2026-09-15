@@ -7,6 +7,7 @@ int main() {
     using namespace sagas;
     const auto falco=std::find_if(remix_roster.begin(),remix_roster.end(),[](const auto& row){return row.key=="FALCO";});
     assert(falco!=remix_roster.end());
+    assert(std::any_of(remix_css.begin(),remix_css.end(),[](const auto& row){return row.key=="FALCO";}));
     assert(falco->id==0x1d && falco->parent==static_cast<unsigned>(FighterKind::Fox));
     assert(falco->files[0]==0x8ab && falco->attribute_offset==0x474);
     const auto action=std::find_if(remix_actions.begin(),remix_actions.end(),[&](const auto& row){return row.fighter==falco->id && row.action==0xbe;});

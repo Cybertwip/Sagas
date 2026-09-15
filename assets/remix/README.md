@@ -8,7 +8,9 @@ Edits made only in the build copy will be overwritten by the next build.
 - `reloc/NNNN.links.tsv`: internal and external relocation bindings.
 - `reloc/manifest.tsv`: resource names, original sizes and extraction hashes.
 - `extraction.json`: provenance of the verified Remix 2.0.1 ROM.
-- `relocation_diagnostics.json`: out-of-range references found during extraction.
+- `relocation_diagnostics.json`: remaining out-of-range references after repair
+  (empty for the verified 2.0.1 bundle). `--repair` retargets cloned MAIN
+  pointers onto parent graphics and drops false reloc-chain continuations.
 
 Manifest hashes describe the original extraction; editing a resource can change
 its current hash. Keep relocation offsets consistent when changing binary layouts.

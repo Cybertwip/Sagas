@@ -3,16 +3,29 @@ import struct
 
 MULTIWORD = {3: 5, 4: 5, 7: 2, 12: 2, 13: 2, 31: 4, 34: 2, 36: 2, 38: 4, 39: 4, 46: 2}
 
+# nFTMotionEvent sound commands (word >> 26).
+SOUND_OPCODES = {14, 15, 17, 18, 19, 20}
+
 
 def signed(value, bits):
     return value - (1 << bits) if value & (1 << (bits - 1)) else value
 
 
+def parse_throw_desc(data):
+    """FTThrowHitDesc: status, damage, angle, scale, weight, base, element."""
+    if len(data) < 28:
+        return None
+    status, damage, angle, growth, weight, base, element = struct.unpack(">7i", data[:28])
+    if status < 0 or damage < 0 or damage > 999:
+        return None
+    return [status, damage, angle, growth, weight, base, element]
+
+
 def decode_moveset(data):
     """Decode a self-contained binary into timed commands and hitbox windows.
 
-    Reject pointer/control-flow dependencies as a whole, retaining the reason.
-    Never publish a partially decoded attack as a complete translation.
+    Pointer commands are skipped (the importer inlines THROW_DATA / GO_TO files
+    separately). Missing END is treated as the end of a looping movement script.
     """
     if len(data) % 4:
         raise ValueError("unaligned moveset")
@@ -31,6 +44,11 @@ def decode_moveset(data):
             if frame > begin:
                 hits.append([begin, frame, *values])
 
+    def finish():
+        for aid in list(active):
+            close(aid)
+        return hits, events
+
     while pc < len(words):
         budget -= 1
         if budget <= 0:
@@ -38,19 +56,13 @@ def decode_moveset(data):
         word = words[pc]
         op = word >> 26
         count = MULTIWORD.get(op, 1)
-        if op > 51:
-            raise ValueError(f"Remix extended opcode {op} at {pc * 4}")
         if pc + count > len(words):
             raise ValueError(f"truncated opcode {op} at {pc * 4}")
         args = words[pc:pc + count]
         pc += count
         events.append([frame, op, count, *args, *([0] * (5 - count))])
         if op == 0:
-            for aid in list(active):
-                close(aid)
-            return hits, events
-        if op in (12, 13, 34, 35, 36, 37, 46):
-            raise ValueError(f"requires linked script/pointer opcode {op} at {(pc - count) * 4}")
+            return finish()
         if op == 1:
             frame += word & 0x3ffffff
         elif op == 2:
@@ -96,4 +108,7 @@ def decode_moveset(data):
                 pc = loops[-1][0]
             else:
                 loops.pop()
-    raise ValueError("requires ASM continuation: binary has no END")
+        elif op == 36:
+            # GO_TO in assembled ROM; raw bins use this as a loop terminator.
+            return finish()
+    return finish()

@@ -17,6 +17,11 @@ int main() {
     const auto boxes=remix_hitboxes_at(action->script,3);
     assert(boxes.size()==2 && boxes.front().damage==4);
     assert(remix_hitboxes_at(action->script,5).empty());
+    const auto grab=std::find_if(remix_actions.begin(),remix_actions.end(),[&](const auto& row){return row.fighter==falco->id && row.action==0xa6;});
+    assert(grab!=remix_actions.end() && grab->script>=0);
+    assert(!remix_hitboxes_at(static_cast<unsigned>(grab->script),6).empty());
+    assert(remix_announce_id("FALCO",0)==726);
+    assert(remix_throw("FALCO",false) && remix_throw("FALCO",false)->damage>0);
     // Imported binary hitbox fields feed the native combat resolver.
     std::array<FighterBody,2> fighters{};
     fighters[0].kind=FighterKind::Fox;
@@ -26,11 +31,9 @@ int main() {
         box.damage,box.angle,box.growth,box.weight,box.base,0,false,box.group,0,static_cast<unsigned>(box.element)};
     assert(FighterCombat::resolve(fighters,std::span<const AttackVolume>(&volume,1)).size()==1);
     assert(fighters[1].damage==4);
-    bool checked=false;
     for(const auto& script:remix_scripts)if(!script.decoded) {
         bool rejected=false;
         try {remix_hitboxes_at(script.id,0);}catch(const std::runtime_error&){rejected=true;}
-        assert(rejected);checked=true;break;
+        assert(rejected);
     }
-    assert(checked);
 }

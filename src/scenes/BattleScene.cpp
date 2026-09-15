@@ -303,7 +303,18 @@ public:
             }
             if (!body.hitlag && (body.audio_motion!=event_clip || body.audio_frame!=body.action_frame)) {
                 body.audio_motion=event_clip;body.audio_frame=body.action_frame;
-                if (!services.deterministic_clock) for (const auto& sound:battle_motion_sounds)
+                if (!services.deterministic_clock) {
+                    bool remix_sound=false;
+                    if (const auto key=remix_key(body); !key.empty()) {
+                        const int script=remix_script_for(key,body.kind,event_clip);
+                        if (script>=0) for (const auto& event:remix_events)
+                            if (event.script==static_cast<unsigned>(script) && event.frame==static_cast<unsigned>(body.action_frame) &&
+                                remix_event_is_sound(event.opcode)) {
+                                services.audio.play_fgm(event.words[0]&0x3ffffffU);
+                                remix_sound=true;
+                            }
+                    }
+                    if (!remix_sound) for (const auto& sound:battle_motion_sounds)
                     if (sound.motion==event_clip && sound.frame==static_cast<unsigned>(body.action_frame)) {
                         const auto& voices=fighter_source_data[static_cast<unsigned>(body.kind)].smash_voices;
                         unsigned fgm=sound.fgm==~0U?voices[(tic_+i)%3]:sound.fgm;
@@ -312,6 +323,7 @@ public:
                                 if (fgm==fighter_source_data[static_cast<unsigned>(FighterKind::Mario)].smash_voices[v]) {fgm=voices[v];break;}
                         services.audio.play_character_fgm(body.custom_model,fgm);
                     }
+                }
             }
         }
         std::vector<FighterHit> hits;
@@ -350,7 +362,10 @@ public:
                 ++holder.capture_tics;
                 if (holder.capture_tics<90 && !holder.attack_pressed) continue;
             }
-            const auto& damage=source_throws[static_cast<unsigned>(holder.kind)][holder.throw_backward?1:0];
+            SourceThrow damage=source_throws[static_cast<unsigned>(holder.kind)][holder.throw_backward?1:0];
+            if (const auto key=remix_key(holder); !key.empty())
+                if (const auto* remix=remix_throw(key,holder.throw_backward))
+                    damage={remix->frame,remix->damage,remix->angle,remix->growth,remix->weight,remix->base};
             if(holder.kind==FighterKind::Donkey && holder.status==FighterStatus::Throw && !holder.throw_backward && !holder.carrying && holder.action_frame>=damage.frame) {
                 holder.carrying=true;holder.status=FighterStatus::CatchWait;holder.action_frame=0;holder.capture_tics=0;
                 continue;
@@ -399,7 +414,8 @@ public:
                             for (const auto& box:remix_hitboxes_at(static_cast<unsigned>(row.script),static_cast<unsigned>(std::max(0,body.action_frame)))) {
                                 const auto position=renderer_->joint_point(model,body.action_frame,box.joint<0?0:static_cast<unsigned>(box.joint),
                                     {static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
-                                volumes.push_back({i,position,box.size*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,~0U,false,box.group,0,static_cast<unsigned>(std::max(0,box.element))});
+                                const bool grab=body.status==FighterStatus::Catch;
+                                volumes.push_back({i,position,box.size*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,~0U,grab,box.group,0,static_cast<unsigned>(std::max(0,box.element))});
                                 remix_hit=true;
                             }
                         } catch (const std::exception&) {}
@@ -770,12 +786,12 @@ private:
         const auto key=remix_key(body);
         return key.empty()?clip:remix_motion_clip(key,body.kind,clip);
     }
-    unsigned motion(const FighterBody& body) {
+    unsigned motion_raw(const FighterBody& body) const {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
         if (finished_) {
             const auto& victory=victory_motions[static_cast<unsigned>(body.kind)];
             const bool winner=winner_>=0 && &body==&bodies_[static_cast<unsigned>(winner_)];
-            return remix_clip(body,winner?victory.win:victory.clap);
+            return winner?victory.win:victory.clap;
         }
         const unsigned clip=[&]{
         switch(body.status) {
@@ -816,7 +832,10 @@ private:
             default:return data.idle;
         }
         }();
-        return remix_clip(body,clip);
+        return clip;
+    }
+    unsigned motion(const FighterBody& body) {
+        return remix_clip(body, motion_raw(body));
     }
     float motion_length(const FighterBody& body) {
         const unsigned clip=motion(body);
@@ -842,11 +861,12 @@ private:
         return renderer_->captured_at_joint(posed(body,true),body.action_frame,posed(holder),holder.action_frame,joint);
     }
     Model3D posed(const FighterBody& body,bool with_root=false) {
-        const unsigned clip=motion(body);
+        const unsigned raw=motion_raw(body);
+        const unsigned clip=remix_clip(body,raw);
         const auto remix=body.custom_model.rfind("remix:",0)==0?std::string_view(body.custom_model).substr(6):std::string_view{};
         const auto key=body.custom_model+"/"+std::to_string(static_cast<unsigned>(body.kind))+"/"+std::to_string(clip);
         if (!models_.contains(key)) {
-            const unsigned flags=fighter_motion_flags(clip);
+            const unsigned flags=remix.empty()?fighter_motion_flags(raw):remix_motion_flags(remix,body.kind,raw);
             models_.emplace(key,loader_->fighter_motion(body.kind,clip,flags,remix));
         }
         auto model=models_.at(key);

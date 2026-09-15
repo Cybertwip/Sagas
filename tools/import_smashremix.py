@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from remix_moveset import decode_moveset, signed  # noqa: E402,F401
+from remix_moveset import decode_moveset, parse_throw_desc, signed  # noqa: E402,F401
 
 PARENTS = dict(MARIO=1, FOX=9, DONKEY=2, SAMUS=4, LUIGI=0, LINK=3,
                YOSHI=7, CAPTAIN=5, KIRBY=8, PIKACHU=10, JIGGLY=11, NESS=6)
@@ -78,16 +78,37 @@ def import_tree(root,output,resources=None):
     ids.update({k:v for k,v in zip(
         ["MARIO","FOX","DONKEY","SAMUS","LUIGI","LINK","YOSHI","CAPTAIN","KIRBY","PIKACHU","JIGGLY","NESS"],range(12))})
     actions=[];callbacks=[];scripts=[];hit_rows=[];event_rows=[];script_ids={}
+    throw_rows=[];throw_files={}
     paths=sorted(src.rglob("*.asm"))
+
+    def resolve_file(base, relative_name):
+        target=base/relative_name
+        if target.exists():
+            return target
+        return next((p for p in base.rglob("*") if p.as_posix().lower()==target.as_posix().lower()), target)
+
     for path in paths:
         text=clean(path.read_text(errors="replace"));relative=path.relative_to(root).as_posix()
         inserts={}
         for m in re.finditer(r'\binsert\s+(\w+)\s*,\s*"([^"]+)"',text):
-            target=path.parent/m[2]
-            if not target.exists():
-                # Bass paths are case-insensitive on the source authoring platform.
-                target=next((p for p in path.parent.rglob("*") if p.as_posix().lower()==target.as_posix().lower()),target)
-            inserts[m[1]]=target
+            inserts[m[1]]=resolve_file(path.parent, m[2])
+        # Label scripts: GRAB:; Moveset.THROW_DATA(X); insert "moveset/GRAB.bin"
+        for m in re.finditer(r"^\s*(\w+)\s*:", text, re.M):
+            name=m[1]
+            if name in inserts:
+                continue
+            chunk=re.split(r"\n\s*(?:\w+\s*:|Character\.)", text[m.end():], 1)[0]
+            unnamed=re.findall(r'\binsert\s+"([^"]+)"', chunk)
+            named=re.findall(r'\binsert\s+(\w+)\s*,\s*"([^"]+)"', chunk)
+            throw=re.search(r"Moveset\.THROW_DATA\((\w+)\)", chunk)
+            if unnamed:
+                inserts[name]=resolve_file(path.parent, unnamed[0])
+            elif named:
+                inserts[name]=resolve_file(path.parent, named[0][1])
+            if throw:
+                throw_src=inserts.get(throw[1])
+                if throw_src and throw_src.exists():
+                    throw_files[name]=throw_src
         for m in re.finditer(r"Character\.(edit_action_parameters|edit_action|add_new_action|add_new_action_params)\(([^\n]+?)\)",text):
             macro=m[1];args=[a.strip() for a in m[2].split(",")]
             if not args or args[0] not in ids:continue
@@ -116,16 +137,37 @@ def import_tree(root,output,resources=None):
                 script_id=script_ids[key]
             row.update(action=action,animation=animation,flags=flags,script_id=script_id)
             actions.append(row)
+            throw_src=throw_files.get(args[3])
+            if throw_src and throw_src.exists() and action in (0xa9, 0xaa):
+                desc=parse_throw_desc(throw_src.read_bytes())
+                if desc:
+                    release=0
+                    if script_id>=0:
+                        for event in event_rows:
+                            if event[0]==script_id and event[2]==23 and (event[3]&0x3ffffff)==1:
+                                release=event[1];break
+                    throw_rows.append([ids[args[0]], action, release or desc[0], *desc[1:6]])
+    fgm_names=constants((src/"FGM.asm").read_text().split("scope names")[-1].split("scope css")[0],"")
+    announce_rows=[]
+    css_text=clean((src/"CharacterSelect.asm").read_text())
+    for m in re.finditer(r"add_to_css\(\s*Character\.id\.(\w+)\s*,\s*FGM\.announcer\.names\.(\w+)", css_text):
+        fighter, name=m[1], m[2]
+        if fighter not in ids or name not in fgm_names:
+            continue
+        announce_rows.append([fighter, fgm_names[name]])
     table(output,"remix_roster",["id","key","parent","attribute_offset","extra_actions","jab3","copy",*[f"files[{i}]" for i in range(9)]],roster)
     table(output,"remix_actions",["fighter","action","animation","flags","script"],
           [[ids[r["fighter"]],r["action"],r["animation"],r["flags"],r["script_id"]] for r in actions])
     table(output,"remix_hitboxes",["script","begin","end","id","group","joint","damage","size","x","y","z","angle","growth","weight","base","element","ground_air","shield_damage","sound_kind","sound_level","scaled"],hit_rows)
     table(output,"remix_events",["script","frame","opcode","word_count",*[f"words[{i}]" for i in range(5)]],event_rows)
     table(output,"remix_scripts",["id","decoded"],[[r["id"],int(r["status"]=="decoded")] for r in scripts])
+    table(output,"remix_announce",["key","fgm"],announce_rows)
+    table(output,"remix_throws",["fighter","action","frame","damage","angle","growth","weight","base"],throw_rows)
     report=dict(format=1,resource_archive=resource_manifest,fighters=fighters,actions=actions,callbacks=callbacks,scripts=scripts,
                 unresolved=issues,summary=dict(fighters=len(fighters),actions=len(actions),
                     callback_declarations=len(callbacks),decoded_scripts=sum(r["status"]=="decoded" for r in scripts),
                     scripts=len(scripts),hitbox_windows=len(hit_rows),events=len(event_rows),
+                    announcer_names=len(announce_rows),throws=len(throw_rows),
                     unresolved_declarations=len(issues),missing_resource_references=sum(len(f.get("missing_resources",[])) for f in fighters)),
                 limitations=["Declarations are source-level, not an assembled patch: conditional edits and ordering need validation.",
                              "Decoded script does not imply its fighter callbacks or assets are ported.",

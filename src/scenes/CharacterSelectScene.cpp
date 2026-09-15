@@ -88,7 +88,7 @@ public:
             slot.entry=hover_;slot.fkind=kind_at(hover_);slot.selected=true;
             load_preview(slot.fkind,held_slot_,true);
             selected_tick_[held_slot_]=tic_;
-            services.audio.play_character_fgm(model_at(slot.entry),fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);
+            services.audio.play_character_fgm(model_at(slot.entry),announce_id(slot));
             held_slot_=-1;
         };
         if (input.accept_pressed || input.pointer_pressed) {
@@ -156,7 +156,7 @@ public:
             }
             if (c.cancel && slot.selected) {slot.selected=false;load_preview(slot.fkind,player,false);}
             if (c.attack) {
-                if (!slot.selected && portrait>=0) {slot.selected=true;slot.entry=portrait;slot.fkind=kind_at(portrait);load_preview(slot.fkind,player,true);services.audio.play_character_fgm(model_at(slot.entry),fighter_source_data[static_cast<unsigned>(slot.fkind)].announce);}
+                if (!slot.selected && portrait>=0) {slot.selected=true;slot.entry=portrait;slot.fkind=kind_at(portrait);load_preview(slot.fkind,player,true);services.audio.play_character_fgm(model_at(slot.entry),announce_id(slot));}
                 else if (slot.selected && cursor.x>=slot.puck.x && cursor.x<slot.puck.x+26 && cursor.y>=slot.puck.y && cursor.y<slot.puck.y+24) {slot.selected=false;load_preview(slot.fkind,player,false);}
             }
             if (c.start && ready()) start_=true;
@@ -336,6 +336,12 @@ private:
         return {std::clamp(x-6,left,right),std::clamp(y-6,top,bottom)};
     }
     struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{};int entry{1}; };
+    [[nodiscard]] unsigned announce_id(const Slot& slot) const {
+        const unsigned fallback=fighter_source_data[static_cast<unsigned>(slot.fkind)].announce;
+        const auto& model=model_at(slot.entry);
+        if (model.rfind("remix:",0)==0) return remix_announce_id(std::string_view(model).substr(6),fallback);
+        return fallback;
+    }
     [[nodiscard]] int portrait_at(float x, float y) const {
         const float width=cell_w(),height=cell_h();
         const float band_top=one_player_?34.f:layout_.start_y-1.f;
@@ -362,9 +368,14 @@ private:
         const auto entry=slots_[player].entry;
         const auto& custom=model_at(entry);
         const auto remix=custom.rfind("remix:",0)==0?std::string_view(custom).substr(6):std::string_view{};
-        unsigned clip=selected?data.selected:data.idle;
-        if (!remix.empty()) clip=remix_motion_clip(remix,kind,clip);
-        auto preview=loader_->fighter_motion(kind,clip,selected?data.selected_flags:0,remix);
+        const unsigned parent_clip=selected?data.selected:data.idle;
+        unsigned clip=parent_clip;
+        unsigned flags=selected?data.selected_flags:fighter_motion_flags(parent_clip);
+        if (!remix.empty()) {
+            clip=remix_motion_clip(remix,kind,parent_clip);
+            flags=remix_motion_flags(remix,kind,parent_clip);
+        }
+        auto preview=loader_->fighter_motion(kind,clip,flags,remix);
         if (!custom.empty() && remix.empty()) {
             const auto bytes=assets_->blob(custom);loader_->apply_custom_mesh(preview,*bytes);
         }

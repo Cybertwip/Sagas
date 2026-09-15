@@ -116,6 +116,23 @@ inline void descriptor_read(std::istream& input,RemixScript& value) {
     descriptor_read(input,value.decoded);
 }
 inline const DescriptorTable<RemixScript> remix_scripts{"remix_scripts.tsv","id\tdecoded"};
+struct RemixAnnounce { std::string key; unsigned fgm{}; };
+inline void descriptor_read(std::istream& input,RemixAnnounce& value) {
+    descriptor_read(input,value.key);descriptor_read(input,value.fgm);
+}
+inline const DescriptorTable<RemixAnnounce> remix_announce{"remix_announce.tsv","key\tfgm",0};
+struct RemixThrow {
+    unsigned fighter{};
+    unsigned action{};
+    int frame{}, damage{}, angle{}, growth{}, weight{}, base{};
+};
+inline void descriptor_read(std::istream& input,RemixThrow& value) {
+    descriptor_read(input,value.fighter);descriptor_read(input,value.action);
+    descriptor_read(input,value.frame);descriptor_read(input,value.damage);
+    descriptor_read(input,value.angle);descriptor_read(input,value.growth);
+    descriptor_read(input,value.weight);descriptor_read(input,value.base);
+}
+inline const DescriptorTable<RemixThrow> remix_throws{"remix_throws.tsv","fighter\taction\tframe\tdamage\tangle\tgrowth\tweight\tbase",0};
 
 // Only self-contained, completely decoded scripts may expose combat windows.
 // Fighter selection still requires ported callbacks and validated resource bindings.
@@ -209,9 +226,53 @@ inline unsigned remix_motion_clip(std::string_view key,FighterKind kind,unsigned
     const auto& data=fighter_source_data[static_cast<unsigned>(kind)];
     const int action=remix_action_id(data,clip);
     if (action<0) return clip;
+    int animation=-1;
     for (const auto& row:remix_actions)
         if (row.fighter==fighter->id && static_cast<int>(row.action)==action && row.animation>=0)
-            return static_cast<unsigned>(row.animation);
-    return clip;
+            animation=row.animation;
+    return animation>=0?static_cast<unsigned>(animation):clip;
+}
+
+inline unsigned remix_motion_flags(std::string_view key,FighterKind kind,unsigned parent_clip) {
+    const unsigned inherited=fighter_motion_flags(parent_clip);
+    const auto* fighter=remix_fighter(key);
+    if (!fighter || kind>=FighterKind::Count) return inherited;
+    const int action=remix_action_id(fighter_source_data[static_cast<unsigned>(kind)],parent_clip);
+    int flags=-1;
+    if (action>=0) for (const auto& row:remix_actions)
+        if (row.fighter==fighter->id && static_cast<int>(row.action)==action)
+            flags=static_cast<int>(row.flags);
+    return flags>=0?static_cast<unsigned>(flags):inherited;
+}
+
+inline int remix_script_for(std::string_view key,FighterKind kind,unsigned clip) {
+    const auto* fighter=remix_fighter(key);
+    if (!fighter || kind>=FighterKind::Count) return -1;
+    const int action=remix_action_id(fighter_source_data[static_cast<unsigned>(kind)],clip);
+    int script=-1;
+    for (const auto& row:remix_actions) {
+        if (row.fighter!=fighter->id || row.script<0) continue;
+        if (row.animation==static_cast<int>(clip) || (action>=0 && static_cast<int>(row.action)==action))
+            script=row.script;
+    }
+    return script;
+}
+
+inline unsigned remix_announce_id(std::string_view key, unsigned fallback) {
+    for (const auto& row:remix_announce) if (row.key==key) return row.fgm;
+    return fallback;
+}
+
+inline const RemixThrow* remix_throw(std::string_view key, bool backward) {
+    const auto* fighter=remix_fighter(key);
+    if (!fighter) return nullptr;
+    const unsigned action=backward?0xaaU:0xa9U;
+    const RemixThrow* found=nullptr;
+    for (const auto& row:remix_throws) if (row.fighter==fighter->id && row.action==action) found=&row;
+    return found;
+}
+
+inline bool remix_event_is_sound(unsigned opcode) {
+    return opcode==14 || opcode==15 || opcode==17 || opcode==18 || opcode==19 || opcode==20;
 }
 }

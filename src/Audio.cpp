@@ -243,7 +243,16 @@ void AudioEngine::play_fgm(unsigned id,float gain,float pitch) {
         SDL_DestroyAudioStream(stream);
         return true;
     });
-    preload_fgm(id);
+    const auto remix="fgm/"+std::to_string(id)+".sgpcm";
+    if (assets_.exists(remix)) {
+        play(remix,gain);
+        return;
+    }
+    try {
+        preload_fgm(id);
+    } catch (const std::exception&) {
+        return;
+    }
     const auto& pcm=motion_cache_.at(id);
     auto samples=pcm.samples;
     for (auto& sample:samples) sample=static_cast<std::int16_t>(std::clamp(sample*gain,-32768.0f,32767.0f));

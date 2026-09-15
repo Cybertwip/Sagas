@@ -565,7 +565,10 @@ Model3D Scene3DLoader::fighter_motion(FighterKind kind, unsigned clip, std::uint
         const auto common=archive_.resolve({attributes.file,attributes.offset+0x2d4});
         const auto tree=common?archive_.resolve(*common):std::nullopt;
         if (!tree) throw std::runtime_error("Remix fighter has no joint tree: "+std::string(remix_key));
-        actor=fighter_model(*tree,spec.joint_pairs?GeometryLayout::JointPairs:GeometryLayout::Direct,
+        // Yoshi-style pair DLs are only valid on Yoshi's own MAIN. Unique Remix
+        // MAIN files are authored as one display list per joint.
+        const bool joint_pairs=spec.joint_pairs && fighter->files[0]<1000;
+        actor=fighter_model(*tree,joint_pairs?GeometryLayout::JointPairs:GeometryLayout::Direct,
                             spec.setup_parts,flags,0,attributes);
     } else {
         actor=fighter_model(spec.descriptor,spec.joint_pairs ? GeometryLayout::JointPairs :

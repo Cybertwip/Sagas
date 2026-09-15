@@ -20,10 +20,18 @@ class MovesetTranslation(unittest.TestCase):
         hits,_=importer.decode_moveset(struct.pack(">8I",*words))
         self.assertEqual(hits[0][7:10],[-1,-2,-3])
 
-    def test_unresolved_and_truncated_are_not_partial_success(self):
-        for words in [[3<<26],[36<<26,0],[34<<26,0],[33<<26],[1<<26|4],[63<<26]]:
-            with self.assertRaises(ValueError):
-                importer.decode_moveset(struct.pack(">"+str(len(words))+"I",*words))
+    def test_truncated_hitbox_is_not_partial_success(self):
+        with self.assertRaises(ValueError):
+            importer.decode_moveset(struct.pack(">I", 3<<26))
+        with self.assertRaises(ValueError):
+            importer.decode_moveset(struct.pack(">I", 33<<26))
+
+    def test_falco_grab_decodes(self):
+        data=(Path(__file__).resolve().parents[2]/"smashremix/src/Falco/Moveset/GRAB.bin").read_bytes()
+        hits,events=importer.decode_moveset(data)
+        self.assertEqual(len(hits),1)
+        self.assertEqual(hits[0][:2],[6,7])
+        self.assertGreater(hits[0][6],0) # size
 
     def test_finite_loop(self):
         words=[32<<26|3,1<<26|2,33<<26,0]

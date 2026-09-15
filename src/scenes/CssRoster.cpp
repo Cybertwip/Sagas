@@ -55,7 +55,7 @@ CssRoster CssRoster::build(Services& services, bool one_player) {
         auto portrait=css_portrait_path(fighter.key,static_cast<FighterKind>(fighter.parent));
         push(static_cast<FighterKind>(fighter.parent),std::move(portrait),"remix:"+fighter.key,fighter.key);
     };
-    if (one_player_) {
+    if (one_player) {
         for (const auto& row:css_kinds) {
             if (row.key=="JIGGLYPUFF") continue;
             if (!used.insert(row.key).second) continue;
@@ -63,17 +63,9 @@ CssRoster CssRoster::build(Services& services, bool one_player) {
         }
     } else {
         for (const auto& slot:css_slots) {
-            if (const auto* kind=css_kind(slot.key); kind && slot.key.find('N')!=0) {
-                if (kind->key==slot.key || kind->key=="JIGGLYPUFF" || kind->key=="PURIN") {
-                    used.insert(slot.key);
-                    if (slot.key=="JIGGLYPUFF") used.insert("PURIN");
-                    push(static_cast<FighterKind>(kind->kind),kind->portrait,"",slot.key);
-                    continue;
-                }
-            }
-            if (css_kind(slot.key)) {
+            if (const auto* kind=css_kind(slot.key)) {
                 used.insert(slot.key);
-                const auto* kind=css_kind(slot.key);
+                if (slot.key=="JIGGLYPUFF") used.insert("PURIN");
                 push(static_cast<FighterKind>(kind->kind),kind->portrait,"",slot.key);
                 continue;
             }

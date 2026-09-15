@@ -118,6 +118,11 @@ inline void descriptor_read(std::istream& input,SourceAnimationFlags& value) {
 
 inline const DescriptorTable<SourceAnimationFlags> source_animation_flags{"source_animation_flags.tsv","motion\tflags",1656};
 inline unsigned fighter_motion_flags(unsigned motion) { for (const auto& entry:source_animation_flags) if (entry.motion==motion) return entry.flags; return 0; }
+struct VictoryMotion { unsigned win,clap; };
+inline void descriptor_read(std::istream& input,VictoryMotion& value) {
+    descriptor_read(input,value.win);descriptor_read(input,value.clap);
+}
+inline const DescriptorTable<VictoryMotion> victory_motions{"victory_motions.tsv","win\tclap",12};
 }
 namespace sagas { inline const DescriptorValue<unsigned> guard_on_sfx{"guard_on_sfx.tsv"};
 inline const DescriptorValue<unsigned> guard_off_sfx{"guard_off_sfx.tsv"};

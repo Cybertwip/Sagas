@@ -8,6 +8,7 @@ Run from the workspace root:
 
 ```sh
 python3 sagas/tools/import_smashremix.py
+python3 sagas/tools/extract_remix_css.py
 cmake --build sagas/build -j 4
 ctest --test-dir sagas/build --output-on-failure
 ```

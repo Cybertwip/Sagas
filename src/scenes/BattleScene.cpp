@@ -4,6 +4,7 @@
 #include <sagas/Fighter.hpp>
 #include <sagas/FighterSourceData.hpp>
 #include <sagas/FighterAttackData.hpp>
+#include <sagas/RemixDescriptors.hpp>
 #include <sagas/FighterThrowData.hpp>
 #include <sagas/WeaponSourceData.hpp>
 #include <sagas/Scene3D.hpp>
@@ -16,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <numbers>
 #include <string>
 #include <string_view>
@@ -64,13 +66,20 @@ public:
             for (auto sound:sounds) services.audio.preload_fgm(sound);
         }
         camera_.tick(bodies_,stage_);
+        intro_tics_=90;
     }
     void update(Services& services,const InputState& input,float) override {
         ++tic_;
         if (input.back_pressed) done_=true;
+        if (intro_tics_>0) --intro_tics_;
         if (finished_) {
             update_particles();
-            if (++finish_tics_>=120 || input.start_pressed || input.accept_pressed || input.cancel_pressed) done_=true;
+            for (auto& body:bodies_) {
+                ++body.action_frame;
+                if (body.action_frame>=static_cast<int>(std::max(1.f,motion_length(body)))) body.action_frame=0;
+            }
+            if (finish_tics_==0 && !services.deterministic_clock) services.audio.play_fgm(nSYAudioVoicePublicCheer);
+            if (++finish_tics_>=240 || input.start_pressed || input.accept_pressed || input.cancel_pressed) done_=true;
             return;
         }
         update_particles();
@@ -111,6 +120,7 @@ public:
                 body.jump_button=true; body.jump_released=false;
                 attack=std::abs(dx)<420 && tic_%32==static_cast<int>(i)*3;
             }
+            if (intro_tics_>0) {attack=false;body.jump_pressed=false;body.jump_button=false;body.shield_held=false;player_input.special_pressed=false;player_input.special_held=false;}
             body.tap_stick_x=std::abs(body.stick_x)>=53 && (std::abs(old_x)<53 || old_x*body.stick_x<0)?0:std::min(255,body.tap_stick_x+1);
             body.tap_stick_y=std::abs(body.stick_y)>=53 && (std::abs(old_y)<53 || old_y*body.stick_y<0)?0:std::min(255,body.tap_stick_y+1);
             if(attack && !body.hitlag && body.status!=FighterStatus::Captured) {
@@ -372,8 +382,28 @@ public:
             auto& body=bodies_[i];
             if ((body.status!=FighterStatus::Attack && body.status!=FighterStatus::Special && body.status!=FighterStatus::Catch && body.status!=FighterStatus::DownAttack) || body.hitlag || body.stocks<=0) continue;
             const auto model=posed(body);
-            for (const auto& box:source_jab_hitboxes)
-                if (box.kind==static_cast<unsigned>(body.kind) && box.motion==(body.status==FighterStatus::Special?FighterCombat::special_event_motion(body):body.motion) && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
+            const unsigned current=body.status==FighterStatus::Special?FighterCombat::special_event_motion(body):body.motion;
+            bool remix_hit=false;
+            if (const auto key=remix_key(body); !key.empty()) {
+                const auto fighter=std::find_if(remix_roster.begin(),remix_roster.end(),[&](const auto& row){return row.key==key;});
+                if (fighter!=remix_roster.end()) {
+                    const int action=remix_action_for_clip(fighter_source_data[static_cast<unsigned>(body.kind)],current);
+                    for (const auto& row:remix_actions) {
+                        if (row.fighter!=fighter->id || row.script<0) continue;
+                        if (row.animation!=static_cast<int>(current) && !(action>=0 && static_cast<int>(row.action)==action)) continue;
+                        try {
+                            for (const auto& box:remix_hitboxes_at(static_cast<unsigned>(row.script),static_cast<unsigned>(std::max(0,body.action_frame)))) {
+                                const auto position=renderer_->joint_point(model,body.action_frame,box.joint<0?0:static_cast<unsigned>(box.joint),
+                                    {static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
+                                volumes.push_back({i,position,box.size*.5f*body.attr.size,box.damage,box.angle,box.growth,box.weight,box.base,~0U,false,box.group,0,static_cast<unsigned>(std::max(0,box.element))});
+                                remix_hit=true;
+                            }
+                        } catch (const std::exception&) {}
+                    }
+                }
+            }
+            if (!remix_hit) for (const auto& box:source_jab_hitboxes)
+                if (box.kind==static_cast<unsigned>(body.kind) && box.motion==current && body.action_frame>=static_cast<int>(box.begin) && body.action_frame<static_cast<int>(box.end)) {
                     const auto position=renderer_->joint_point(model,body.action_frame,box.joint,
                         {static_cast<float>(box.x),static_cast<float>(box.y),static_cast<float>(box.z)});
                     const int damage=box.damage+(body.kind==FighterKind::Donkey && body.status==FighterStatus::Special && body.special_index%3==0 && body.special_phase==2?body.charge_ticks*2:0);
@@ -552,7 +582,16 @@ public:
         int alive=0;
         for (unsigned i=0;i<bodies_.size();++i) if (bodies_[i].stocks>0) {++alive;winner_=static_cast<int>(i);}
         if (alive>1) winner_=-1;
-        else {finished_=true;finish_tics_=0;}
+        else if (!finished_) {
+            finished_=true;finish_tics_=0;
+            for (unsigned i=0;i<bodies_.size();++i) {
+                auto& body=bodies_[i];
+                body.position=stage_.player_spawns[std::min(i,3U)];
+                body.grounded=true;body.status=FighterStatus::Wait;body.action_frame=0;
+                body.vel_air={};body.vel_damage={};body.vel_ground=0;body.hitlag=0;body.hitstun=0;
+                body.lr=body.position.x<0?1:-1;
+            }
+        }
         camera_.tick(bodies_,stage_);
     }
     void draw(Services& services) override {
@@ -562,7 +601,7 @@ public:
         const auto& camera=camera_.view();
         for (const auto& layer:stage_.layers) renderer_->draw(r,layer,camera,static_cast<float>(tic_));
         for (const auto& body:bodies_) {
-            if (body.swallowed || body.stocks<=0 || (body.status==FighterStatus::KO && (body.ko_mode==3 || body.ko_tics>=180)) || (body.invincible && tic_%6<2)) continue;
+            if (body.swallowed || (!finished_ && body.stocks<=0) || (!finished_ && body.status==FighterStatus::KO && (body.ko_mode==3 || body.ko_tics>=180)) || (body.invincible && tic_%6<2 && !finished_)) continue;
             const auto model=body.status==FighterStatus::Captured?captured_model(body):posed(body);
             renderer_->draw(r,model,camera,body.action_frame*(body.status==FighterStatus::Land?body.landing_speed:1.f),
                             body.status==FighterStatus::Shield?Color{130,160,255,255}:Color{255,255,255,255});
@@ -605,8 +644,9 @@ public:
         draw_particles(r,camera);
         for (unsigned i=0;i<bodies_.size();++i) {
             const float x=12+i*76.0f;
-            r.fill(x,192,72,42,{0,0,0,150});
-            r.sprite_at("textures/MNPlayersPortraits/"+std::string(fighter_portrait_file(bodies_[i].kind)),{x,194},{.45f,.45f});
+            r.fill(x,192,72,42,{0,0,0,180});
+            r.sprite_at(hud_portrait(bodies_[i]),{x,194},{.45f,.45f});
+            r.sprite_at("textures/IFCommonPlayerTags/"+std::to_string(i+1)+"P.png",{x+48,194},{.7f,.7f});
             const int damage=std::min(999,static_cast<int>(bodies_[i].damage));
             for (int digit=0;digit<3;++digit) {
                 const int divisor=digit==0?100:digit==1?10:1;
@@ -614,17 +654,31 @@ public:
                 r.sprite_at("textures/IFCommonPlayerDamage/Digit"+std::to_string(damage/divisor%10)+".png",{x+27+digit*10.0f,206},{.8f,.8f});
             }
             r.sprite_at("textures/IFCommonPlayerDamage/SymbolPercent.png",{x+59,210},{.8f,.8f});
-            for (int stock=0;stock<bodies_[i].stocks;++stock) r.fill(x+4+stock*6,226,4,4,i==0?Color{255,80,80,255}:Color{100,170,255,255});
+            const Color stock=i==0?Color{255,80,80,255}:i==1?Color{100,170,255,255}:i==2?Color{80,220,120,255}:Color{255,210,70,255};
+            for (int s=0;s<bodies_[i].stocks;++s) r.fill(x+4+s*6,226,4,4,stock);
+        }
+        if (intro_tics_>0 && intro_tics_<78) {
+            const float pulse=intro_tics_>24?1.f:intro_tics_/24.f;
+            r.fill(0,70,320,70,{0,0,0,static_cast<std::uint8_t>(140*pulse)});
+            r.sprite_rect("textures/IFCommonGameStatus/OrangeLetterG.png",88,78,52,58,{255,255,255,static_cast<std::uint8_t>(255*pulse)});
+            r.sprite_rect("textures/IFCommonGameStatus/OrangeLetterO.png",140,78,52,58,{255,255,255,static_cast<std::uint8_t>(255*pulse)});
+            r.sprite_rect("textures/IFCommonGameStatus/OrangeExclamationMark.png",192,78,28,58,{255,255,255,static_cast<std::uint8_t>(255*pulse)});
         }
         if (finished_) {
-            r.fill(0,88,320,52,{0,0,0,175});
-            const std::string label="GAME SET";
-            float x=71;
-            for (char c:label) {
-                if (c!=' ') r.sprite_rect("textures/IFCommonAnnounceCommon/Letter"+std::string(1,c)+".png",x,97,19,24,{255,235,100,255});
-                x+=23;
+            r.fill(0,0,320,48,{0,0,0,160});
+            r.fill(0,188,320,52,{0,0,0,160});
+            r.sprite_rect("textures/MNVSResults/Winner.png",139,8,42,28);
+            if (winner_>=0) {
+                r.sprite_rect(hud_portrait(bodies_[winner_]),144,40,32,32);
+                r.sprite_at("textures/IFCommonPlayerTags/"+std::to_string(winner_+1)+"P.png",{176,42});
             }
-            if (winner_>=0) r.sprite_rect("textures/MNPlayersPortraits/"+std::string(fighter_portrait_file(bodies_[winner_].kind)),144,146,32,32);
+            r.sprite_at("textures/MNVSResults/PlaceText.png",{12,196});
+            for (unsigned i=0;i<bodies_.size();++i) {
+                const float x=70.f+i*60;
+                r.sprite_at("textures/IFCommonPlayerTags/"+std::to_string(i+1)+"P.png",{x,196});
+                r.sprite_rect(hud_portrait(bodies_[i]),x,210,24,24);
+                r.sprite_at("textures/IFCommonPlayerDamage/Digit"+std::to_string(i==static_cast<unsigned>(std::max(0,winner_))?1:2)+".png",{x+26,214},{.7f,.7f});
+            }
         }
         r.end();
     }
@@ -702,8 +756,58 @@ private:
     }
     unsigned ko_serial_{};
     int crowd_next_{};
-    static unsigned motion(const FighterBody& body) {
+    std::string remix_key(const FighterBody& body) const {
+        return body.custom_model.rfind("remix:",0)==0?body.custom_model.substr(6):std::string{};
+    }
+    std::string hud_portrait(const FighterBody& body) const {
+        if (const auto key=remix_key(body); !key.empty()) {
+            const auto path="css/portraits/"+key+".png";
+            if (assets_ && assets_->exists(path)) return path;
+        }
+        return "textures/MNPlayersPortraits/"+std::string(fighter_portrait_file(body.kind));
+    }
+    static int remix_action_for_clip(const FighterSourceData& data,unsigned clip) {
+        if (clip==data.jab) return 0xbe;
+        if (clip==data.jab2) return 0xbf;
+        if (clip==data.dash_attack) return 0xc0;
+        if (clip==data.tilt[0]) return 0xc1;
+        if (clip==data.tilt[1]) return 0xc2;
+        if (clip==data.tilt[2]) return 0xc3;
+        if (clip==data.tilt[3]) return 0xc4;
+        if (clip==data.tilt[4]) return 0xc5;
+        if (clip==data.tilt[5]) return 0xc7;
+        if (clip==data.tilt[6]) return 0xc9;
+        if (clip==data.smash[0]) return 0xcc;
+        if (clip==data.smash[1]) return 0xcf;
+        if (clip==data.smash[2]) return 0xd0;
+        if (clip==data.attack_air[0]) return 0xd1;
+        if (clip==data.attack_air[1]) return 0xd2;
+        if (clip==data.attack_air[2]) return 0xd3;
+        if (clip==data.attack_air[3]) return 0xd4;
+        if (clip==data.attack_air[4]) return 0xd5;
+        if (clip==data.taunt) return 0xbd;
+        if (clip==data.grab[0]) return 0xa6;
+        return -1;
+    }
+    unsigned remix_clip(const FighterBody& body,unsigned clip) const {
+        const auto key=remix_key(body);
+        if (key.empty()) return clip;
+        const auto fighter=std::find_if(remix_roster.begin(),remix_roster.end(),[&](const auto& row){return row.key==key;});
+        if (fighter==remix_roster.end()) return clip;
+        const int action=remix_action_for_clip(fighter_source_data[static_cast<unsigned>(body.kind)],clip);
+        if (action<0) return clip;
+        for (const auto& row:remix_actions)
+            if (row.fighter==fighter->id && static_cast<int>(row.action)==action && row.animation>=0) return static_cast<unsigned>(row.animation);
+        return clip;
+    }
+    unsigned motion(const FighterBody& body) {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];
+        if (finished_) {
+            const auto& victory=victory_motions[static_cast<unsigned>(body.kind)];
+            const bool winner=winner_>=0 && &body==&bodies_[static_cast<unsigned>(winner_)];
+            return remix_clip(body,winner?victory.win:victory.clap);
+        }
+        const unsigned clip=[&]{
         switch(body.status) {
             case FighterStatus::KO:return data.damage_reactions[19];
             case FighterStatus::Shield:case FighterStatus::ShieldRelease:case FighterStatus::ShieldRoll:return body.guard_motion;
@@ -741,6 +845,8 @@ private:
             case FighterStatus::DownRoll:case FighterStatus::DownAttack:return body.down_motion;
             default:return data.idle;
         }
+        }();
+        return remix_clip(body,clip);
     }
     float motion_length(const FighterBody& body) {
         const unsigned clip=motion(body);
@@ -969,7 +1075,7 @@ private:
     AssetRepository* assets_{};
     std::unordered_map<std::string,Model3D> custom_models_;
     std::vector<int> ports_;
-    int stock_,tic_{},winner_{-1},finish_tics_{};
+    int stock_,tic_{},winner_{-1},finish_tics_{},intro_tics_{};
     bool done_{},finished_{};
     std::vector<FighterBody> bodies_;
     Stage3D stage_;

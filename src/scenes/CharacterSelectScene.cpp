@@ -71,7 +71,9 @@ public:
                 std::getline(fields,portrait,'\t');std::getline(fields,model,'\t');std::getline(fields,cell,'\t');
                 int index=-1;try {index=std::stoi(base);} catch (...) {continue;}
                 if (index<0 || index>=12) continue;
-                if (!portrait.empty() && (portrait.find("mods/")!=0 || portrait.find("..")!=std::string::npos || !services.assets.exists(portrait))) portrait.clear();
+                if (!portrait.empty() && (portrait.find("..")!=std::string::npos ||
+                    (portrait.find("mods/")!=0 && portrait.find("css/")!=0 && portrait.find("textures/")!=0) ||
+                    !services.assets.exists(portrait))) portrait.clear();
                 if (!model.empty() && model.rfind("remix:",0)!=0 &&
                     (model.find("mods/")!=0 || model.find("..")!=std::string::npos || !services.assets.exists(model))) model.clear();
                 int position=static_cast<int>(custom_kinds.size());try {if (!cell.empty()) position=std::clamp(std::stoi(cell),0,119);} catch (...) {}
@@ -92,20 +94,25 @@ public:
                 if (!services.assets.exists(reloc.str())) continue;
                 const auto tag="remix:"+fighter->key;
                 if (std::any_of(models.begin(),models.end(),[&](const auto& model){return model==tag;})) continue;
+                std::string portrait=entry.portrait;
+                if (!portrait.empty() && (portrait.find("..")!=std::string::npos || !services.assets.exists(portrait))) portrait.clear();
                 kinds.push_back(static_cast<FighterKind>(fighter->parent));
-                portraits.push_back({});models.push_back(tag);names.push_back(fighter->key);
+                portraits.push_back(portrait);models.push_back(tag);names.push_back(fighter->key);
                 cells.push_back(cells.empty()?0:*std::max_element(cells.begin(),cells.end())+1);
             }
         }
         kPortraitKind=std::move(kinds);custom_portraits_=std::move(portraits);custom_models_=std::move(models);custom_names_=std::move(names);
         if (kPortraitKind.size()!=12 || std::any_of(custom_models_.begin(),custom_models_.end(),[](const auto& model){return !model.empty();}) ||
             std::any_of(custom_portraits_.begin(),custom_portraits_.end(),[](const auto& portrait){return !portrait.empty();})) {
+            if (kPortraitKind.size()>24) columns=11;
+            else if (kPortraitKind.size()>18) columns=8;
             const int rows=std::max(1,(*std::max_element(cells.begin(),cells.end())+columns)/columns);
-            portrait_width_=270.f/columns;portrait_height_=86.f/rows;
+            const float band=kPortraitKind.size()>18?100.f:86.f;
+            portrait_width_=270.f/columns;portrait_height_=band/rows;
             kPortraitX.clear();kPortraitY.clear();
             for (unsigned i=0;i<kPortraitKind.size();++i) {
                 kPortraitX.push_back(25+(cells[i]%columns)*portrait_width_);
-                kPortraitY.push_back(36+(cells[i]/columns)*portrait_height_);
+                kPortraitY.push_back(32+(cells[i]/columns)*portrait_height_);
             }
         }
         archive_=&services.resources.archive();
@@ -298,7 +305,9 @@ public:
             if (slots_[player].selected) r.sprite_at(pucks[player],slots_[player].puck);
         // Pucks render beneath the hand in both held and placed states.
         if (held_slot_>=0) r.sprite_at(pucks[held_slot_],slots_[held_slot_].puck);
-        const bool portrait_band=cursor_y_>=38 && cursor_y_<=124;
+        const float band_top=kPortraitY.empty()?38.f:kPortraitY.front();
+        const float band_bottom=kPortraitY.empty()?124.f:*std::max_element(kPortraitY.begin(),kPortraitY.end())+portrait_height_;
+        const bool portrait_band=cursor_y_>=band_top && cursor_y_<=band_bottom;
         const int hand=portrait_band?(held_slot_>=0?1:2):0;
         constexpr std::array<const char*,3> hands{"CursorHandPoint.png","CursorHandGrab.png","CursorHandHover.png"};
         constexpr std::array<Vec2,3> label_offset{{{7,15},{9,10},{9,15}}};
@@ -321,9 +330,10 @@ private:
     std::vector<std::string> custom_portraits_,custom_models_,custom_names_;
     AssetRepository* assets_{};
     float portrait_width_{45},portrait_height_{43};
-    static Vec2 constrained_puck(float x,float y) {
-        // The hand can visit settings and Back; the whole token stays on portraits.
-        return {std::clamp(x-6,25.f,269.f),std::clamp(y-6,36.f,98.f)};
+    Vec2 constrained_puck(float x,float y) const {
+        const float top=kPortraitY.empty()?36.f:kPortraitY.front();
+        const float bottom=kPortraitY.empty()?98.f:*std::max_element(kPortraitY.begin(),kPortraitY.end())+portrait_height_-6;
+        return {std::clamp(x-6,25.f,269.f),std::clamp(y-6,top,bottom)};
     }
     struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{};int entry{1}; };
     [[nodiscard]] int portrait_at(float x, float y) const {

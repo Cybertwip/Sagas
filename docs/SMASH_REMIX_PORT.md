@@ -36,8 +36,9 @@ execution, assembler or Python packages outside the standard library.
 `remix_hitboxes_at(script, frame)` rejects scripts that need linking rather
 than exposing incomplete hitboxes. The native integration test translates
 Falco's jab, checks frames 3–5 and four damage, and feeds the resulting hitbox
-into Sagas's existing combat resolver. Falco is selectable on the CSS through
-`remix_css.tsv`; he uses Fox parent callbacks with Falco's model and attributes.
+into Sagas's existing combat resolver. Unique Remix characters are selectable
+on the CSS through `remix_css.tsv` with decoded 32x32 portraits. They inherit
+parent callbacks and apply imported moveset scripts/hitboxes when those decode.
 
 The decoder handles bounded loops and hitbox creation, clearing, mutation,
 signed fields and timing. Unknown extended opcodes, malformed data, pointers,
@@ -49,11 +50,11 @@ Preserving a timed event is not the same as implementing its runtime behavior.
 1. Link ASM moveset labels, inserted binary continuations and subroutines;
    resolve conditional action edits in assembly inclusion order.
 2. Translate remaining fighters' executable movement, interrupts, collision,
-   weapon, capture and copy behavior into native state handlers. Falco is the
-   first Remix character on the dynamic CSS: Fox parent behavior, Falco model
-   and attributes, selected through `remix_css.tsv` / `remix:FALCO`.
-3. Extend native fighter identity beyond parent behavior kinds, with per-action
-   callbacks and CSS portraits that are not inherited from the parent.
+   weapon, capture and copy behavior into native state handlers. Unique Remix
+   characters are on the CSS with real portraits; parent callbacks run until
+   per-character specials are ported, and decoded moveset scripts feed hitboxes.
+3. Replace inherited specials with fighter-specific callbacks (Phantasm, Wolf
+   lasers, Dedede inhale, and the rest of the extra_actions table).
 4. Connect timed event dispatch for imported scripts and verify each fighter
    before enabling it on the CSS.
 5. Port stage geometry/hazards, items, music routing, menu/game modes and Remix

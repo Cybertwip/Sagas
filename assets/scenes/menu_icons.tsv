@@ -1,0 +1,6 @@
+SAGAS-DATA	1
+screen	index	icon	icon_dark
+main	0	textures/MNMain/ControllerIcon.png	textures/MNMain/ControllerIconDark.png
+main	1	textures/MNMain/ConsoleIcon.png	textures/MNMain/ConsoleIconDark.png
+main	2	textures/MNMain/SettingsIcon.png	textures/MNMain/SettingsIconDark.png
+main	3	textures/MNMain/DataIcon.png	textures/MNMain/DataIconDark.png

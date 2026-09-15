@@ -1,0 +1,9 @@
+SAGAS-DATA	1
+id	icon	footer	footer_x	footer_y	mode_x	mode_y
+one_player	textures/MN1P/ControllerIconDark.png	textures/MN1P/1PText.png	161	194	188	88
+versus	textures/MNVSMode/ConsoleIconDark.png	textures/MNVSMode/VSText.png	158	192	189	87
+options	textures/MNOption/SettingsIconDark.png	textures/MNOption/OptionText.png	201	120	0	0
+data	textures/MNData/DataIconDark.png	textures/MNData/DataText.png	206	131	0	0
+vs_options	textures/MNVSOptions/ConsoleIconDark.png	-	0	0	0	0
+sound_test	textures/MNData/DataIconDark.png	-	0	0	0	0
+backup_clear	textures/MNOption/SettingsIconDark.png	-	0	0	0	0

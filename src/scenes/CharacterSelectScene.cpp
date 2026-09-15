@@ -58,12 +58,10 @@ public:
         std::vector<FighterKind> kinds{kBuiltinKinds.begin(),kBuiltinKinds.end()};
         std::vector<std::string> portraits(kinds.size()),models(kinds.size()),names(kinds.size());
         std::vector<int> cells;for (int i=0;i<static_cast<int>(kinds.size());++i) cells.push_back(i);
-        int columns=6;
         if (services.assets.exists("mods/roster.tsv")) {
             const auto bytes=services.assets.blob("mods/roster.tsv");
             std::istringstream input(std::string(reinterpret_cast<const char*>(bytes->data()),bytes->size()));
             std::string line;std::getline(input,line);
-            try {columns=std::clamp(std::stoi(line),3,12);} catch (...) {}
             std::vector<FighterKind> custom_kinds;std::vector<std::string> custom_portraits,custom_models,custom_names;std::vector<int> custom_cells;
             while (std::getline(input,line) && custom_kinds.size()<120) {
                 std::istringstream fields(line);std::string base,name,portrait,model,cell;
@@ -102,19 +100,9 @@ public:
             }
         }
         kPortraitKind=std::move(kinds);custom_portraits_=std::move(portraits);custom_models_=std::move(models);custom_names_=std::move(names);
-        if (kPortraitKind.size()!=12 || std::any_of(custom_models_.begin(),custom_models_.end(),[](const auto& model){return !model.empty();}) ||
-            std::any_of(custom_portraits_.begin(),custom_portraits_.end(),[](const auto& portrait){return !portrait.empty();})) {
-            if (kPortraitKind.size()>24) columns=11;
-            else if (kPortraitKind.size()>18) columns=8;
-            const int rows=std::max(1,(*std::max_element(cells.begin(),cells.end())+columns)/columns);
-            const float band=kPortraitKind.size()>18?100.f:86.f;
-            portrait_width_=270.f/columns;portrait_height_=band/rows;
-            kPortraitX.clear();kPortraitY.clear();
-            for (unsigned i=0;i<kPortraitKind.size();++i) {
-                kPortraitX.push_back(25+(cells[i]%columns)*portrait_width_);
-                kPortraitY.push_back(32+(cells[i]/columns)*portrait_height_);
-            }
-        }
+        portrait_page_.assign(kPortraitKind.size(),0);
+        for (unsigned i=0;i<kPortraitKind.size();++i) if (i>=12) portrait_page_[i]=1;
+        layout_pages();
         archive_=&services.resources.archive();
         loader_ = std::make_unique<Scene3DLoader>(*archive_);
         renderer_ = std::make_unique<Scene3DRenderer>(services.resources.archive());
@@ -132,16 +120,23 @@ public:
             cursor_x_=std::clamp(input.pointer_x,0.f,300.f);
             cursor_y_=std::clamp(input.pointer_y,10.f,230.f);
         }
+        if (cursor_y_>=16 && cursor_y_<32 && (input.accept_pressed || input.pointer_pressed)) {
+            if (cursor_x_>=130 && cursor_x_<156) css_page_=0;
+            else if (cursor_x_>=156 && cursor_x_<220) css_page_=1;
+            portrait_width_=css_page_==0?45.f:33.75f;
+            portrait_height_=css_page_==0?43.f:22.f;
+        }
         if (held_slot_>=0 && portrait_at(cursor_x_,cursor_y_)>=0) slots_[held_slot_].puck=constrained_puck(cursor_x_,cursor_y_);
         const int hover = portrait_at(cursor_x_,cursor_y_);
-        if (hover!=hover_) {
-            hover_=hover;
-            if (hover>=0 && held_slot_>=0) {
-                slots_[active_slot_].entry=hover;slots_[active_slot_].fkind=kPortraitKind[hover];
-                load_preview(slots_[active_slot_].fkind,active_slot_,false);
-                services.audio.play(AudioCue::MenuScroll);
+        if (held_slot_>=0 && hover>=0) {
+            auto& slot=slots_[held_slot_];
+            if (slot.entry!=hover || hover!=hover_) {
+                if (hover!=hover_) services.audio.play(AudioCue::MenuScroll);
+                slot.entry=hover;slot.fkind=kPortraitKind[hover];slot.selected=false;
+                load_preview(slot.fkind,held_slot_,false);
             }
         }
+        hover_=hover;
         const auto place=[&] {
             if (held_slot_<0 || hover_<0) return;
             auto& slot=slots_[held_slot_];
@@ -174,6 +169,10 @@ public:
                     slots_[slot].selected=false;previews_[slot]={};
                     held_slot_=slots_[slot].kind==SlotKind::None?-1:slot;
                     hover_=-1;
+                    if (held_slot_>=0 && hover>=0) {
+                        slots_[slot].entry=hover;slots_[slot].fkind=kPortraitKind[hover];
+                        load_preview(slots_[slot].fkind,slot,false);
+                    }
                     services.audio.play(AudioCue::MenuSelect);
                 }
             } else if (input.accept_pressed) place();
@@ -195,6 +194,11 @@ public:
             if (slot.kind!=SlotKind::Human) {
                 slot.kind=SlotKind::Human;slot.selected=false;
                 cursors_[player]={47+45.f*(player+1),58};slot.puck={cursors_[player].x-6,cursors_[player].y-6};
+                const int discovered=portrait_at(cursors_[player].x,cursors_[player].y);
+                if (discovered>=0) {
+                    slot.entry=discovered;slot.fkind=kPortraitKind[discovered];
+                    load_preview(slot.fkind,player,false);
+                }
             }
             auto& cursor=cursors_[player];cursor.x=std::clamp(cursor.x+c.x/20,0.f,300.f);cursor.y=std::clamp(cursor.y-c.y/20,10.f,230.f);
             const int portrait=portrait_at(cursor.x,cursor.y);
@@ -229,21 +233,28 @@ public:
             r.sprite_at("textures/MNPlayersGameModes/FreeForAllText.png", {24,18}, {1,1},
                         team_ ? Color{180,180,180,255} : Color{227,172,4,255});
             if (team_) r.sprite_at("textures/MNPlayersGameModes/TeamBattleText.png", {140,18});
+            custom_label(r,"64",132,18,22,10,css_page_==0?Color{227,172,4,255}:Color{160,160,160,255});
+            custom_label(r,"REMIX",158,18,48,10,css_page_==1?Color{227,172,4,255}:Color{160,160,160,255});
         }
 
         for (unsigned portrait = 0; portrait < kPortraitKind.size(); ++portrait) {
+            if (portrait<portrait_page_.size() && portrait_page_[portrait]!=css_page_) continue;
             const auto kind = kPortraitKind[static_cast<std::size_t>(portrait)];
             const Vec2 pos{kPortraitX[static_cast<std::size_t>(portrait)],
                            kPortraitY[static_cast<std::size_t>(portrait)]};
-            r.sprite_rect("textures/MNPlayersPortraits/PortraitFireBg.png",pos.x,pos.y,portrait_width_,portrait_height_);
+            const float width=css_page_==0?45.f:portrait_width_;
+            const float height=css_page_==0?43.f:portrait_height_;
+            r.sprite_rect("textures/MNPlayersPortraits/PortraitFireBg.png",pos.x,pos.y,width,height);
             const auto portrait_file=portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty()?custom_portraits_[portrait]:std::string("textures/MNPlayersPortraits/")+std::string(fighter_portrait_file(kind));
-            r.sprite_rect(portrait_file,pos.x,pos.y,portrait_width_,portrait_height_);
             const bool remix=portrait<custom_models_.size() && custom_models_[portrait].rfind("remix:",0)==0;
-            if ((portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty()) || remix) {
-                r.fill(pos.x,pos.y,portrait_width_,1,{109,89,64,255});r.fill(pos.x,pos.y,1,portrait_height_,{109,89,64,255});
-                r.fill(pos.x,pos.y+portrait_height_-1,portrait_width_,1,{35,27,20,255});r.fill(pos.x+portrait_width_-1,pos.y,1,portrait_height_,{35,27,20,255});
-                r.fill(pos.x+1,pos.y+1,portrait_width_-2,7,{0,0,0,200});
-                if (portrait<custom_names_.size()) custom_label(r,custom_names_[portrait],pos.x+2,pos.y+1,portrait_width_-4,6,{185,178,144,255});
+            const float label_h=remix|| (portrait<custom_portraits_.size() && !custom_portraits_[portrait].empty())?7.f:0.f;
+            const float side=std::min(width,height-label_h);
+            r.sprite_rect(portrait_file,pos.x+(width-side)*.5f,pos.y+label_h,side,side);
+            if (label_h>0) {
+                r.fill(pos.x,pos.y,width,1,{109,89,64,255});r.fill(pos.x,pos.y,1,height,{109,89,64,255});
+                r.fill(pos.x,pos.y+height-1,width,1,{35,27,20,255});r.fill(pos.x+width-1,pos.y,1,height,{35,27,20,255});
+                r.fill(pos.x+1,pos.y+1,width-2,label_h,{0,0,0,200});
+                if (portrait<custom_names_.size()) custom_label(r,custom_names_[portrait],pos.x+2,pos.y+1,width-4,6,{185,178,144,255});
             }
         }
 
@@ -305,9 +316,7 @@ public:
             if (slots_[player].selected) r.sprite_at(pucks[player],slots_[player].puck);
         // Pucks render beneath the hand in both held and placed states.
         if (held_slot_>=0) r.sprite_at(pucks[held_slot_],slots_[held_slot_].puck);
-        const float band_top=kPortraitY.empty()?38.f:kPortraitY.front();
-        const float band_bottom=kPortraitY.empty()?124.f:*std::max_element(kPortraitY.begin(),kPortraitY.end())+portrait_height_;
-        const bool portrait_band=cursor_y_>=band_top && cursor_y_<=band_bottom;
+        const bool portrait_band=cursor_y_>=36 && cursor_y_<=(css_page_==0?124.f:124.f);
         const int hand=portrait_band?(held_slot_>=0?1:2):0;
         constexpr std::array<const char*,3> hands{"CursorHandPoint.png","CursorHandGrab.png","CursorHandHover.png"};
         constexpr std::array<Vec2,3> label_offset{{{7,15},{9,10},{9,15}}};
@@ -328,20 +337,47 @@ private:
     std::vector<FighterKind> kPortraitKind{kBuiltinKinds.begin(),kBuiltinKinds.end()};
     std::vector<float> kPortraitX{kBuiltinX.begin(),kBuiltinX.end()},kPortraitY{kBuiltinY.begin(),kBuiltinY.end()};
     std::vector<std::string> custom_portraits_,custom_models_,custom_names_;
+    std::vector<int> portrait_page_;
     AssetRepository* assets_{};
     float portrait_width_{45},portrait_height_{43};
+    int css_page_{};
+    void layout_pages() {
+        kPortraitX.assign(kPortraitKind.size(),0);kPortraitY.assign(kPortraitKind.size(),0);
+        unsigned vanilla=0,remix=0;
+        for (unsigned i=0;i<kPortraitKind.size();++i) {
+            if (i<portrait_page_.size() && portrait_page_[i]==1) {
+                const int columns=8;
+                kPortraitX[i]=25+(remix%columns)*33.75f;
+                kPortraitY[i]=36+(remix/columns)*22.f;
+                ++remix;
+            } else {
+                if (vanilla<12) {
+                    kPortraitX[i]=kBuiltinX[vanilla];kPortraitY[i]=kBuiltinY[vanilla];
+                } else {
+                    kPortraitX[i]=25+((vanilla-12)%6)*45.f;
+                    kPortraitY[i]=36+86.f+((vanilla-12)/6)*22.f;
+                }
+                ++vanilla;
+            }
+        }
+        portrait_width_=css_page_==0?45.f:33.75f;
+        portrait_height_=css_page_==0?43.f:22.f;
+    }
     Vec2 constrained_puck(float x,float y) const {
-        const float top=kPortraitY.empty()?36.f:kPortraitY.front();
-        const float bottom=kPortraitY.empty()?98.f:*std::max_element(kPortraitY.begin(),kPortraitY.end())+portrait_height_-6;
+        const float top=36.f;
+        const float bottom=css_page_==0?98.f:36.f+4*22.f-6.f;
         return {std::clamp(x-6,25.f,269.f),std::clamp(y-6,top,bottom)};
     }
     struct Slot { SlotKind kind; FighterKind fkind; bool selected; Vec2 puck{};int entry{1}; };
     [[nodiscard]] int portrait_at(float x, float y) const {
         for (unsigned i = 0; i < kPortraitKind.size(); ++i) {
+            if (i<portrait_page_.size() && portrait_page_[i]!=css_page_) continue;
+            const float width=css_page_==0?45.f:portrait_width_;
+            const float height=css_page_==0?43.f:portrait_height_;
             if (x >= kPortraitX[static_cast<std::size_t>(i)] &&
-                x < kPortraitX[static_cast<std::size_t>(i)] + portrait_width_ &&
+                x < kPortraitX[static_cast<std::size_t>(i)] + width &&
                 y >= kPortraitY[static_cast<std::size_t>(i)] &&
-                y < kPortraitY[static_cast<std::size_t>(i)] + portrait_height_)
+                y < kPortraitY[static_cast<std::size_t>(i)] + height)
                 return i;
         }
         return -1;
@@ -360,8 +396,9 @@ private:
         const auto entry=slots_[player].entry;
         const auto remix=entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() &&
             custom_models_[entry].rfind("remix:",0)==0?std::string_view(custom_models_[entry]).substr(6):std::string_view{};
-        auto preview=loader_->fighter_motion(kind,selected?data.selected:data.idle,
-                                             selected?data.selected_flags:0,remix);
+        unsigned clip=selected?data.selected:data.idle;
+        if (!remix.empty()) clip=remix_motion_clip(remix,kind,clip);
+        auto preview=loader_->fighter_motion(kind,clip,selected?data.selected_flags:0,remix);
         if (entry>=0 && static_cast<unsigned>(entry)<custom_models_.size() && !custom_models_[entry].empty() && remix.empty()) {
             const auto bytes=assets_->blob(custom_models_[entry]);loader_->apply_custom_mesh(preview,*bytes);
         }

@@ -387,7 +387,7 @@ public:
             if (const auto key=remix_key(body); !key.empty()) {
                 const auto fighter=std::find_if(remix_roster.begin(),remix_roster.end(),[&](const auto& row){return row.key==key;});
                 if (fighter!=remix_roster.end()) {
-                    const int action=remix_action_for_clip(fighter_source_data[static_cast<unsigned>(body.kind)],current);
+                    const int action=remix_action_id(fighter_source_data[static_cast<unsigned>(body.kind)],current);
                     for (const auto& row:remix_actions) {
                         if (row.fighter!=fighter->id || row.script<0) continue;
                         if (row.animation!=static_cast<int>(current) && !(action>=0 && static_cast<int>(row.action)==action)) continue;
@@ -766,39 +766,9 @@ private:
         }
         return "textures/MNPlayersPortraits/"+std::string(fighter_portrait_file(body.kind));
     }
-    static int remix_action_for_clip(const FighterSourceData& data,unsigned clip) {
-        if (clip==data.jab) return 0xbe;
-        if (clip==data.jab2) return 0xbf;
-        if (clip==data.dash_attack) return 0xc0;
-        if (clip==data.tilt[0]) return 0xc1;
-        if (clip==data.tilt[1]) return 0xc2;
-        if (clip==data.tilt[2]) return 0xc3;
-        if (clip==data.tilt[3]) return 0xc4;
-        if (clip==data.tilt[4]) return 0xc5;
-        if (clip==data.tilt[5]) return 0xc7;
-        if (clip==data.tilt[6]) return 0xc9;
-        if (clip==data.smash[0]) return 0xcc;
-        if (clip==data.smash[1]) return 0xcf;
-        if (clip==data.smash[2]) return 0xd0;
-        if (clip==data.attack_air[0]) return 0xd1;
-        if (clip==data.attack_air[1]) return 0xd2;
-        if (clip==data.attack_air[2]) return 0xd3;
-        if (clip==data.attack_air[3]) return 0xd4;
-        if (clip==data.attack_air[4]) return 0xd5;
-        if (clip==data.taunt) return 0xbd;
-        if (clip==data.grab[0]) return 0xa6;
-        return -1;
-    }
     unsigned remix_clip(const FighterBody& body,unsigned clip) const {
         const auto key=remix_key(body);
-        if (key.empty()) return clip;
-        const auto fighter=std::find_if(remix_roster.begin(),remix_roster.end(),[&](const auto& row){return row.key==key;});
-        if (fighter==remix_roster.end()) return clip;
-        const int action=remix_action_for_clip(fighter_source_data[static_cast<unsigned>(body.kind)],clip);
-        if (action<0) return clip;
-        for (const auto& row:remix_actions)
-            if (row.fighter==fighter->id && static_cast<int>(row.action)==action && row.animation>=0) return static_cast<unsigned>(row.animation);
-        return clip;
+        return key.empty()?clip:remix_motion_clip(key,body.kind,clip);
     }
     unsigned motion(const FighterBody& body) {
         const auto& data=fighter_source_data[static_cast<unsigned>(body.kind)];

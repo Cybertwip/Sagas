@@ -1,5 +1,7 @@
 #pragma once
+#include <sagas/Fighter.hpp>
 #include <sagas/FighterDescriptors.hpp>
+#include <sagas/FighterSourceData.hpp>
 #include <cstdint>
 namespace sagas {
 struct RemixFighter {
@@ -125,5 +127,79 @@ inline std::vector<RemixHitbox> remix_hitboxes_at(unsigned script,unsigned frame
     for(const auto& box:remix_hitboxes)
         if(box.script==script && frame>=box.begin && frame<box.end)active.push_back(box);
     return active;
+}
+
+inline const RemixFighter* remix_fighter(std::string_view key) {
+    for (const auto& row:remix_roster) if (row.key==key) return &row;
+    return nullptr;
+}
+
+inline int remix_action_id(const FighterSourceData& data,unsigned clip) {
+    if (clip==data.idle || clip==data.selected) return 0x0a;
+    if (clip==data.walks[0]) return 0x0b;
+    if (clip==data.walks[1]) return 0x0c;
+    if (clip==data.walks[2]) return 0x0d;
+    if (clip==data.dash_clip) return 0x0f;
+    if (clip==data.run_clip) return 0x10;
+    if (clip==data.run_brake) return 0x11;
+    if (clip==data.turn) return 0x12;
+    if (clip==data.kneebend_clip) return 0x14;
+    if (clip==data.jump) return 0x16;
+    if (clip==data.jump_back) return 0x17;
+    if (clip==data.aerial_forward) return 0x18;
+    if (clip==data.aerial_back) return 0x19;
+    if (clip==data.fall) return 0x1a;
+    if (clip==data.crouch[0]) return 0x1c;
+    if (clip==data.crouch[1]) return 0x1d;
+    if (clip==data.crouch[2]) return 0x1e;
+    if (clip==data.landing) return 0x1f;
+    if (clip==data.cliff[0]) return 0x54;
+    if (clip==data.taunt) return 0xbd;
+    if (clip==data.jab) return 0xbe;
+    if (clip==data.jab2) return 0xbf;
+    if (clip==data.dash_attack) return 0xc0;
+    if (clip==data.tilt[0]) return 0xc1;
+    if (clip==data.tilt[1]) return 0xc2;
+    if (clip==data.tilt[2]) return 0xc3;
+    if (clip==data.tilt[3]) return 0xc4;
+    if (clip==data.tilt[4]) return 0xc5;
+    if (clip==data.tilt[5]) return 0xc7;
+    if (clip==data.tilt[6]) return 0xc9;
+    if (clip==data.smash[0]) return 0xcc;
+    if (clip==data.smash[1]) return 0xcf;
+    if (clip==data.smash[2]) return 0xd0;
+    if (clip==data.attack_air[0]) return 0xd1;
+    if (clip==data.attack_air[1]) return 0xd2;
+    if (clip==data.attack_air[2]) return 0xd3;
+    if (clip==data.attack_air[3]) return 0xd4;
+    if (clip==data.attack_air[4]) return 0xd5;
+    if (clip==data.grab[0]) return 0xa6;
+    if (clip==data.grab[1]) return 0xa7;
+    if (clip==data.grab[2]) return 0xa8;
+    if (clip==data.special_start[0]) return 0xe0;
+    if (clip==data.special_start[1]) return 0xe3;
+    if (clip==data.special_start[2]) return 0xe6;
+    if (clip==data.special_loop[0]) return 0xe1;
+    if (clip==data.special_loop[1]) return 0xe4;
+    if (clip==data.special_loop[2]) return 0xe7;
+    if (clip==data.special_end[0]) return 0xe2;
+    if (clip==data.special_end[1]) return 0xe5;
+    if (clip==data.special_end[2]) return 0xe8;
+    if (clip==data.special_active[0]) return 0xe0;
+    if (clip==data.special_active[1]) return 0xe3;
+    if (clip==data.special_active[2]) return 0xe6;
+    return -1;
+}
+
+inline unsigned remix_motion_clip(std::string_view key,FighterKind kind,unsigned clip) {
+    const auto* fighter=remix_fighter(key);
+    if (!fighter || kind>=FighterKind::Count) return clip;
+    const auto& data=fighter_source_data[static_cast<unsigned>(kind)];
+    const int action=remix_action_id(data,clip);
+    if (action<0) return clip;
+    for (const auto& row:remix_actions)
+        if (row.fighter==fighter->id && static_cast<int>(row.action)==action && row.animation>=0)
+            return static_cast<unsigned>(row.animation);
+    return clip;
 }
 }

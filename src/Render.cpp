@@ -506,8 +506,8 @@ RenderEngine::Texture& RenderEngine::texture(std::string_view logical) {
     glPixelStorei(GL_UNPACK_ALIGNMENT,1);
     glTexImage2D(GL_TEXTURE_2D,0,GL_SRGB8_ALPHA8,static_cast<GLsizei>(image.width),static_cast<GLsizei>(image.height),
                  0,GL_RGBA,GL_UNSIGNED_BYTE,pixels.data());
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
     auto [inserted,_]=textures_.emplace(key,Texture{handle,static_cast<float>(image.width),static_cast<float>(image.height)});
